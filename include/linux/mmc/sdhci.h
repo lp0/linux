@@ -90,6 +90,9 @@ struct sdhci_host {
 
 	unsigned int quirks2;	/* More deviations from spec. */
 
+#define SDHCI_QUIRK2_HOST_OFF_CARD_ON			(1<<0)
+#define SDHCI_QUIRK2_OWN_CARD_DETECTION			(1<<1)
+
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
 
@@ -120,6 +123,7 @@ struct sdhci_host {
 #define SDHCI_PV_ENABLED	(1<<8)	/* Preset value enabled */
 #define SDHCI_SDIO_IRQ_ENABLED	(1<<9)	/* SDIO irq enabled */
 #define SDHCI_HS200_NEEDS_TUNING (1<<10)	/* HS200 needs tuning */
+#define SDHCI_USE_PLATDMA       (1<<11) /* Host uses 3rd party DMA */
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -134,6 +138,7 @@ struct sdhci_host {
 
 	struct mmc_request *mrq;	/* Current request */
 	struct mmc_command *cmd;	/* Current command */
+	int	last_cmdop;	/* Opcode of last cmd sent */
 	struct mmc_data *data;	/* Current data request */
 	unsigned int data_early:1;	/* Data finished before cmd */
 
