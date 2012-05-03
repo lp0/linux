@@ -52,6 +52,12 @@
 #define gadget_is_s3c_hsotg(g)		(!strcmp("s3c-hsotg", (g)->name))
 #define gadget_is_s3c_hsudc(g)		(!strcmp("s3c-hsudc", (g)->name))
 
+#if defined(CONFIG_DWC_OTG_MODE) || defined(CONFIG_DWC_DEVICE_ONLY)
+#define gadget_is_dwc_otg_pcd(g)	(!strcmp("dwc_otg_pcd", (g)->name))
+#else
+#define gadget_is_dwc_otg_pcd(g)	0
+#endif
+
 /**
  * usb_gadget_controller_number - support bcdDevice id convention
  * @gadget: the controller being driven
@@ -121,10 +127,11 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
 		return 0x32;
 	else if (gadget_is_lpc32xx(gadget))
 		return 0x33;
+	else if (gadget_is_dwc_otg_pcd(gadget))
+		return 0x34;
 
 	return -ENOENT;
 }
-
 
 /**
  * gadget_supports_altsettings - return true if altsettings work
