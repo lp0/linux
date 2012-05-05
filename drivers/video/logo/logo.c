@@ -84,6 +84,10 @@ const struct linux_logo * __init_refok fb_find_logo(int depth)
 		/* PA-RISC Linux logo */
 		logo = &logo_parisc_clut224;
 #endif
+#ifdef CONFIG_LOGO_RPI_CLUT224
+		/* Raspberry Pi logo */
+		logo = &logo_rpi_clut224;
+#endif
 #ifdef CONFIG_LOGO_SGI_CLUT224
 		/* SGI Linux logo on MIPS/MIPS64 and VISWS */
 		logo = &logo_sgi_clut224;
