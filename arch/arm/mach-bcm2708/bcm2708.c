@@ -71,9 +71,31 @@ void __init bcm2708_init_irq(void)
 	of_irq_init(irq_of_match);
 }
 
+/*
+ * These are fixed clocks (and device tree doesn't support clk!).
+ */
+static struct clk apb_pclk = {
+	.rate = APB_CLOCK
+};
+
+static struct clk_lookup lookups[] = {
+	{
+		.con_id = "apb_pclk",
+		.clk = &apb_pclk,
+	},
+	{
+		.dev_id = "20201000.uart0",
+		.clk = &apb_pclk,
+	}
+};
+
 void __init bcm2708_init(void)
 {
 	int ret;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(lookups); i++)
+		clkdev_add(&lookups[i]);
 
 	system_rev = boardrev;
 	system_serial_low = serial;
