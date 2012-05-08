@@ -213,8 +213,10 @@ int of_pci_address_to_resource(struct device_node *dev, int bar,
 	unsigned int	flags;
 
 	addrp = of_get_pci_address(dev, bar, &size, &flags);
-	if (addrp == NULL)
+	if (addrp == NULL) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EINVAL;
+	}
 	return __of_address_to_resource(dev, addrp, size, flags, NULL, r);
 }
 EXPORT_SYMBOL_GPL(of_pci_address_to_resource);
@@ -533,17 +535,23 @@ static int __of_address_to_resource(struct device_node *dev,
 {
 	u64 taddr;
 
-	if ((flags & (IORESOURCE_IO | IORESOURCE_MEM)) == 0)
+	if ((flags & (IORESOURCE_IO | IORESOURCE_MEM)) == 0) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EINVAL;
+	}
 	taddr = of_translate_address(dev, addrp);
-	if (taddr == OF_BAD_ADDR)
+	if (taddr == OF_BAD_ADDR) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EINVAL;
+	}
 	memset(r, 0, sizeof(struct resource));
 	if (flags & IORESOURCE_IO) {
 		unsigned long port;
 		port = pci_address_to_pio(taddr);
-		if (port == (unsigned long)-1)
+		if (port == (unsigned long)-1) {
+			printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 			return -EINVAL;
+		}
 		r->start = port;
 		r->end = port + size - 1;
 	} else {
@@ -573,8 +581,10 @@ int of_address_to_resource(struct device_node *dev, int index,
 	const char	*name = NULL;
 
 	addrp = of_get_address(dev, index, &size, &flags);
-	if (addrp == NULL)
+	if (addrp == NULL) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EINVAL;
+	}
 
 	/* Get optional "reg-names" property to add a name to a resource */
 	of_property_read_string_index(dev, "reg-names",	index, &name);

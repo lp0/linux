@@ -481,6 +481,7 @@ int __init of_scan_flat_dt(int (*it)(unsigned long node,
 		}
 		if (tag != OF_DT_BEGIN_NODE) {
 			pr_err("Invalid tag %x in flat device tree!\n", tag);
+			printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 			return -EINVAL;
 		}
 		depth++;

@@ -159,17 +159,23 @@ int of_device_uevent_modalias(struct device *dev, struct kobj_uevent_env *env)
 {
 	int sl;
 
-	if ((!dev) || (!dev->of_node))
+	if ((!dev) || (!dev->of_node)) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -ENODEV;
+	}
 
 	/* Devicetree modalias is tricky, we add it in 2 steps */
-	if (add_uevent_var(env, "MODALIAS="))
+	if (add_uevent_var(env, "MODALIAS=")) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -ENOMEM;
+	}
 
 	sl = of_device_get_modalias(dev, &env->buf[env->buflen-1],
 				    sizeof(env->buf) - env->buflen);
-	if (sl >= (sizeof(env->buf) - env->buflen))
+	if (sl >= (sizeof(env->buf) - env->buflen)) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -ENOMEM;
+	}
 	env->buflen += sl;
 
 	return 0;

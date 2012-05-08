@@ -37,8 +37,11 @@ static struct clk_lookup *clk_find(const char *dev_id, const char *con_id)
 	struct clk_lookup *p, *cl = NULL;
 	int match, best = 0;
 
+	printk(KERN_DEBUG "clk_find: %s %s\n", dev_id, con_id);
+
 	list_for_each_entry(p, &clocks, node) {
 		match = 0;
+		printk(KERN_DEBUG "clock: %s %s\n", p->dev_id, p->con_id);
 		if (p->dev_id) {
 			if (!dev_id || strcmp(p->dev_id, dev_id))
 				continue;
