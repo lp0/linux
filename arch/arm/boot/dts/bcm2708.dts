@@ -1,0 +1,50 @@
+/dts-v1/;
+/include/ "skeleton.dtsi"
+
+/ {
+	model = "BCM2708";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "broadcom,bcm2708";
+	interrupt-parent = <&intc>;
+
+	cpus {
+		cpu@0 {
+			compatible = "arm,1176jz-f";
+		};
+	};
+
+	clocks {
+		stc: clock@0x20003004 {
+			compatible = "fixed-clock";
+			clock-outputs = "sys";
+			clock-frequency = <1000000>;
+		};
+	};
+
+	soc@0x20000000 {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		st: timer@0x20003000 {
+			compatible = "arm,todo";
+			reg = <0x20003000 0x1000>;
+		};
+
+		armctrl@0x2000B000 {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			intc: interrupt-controller@0x2000B200 {
+				compatible = "bcm,bcm2708-armctrl-ic";
+				reg = <0x2000B200 0x200>;
+				interrupt-controller;
+				#interrupt-cells = <1>;
+			};
+		};
+	};
+};
