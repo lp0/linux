@@ -46,5 +46,19 @@
 				#interrupt-cells = <1>;
 			};
 		};
+
+		amba {
+			compatible = "arm,amba-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			uart0: uart@0x20201000 {
+				compatible = "arm,pl011", "arm,primecell";
+				arm,primecell-periphid = <0x00341011>;
+				reg = <0x20201000 0x1000>;
+				interrupts = <83>;
+			};
+		};
 	};
 };

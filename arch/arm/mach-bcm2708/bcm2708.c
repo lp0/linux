@@ -61,6 +61,12 @@ static struct map_desc bcm2708_io_desc[] __initdata = {
 		.pfn = __phys_to_pfn(ST_BASE),
 		.length = SZ_4K,
 		.type = MT_DEVICE
+	},
+	{
+		.virtual = IO_ADDRESS(UART0_BASE),
+		.pfn = __phys_to_pfn(UART0_BASE),
+		.length = SZ_4K,
+		.type = MT_DEVICE
 	}
 	/* Without the UART0 here, earlyprintk fails */
 };
@@ -98,6 +104,25 @@ void __init bcm2708_init_irq(void)
 
 	armctrl_init(base, 0, 0, 0);
 }
+
+/*
+ * These are fixed clocks (and device tree doesn't support clk!).
+ */
+static struct clk apb_pclk = {
+	.rate = APB_CLOCK
+};
+
+static struct clk_lookup lookups[] = {
+	{
+		.con_id = "apb_pclk",
+		.clk = &apb_pclk,
+	},
+	{
+		.dev_id = "20201000.uart",
+		.clk = &apb_pclk,
+	}
+};
+
 
 // The STC is a free running counter that increments at the rate of 1MHz
 #define STC_FREQ_HZ 1000000
@@ -138,6 +163,10 @@ u32 notrace bcm2708_read_sched_clock(void)
 void __init bcm2708_init(void)
 {
 	int ret;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(lookups); i++)
+		clkdev_add(&lookups[i]);
 
 	system_rev = boardrev;
 	system_serial_low = serial;
