@@ -27,7 +27,10 @@ amba_lookup(const struct amba_id *table, struct amba_device *dev)
 {
 	int ret = 0;
 
+	printk(KERN_DEBUG "amba_lookup: want dev->periphid %08x\n", dev->periphid);
+
 	while (table->mask) {
+		printk(KERN_DEBUG "amba_lookup: table->id %08x table->mask %08x\n", table->id, table->mask);
 		ret = (dev->periphid & table->mask) == table->id;
 		if (ret)
 			break;
@@ -325,17 +328,20 @@ static int amba_get_enable_pclk(struct amba_device *pcdev)
 	int ret;
 
 	pcdev->pclk = pclk;
+	printk(KERN_DEBUG "%s:%d: %p\n", __func__, __LINE__, pclk);
 
 	if (IS_ERR(pclk))
 		return PTR_ERR(pclk);
 
 	ret = clk_prepare(pclk);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret) {
 		clk_put(pclk);
 		return ret;
 	}
 
 	ret = clk_enable(pclk);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret) {
 		clk_unprepare(pclk);
 		clk_put(pclk);
@@ -366,6 +372,7 @@ static int amba_probe(struct device *dev)
 
 	do {
 		ret = amba_get_enable_pclk(pcdev);
+		printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 		if (ret)
 			break;
 
@@ -374,6 +381,7 @@ static int amba_probe(struct device *dev)
 		pm_runtime_enable(dev);
 
 		ret = pcdrv->probe(pcdev, id);
+		printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 		if (ret == 0)
 			break;
 
@@ -475,6 +483,7 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 	WARN_ON(dev->irq[1] == (unsigned int)-1);
 
 	ret = request_resource(parent, &dev->res);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret)
 		goto err_out;
 
@@ -524,13 +533,16 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 
  skip_probe:
 	ret = device_add(&dev->dev);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret)
 		goto err_release;
 
 	if (dev->irq[0] && dev->irq[0] != NO_IRQ)
 		ret = device_create_file(&dev->dev, &dev_attr_irq0);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret == 0 && dev->irq[1] && dev->irq[1] != NO_IRQ)
 		ret = device_create_file(&dev->dev, &dev_attr_irq1);
+	printk(KERN_DEBUG "%s:%d: %d\n", __func__, __LINE__, ret);
 	if (ret == 0)
 		return ret;
 

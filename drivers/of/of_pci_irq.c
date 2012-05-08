@@ -43,8 +43,10 @@ int of_irq_map_pci(struct pci_dev *pdev, struct of_irq *out_irq)
 	if (rc != 0)
 		return rc;
 	/* No pin, exit */
-	if (pin == 0)
+	if (pin == 0) {
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -ENODEV;
+	}
 
 	/* Now we walk up the PCI tree */
 	lspec = pin;
@@ -57,8 +59,10 @@ int of_irq_map_pci(struct pci_dev *pdev, struct of_irq *out_irq)
 			ppnode = pci_bus_to_OF_node(pdev->bus);
 
 			/* No node for host bridge ? give up */
-			if (ppnode == NULL)
+			if (ppnode == NULL) {
+				printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 				return -EINVAL;
+			}
 		} else {
 			/* We found a P2P bridge, check if it has a node */
 			ppnode = pci_device_to_OF_node(ppdev);

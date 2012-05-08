@@ -51,6 +51,7 @@ const int of_get_phy_mode(struct device_node *np)
 		if (!strcasecmp(pm, phy_modes[i]))
 			return i;
 
+	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -ENODEV;
 }
 EXPORT_SYMBOL_GPL(of_get_phy_mode);

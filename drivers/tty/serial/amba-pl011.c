@@ -1919,6 +1919,8 @@ static int pl011_probe(struct amba_device *dev, const struct amba_id *id)
 	void __iomem *base;
 	int i, ret;
 
+	printk(KERN_DEBUG "pl011_probe %p %p\n", dev, id);
+
 	for (i = 0; i < ARRAY_SIZE(amba_ports); i++)
 		if (amba_ports[i] == NULL)
 			break;

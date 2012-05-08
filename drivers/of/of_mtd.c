@@ -45,6 +45,7 @@ const int of_get_nand_ecc_mode(struct device_node *np)
 		if (!strcasecmp(pm, nand_ecc_modes[i]))
 			return i;
 
+	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -ENODEV;
 }
 EXPORT_SYMBOL_GPL(of_get_nand_ecc_mode);
@@ -67,6 +68,7 @@ int of_get_nand_bus_width(struct device_node *np)
 	case 16:
 		return val;
 	default:
+		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EIO;
 	}
 }
