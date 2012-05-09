@@ -73,7 +73,7 @@ int __init bcm_of_irq_init(struct device_node *node,
 
 	irq_domain_add_legacy(node, NR_IRQS, 0, 0, &irq_domain_simple_ops, NULL);
 	armctrl_init(base, 0, 0, 0);
-   return 0;
+	return 0;
 }
 
 static const struct of_device_id irq_of_match[] __initconst = {
@@ -104,7 +104,7 @@ static struct clk_lookup lookups[] = {
 };
 
 
-// The STC is a free running counter that increments at the rate of 1MHz
+/* The STC is a free running counter that increments at the rate of 1MHz */
 #define STC_FREQ_HZ 1000000
 
 static cycle_t stc_read_cycles(struct clocksource *cs)
@@ -121,17 +121,12 @@ static struct clocksource clocksource_stc = {
 	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
 };
 
-unsigned long frc_clock_ticks32(void)
-{
-	return (unsigned long)stc_read_cycles(&clocksource_stc);
-}
-
 static void __init bcm2708_clocksource_init(void)
 {
-	// calculate .shift and .mult values and register clocksource
+	/* calculate .shift and .mult values and register clocksource */
 	if (clocksource_register_hz(&clocksource_stc, STC_FREQ_HZ)) {
-		printk(KERN_ERR "timer: failed to initialize clock "
-			"source %s\n", clocksource_stc.name);
+		printk(KERN_ERR "timer: failed to initialize clock source %s\n",
+				clocksource_stc.name);
 	}
 }
 
@@ -152,21 +147,24 @@ void __init bcm2708_init(void)
 	system_serial_low = serial;
 
 	ret = of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-	printk("BCM2708 devicetree: %d\n", ret);
-	BUG_ON(ret != 0);
+	if (ret) {
+		printk(KERN_ERR "BCM2708 devicetree: %d\n", ret);
+		BUG();
+	}
 }
 
 #define TIMER_PERIOD 10000	/* HZ in microsecs */
 
 static void timer_set_mode(enum clock_event_mode mode,
-			   struct clock_event_device *clk)
+		struct clock_event_device *clk)
 {
 	unsigned long stc;
 
 	switch (mode) {
 	case CLOCK_EVT_MODE_PERIODIC:
 		stc = readl(__io_address(ST_BASE + 0x04));
-		writel(stc + TIMER_PERIOD, __io_address(ST_BASE + 0x18)); /* stc3 */
+		/* stc3 */
+		writel(stc + TIMER_PERIOD, __io_address(ST_BASE + 0x18));
 		break;
 	case CLOCK_EVT_MODE_ONESHOT:
 	case CLOCK_EVT_MODE_UNUSED:
@@ -174,13 +172,13 @@ static void timer_set_mode(enum clock_event_mode mode,
 		break;
 	default:
 		printk(KERN_ERR "timer_set_mode: unhandled mode: %d\n",
-			(int)mode);
+				(int)mode);
 		break;
 	}
 }
 
 static int timer_set_next_event(unsigned long cycles,
-				struct clock_event_device *unused)
+		struct clock_event_device *unused)
 {
 	unsigned long stc;
 
@@ -189,7 +187,7 @@ static int timer_set_next_event(unsigned long cycles,
 	return 0;
 }
 
-static struct clock_event_device timer0_clockevent = {
+static struct clock_event_device timer0 = {
 	.name = "timer0",
 	.shift = 32,
 	.features = CLOCK_EVT_FEAT_ONESHOT,
@@ -202,9 +200,10 @@ static struct clock_event_device timer0_clockevent = {
  */
 static irqreturn_t bcm2708_timer_interrupt(int irq, void *dev_id)
 {
-	struct clock_event_device *evt = &timer0_clockevent;
+	struct clock_event_device *evt = &timer0;
 
-	writel(1 << 3, __io_address(ST_BASE + 0x00));	/* stcs clear timer int */
+	/* stcs clear timer int */
+	writel(1 << 3, __io_address(ST_BASE + 0x00));
 
 	evt->event_handler(evt);
 
@@ -225,26 +224,20 @@ static void __init bcm2708_timer_init(void)
 	/* init high res timer */
 	bcm2708_clocksource_init();
 
-	/*
-	 * Initialise to a known state (all timers off)
-	 */
+	/* Initialise to a known state (all timers off) */
 	writel(0, __io_address(ARM_T_CONTROL));
-	/*
-	 * Make irqs happen for the system timer
-	 */
+
+	/* Make irqs happen for the system timer */
 	setup_irq(IRQ_TIMER3, &bcm2708_timer_irq);
 
 	setup_sched_clock(bcm2708_read_sched_clock, 32, STC_FREQ_HZ);
 
-	timer0_clockevent.mult =
-		div_sc(STC_FREQ_HZ, NSEC_PER_SEC, timer0_clockevent.shift);
-	timer0_clockevent.max_delta_ns =
-		clockevent_delta2ns(0xffffffff, &timer0_clockevent);
-	timer0_clockevent.min_delta_ns =
-		clockevent_delta2ns(0xf, &timer0_clockevent);
+	timer0.mult = div_sc(STC_FREQ_HZ, NSEC_PER_SEC, timer0.shift);
+	timer0.max_delta_ns = clockevent_delta2ns(0xffffffff, &timer0);
+	timer0.min_delta_ns = clockevent_delta2ns(0xf, &timer0);
 
-	timer0_clockevent.cpumask = cpumask_of(0);
-	clockevents_register_device(&timer0_clockevent);
+	timer0.cpumask = cpumask_of(0);
+	clockevents_register_device(&timer0);
 }
 
 struct sys_timer bcm2708_timer = {
