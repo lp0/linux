@@ -14,34 +14,37 @@
 		};
 	};
 
-	clocks {
-		stc: clock@0x20003004 {
-			compatible = "fixed-clock";
-			clock-outputs = "sys";
-			clock-frequency = <1000000>;
-		};
-	};
-
-	soc@0x20000000 {
+	axi@0x20000000 {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		ranges;
+		reg = <0x20000000 0x01000000>;
+		ranges = <0 0x20000000 0x01000000>;
 
-		st: timer@0x20003000 {
-			compatible = "arm,todo";
-			reg = <0x20003000 0x1000>;
-		};
-
-		armctrl@0x2000B000 {
+		st: timer@0x3000 {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			ranges;
+			reg = <0x3000 0x1000>;
+			ranges = <0 0x3000 0x1000>;
 
-			intc: interrupt-controller@0x2000B200 {
+			stc: clock@0x004 {
+				compatible = "fixed-clock";
+				clock-outputs = "sys";
+				clock-frequency = <1000000>;
+			};
+		};
+
+		armctrl@0xB000 {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xB000 0x1000>;
+			ranges = <0 0xB000 0x1000>;
+
+			intc: interrupt-controller@0x200 {
 				compatible = "broadcom,bcm2708-armctrl-ic";
-				reg = <0x2000B200 0x200>;
+				reg = <0x200 0x200>;
 				interrupt-controller;
 				#interrupt-cells = <1>;
 			};
@@ -53,10 +56,10 @@
 			#size-cells = <1>;
 			ranges;
 
-			uart0: uart@0x20201000 {
+			uart0: uart@0x201000 {
 				compatible = "arm,pl011", "arm,primecell";
 				arm,primecell-periphid = <0x00341011>;
-				reg = <0x20201000 0x1000>;
+				reg = <0x201000 0x1000>;
 				interrupts = <83>;
 			};
 		};
