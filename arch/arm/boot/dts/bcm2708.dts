@@ -58,7 +58,6 @@
 
 			uart0: uart@0x201000 {
 				compatible = "arm,pl011", "arm,primecell";
-				arm,primecell-periphid = <0x00341011>;
 				reg = <0x201000 0x1000>;
 				interrupts = <83>;
 			};
