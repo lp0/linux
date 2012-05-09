@@ -519,6 +519,9 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 
 		amba_put_disable_pclk(dev);
 
+		printk(KERN_DEBUG "%s probed cid=%08x\n", __func__, cid);
+		printk(KERN_DEBUG "%s probed pid=%08x\n", __func__, pid);
+
 		if (cid == AMBA_CID)
 			dev->periphid = pid;
 
