@@ -56,12 +56,6 @@ static struct map_desc bcm2708_io_desc[] __initdata = {
 		.pfn = __phys_to_pfn(BCM2708_PERI_BASE),
 		.length = SZ_16M,
 		.type = MT_DEVICE
-	},
-	{
-		.virtual = IO_ADDRESS(UART0_BASE),
-		.pfn = __phys_to_pfn(UART0_BASE),
-		.length = SZ_4K,
-		.type = MT_DEVICE
 	}
 };
 
