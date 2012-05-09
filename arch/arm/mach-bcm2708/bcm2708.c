@@ -26,6 +26,7 @@
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/irqdomain.h>
 
 #include <linux/version.h>
@@ -51,15 +52,9 @@ static unsigned boardrev, serial;
 
 static struct map_desc bcm2708_io_desc[] __initdata = {
 	{
-		.virtual = IO_ADDRESS(ARMCTRL_BASE),
-		.pfn = __phys_to_pfn(ARMCTRL_BASE),
-		.length = SZ_4K,
-		.type = MT_DEVICE
-	},
-	{
-		.virtual = IO_ADDRESS(ST_BASE),
-		.pfn = __phys_to_pfn(ST_BASE),
-		.length = SZ_4K,
+		.virtual = IO_ADDRESS(BCM2708_PERI_BASE),
+		.pfn = __phys_to_pfn(BCM2708_PERI_BASE),
+		.length = SZ_16M,
 		.type = MT_DEVICE
 	},
 	{
@@ -68,41 +63,32 @@ static struct map_desc bcm2708_io_desc[] __initdata = {
 		.length = SZ_4K,
 		.type = MT_DEVICE
 	}
-	/* Without the UART0 here, earlyprintk fails */
 };
 
-/* Lookup table for finding a DT node that represents the intc instance */
-static const struct of_device_id intc_of_match[] __initconst = {
-	{ .compatible = "bcm,bcm2708-armctrl-ic", },
-	{}
-};
-
-/* TODO: move this to device tree */
 void __init bcm2708_map_io(void)
 {
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-/* TODO: move this to device tree */
-void __init bcm2708_init_irq(void)
+int __init bcm_of_irq_init(struct device_node *node,
+		struct device_node *parent)
 {
-	struct device_node *np;
-	void __iomem *base;
-
-	np = of_find_matching_node_by_address(NULL, intc_of_match,
-			ARMCTRL_IC_BASE);
-	if (!np)
-		panic("unable to find compatible intc node in dtb\n");
-
-	base = of_iomap(np, 0);
+	void __iomem *base = of_iomap(node, 0);
 	if (!base)
 		panic("unable to map intc cpu registers\n");
 
-	irq_domain_add_legacy(np, NR_IRQS, 0, 0, &irq_domain_simple_ops, NULL);
-
-	of_node_put(np);
-
+	irq_domain_add_legacy(node, NR_IRQS, 0, 0, &irq_domain_simple_ops, NULL);
 	armctrl_init(base, 0, 0, 0);
+   return 0;
+}
+
+static const struct of_device_id irq_of_match[] __initconst = {
+	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = bcm_of_irq_init }
+};
+
+void __init bcm2708_init_irq(void)
+{
+	of_irq_init(irq_of_match);
 }
 
 /*

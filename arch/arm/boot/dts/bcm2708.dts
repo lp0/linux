@@ -40,7 +40,7 @@
 			ranges;
 
 			intc: interrupt-controller@0x2000B200 {
-				compatible = "bcm,bcm2708-armctrl-ic";
+				compatible = "broadcom,bcm2708-armctrl-ic";
 				reg = <0x2000B200 0x200>;
 				interrupt-controller;
 				#interrupt-cells = <1>;
