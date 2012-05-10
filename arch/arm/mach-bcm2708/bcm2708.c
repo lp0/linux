@@ -70,6 +70,16 @@ int __init bcm2708_of_irq_init(struct device_node *node,
 	void __iomem *pending = of_iomap(node, 0);
 	void __iomem *enable = of_iomap(node, 1);
 	void __iomem *disable = of_iomap(node, 2);
+	int base_irq;
+	int nr_irqs;
+
+	/* provide an interrupt map from dt */
+	switch ((unsigned int)pending) {
+	case 0xf200b200: base_irq = 64; nr_irqs = 21; break;
+	case 0xf200b204: base_irq = 0; nr_irqs = 32; break;
+	case 0xf200b208: base_irq = 32; nr_irqs = 32; break;
+	default: BUG();
+	}
 
 	if (!pending)
 		panic("unable to map vic pending cpu register\n");
@@ -78,8 +88,8 @@ int __init bcm2708_of_irq_init(struct device_node *node,
 	if (!disable)
 		panic("unable to map vic disable cpu register\n");
 
-	irq_domain_add_linear(node, 32, &irq_domain_simple_ops, NULL);
-	armctrl_init(pending, enable, disable, 0, 0);
+	irq_domain_add_legacy(node, nr_irqs, base_irq, 0, &irq_domain_simple_ops, NULL);
+	armctrl_init(pending, enable, disable, nr_irqs, 0, 0);
 	return 0;
 }
 

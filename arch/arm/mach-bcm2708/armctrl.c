@@ -27,20 +27,22 @@
 #include "armctrl.h"
 
 struct armctrl_irq {
-	unsigned int enable;
-	unsigned int disable;
+	void __iomem *enable;
+	void __iomem *disable;
 };
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	writel(1 << d->hwirq, __io(data->disable));
+	printk(KERN_DEBUG "mask irq %08lx (%08x) using %08x\n", d->hwirq, d->irq, (unsigned int)data->disable);
+	writel(1 << d->hwirq, __io((unsigned int)data->disable));
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	writel(1 << d->hwirq, __io(data->enable));
+	printk(KERN_DEBUG "unmask irq %08lx (%08x) using %08x\n", d->hwirq, d->irq, (unsigned int)data->enable);
+	writel(1 << d->hwirq, __io((unsigned int)data->enable));
 }
 
 #if defined(CONFIG_PM)
@@ -150,19 +152,25 @@ static struct irq_chip armctrl_chip = {
  * @pending: iomem pending address
  * @enable: iomem enable address
  * @disable: iomem disable address
+ * @nr_irqs
  * @armctrl_sources: bitmask of interrupt sources to allow
  * @resume_sources: bitmask of interrupt sources to allow for resume
  */
 int __init armctrl_init(void __iomem *pending, void __iomem *enable,
-		void __iomem *disable, u32 armctrl_sources, u32 resume_sources)
+		void __iomem *disable, unsigned int nr_irqs, u32 armctrl_sources,
+		u32 resume_sources)
 {
 	struct armctrl_irq data = {
-		.enable = (unsigned int)enable,
-		.disable = (unsigned int)disable
+		.enable = enable,
+		.disable = disable
 	};
 	unsigned int irq;
 
-	for (irq = 0; irq < 32; irq++) {
+	printk(KERN_DEBUG "pending = %08x\n", pending);
+	printk(KERN_DEBUG "enable = %08x\n", enable);
+	printk(KERN_DEBUG "disable = %08x\n", disable);
+
+	for (irq = 0; irq < nr_irqs; irq++) {
 		irq_set_chip(irq, &armctrl_chip);
 		irq_set_chip_data(irq, (void *)&data);
 		irq_set_handler(irq, handle_level_irq);
