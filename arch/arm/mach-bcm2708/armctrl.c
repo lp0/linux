@@ -35,24 +35,31 @@ struct armctrl_irq {
 	void __iomem *enable;
 	void __iomem *disable;
 	u32 source_mask;
+
+	u32 bank_mask;
+	struct armctrl_irq *bank[31];
+	struct armctrl_irq *parent;
 	struct irq_domain *domain;
 };
 
-static struct armctrl_irq irq_devices[3];
-static int irq_id;
+static struct armctrl_irq *intc = NULL;
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	if ((1 << d->hwirq) & data->source_mask)
-		writel(1 << d->hwirq, data->disable);
+	if (d->irq != 3)
+		printk(KERN_DEBUG "armctrl_mask_irq irq=%d hwirq=%ld on %p\n", d->irq, d->hwirq, data->pending);
+	if (BIT(d->hwirq) & data->source_mask)
+		writel(BIT(d->hwirq), data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	if ((1 << d->hwirq) & data->source_mask)
-		writel(1 << d->hwirq, data->enable);
+	if (d->irq != 3)
+		printk(KERN_DEBUG "armctrl_unmask_irq irq=%d hwirq=%ld on %p\n", d->irq, d->hwirq, data->pending);
+	if (BIT(d->hwirq) & data->source_mask)
+		writel(BIT(d->hwirq), data->enable);
 }
 
 #if defined(CONFIG_PM)
@@ -161,33 +168,19 @@ static struct irq_chip armctrl_chip = {
 int __init armctrl_of_init(struct device_node *node,
 		struct device_node *parent)
 {
-	struct armctrl_irq *data;
-	unsigned int i, irq;
+	u32 base_irq, nr_irqs, bank_id;
+	int i;
 
-	int base_irq;
-	int nr_irqs;
-
-	if (irq_id >= ARRAY_SIZE(irq_devices)) {
-		printk(KERN_ERR "%s: too many IRQ devices\n", __func__);
-		return -EBUSY;
-	}
-
-	data = &irq_devices[irq_id];
+	struct armctrl_irq **ref = kmalloc(sizeof(**ref), GFP_KERNEL);
+	struct armctrl_irq *data = kzalloc(sizeof(*data), GFP_KERNEL);
+	BUG_ON(data == NULL);
 	data->pending = of_iomap(node, 0);
 	data->enable = of_iomap(node, 1);
 	data->disable = of_iomap(node, 2);
 	data->source_mask = ~0;
-
-	/* FIXME: provide an interrupt map from dt */
-	switch ((unsigned int)data->pending) {
-	case 0xf200b200:
-		base_irq = 64; nr_irqs = 10;
-		data->source_mask = 0xff;
-		break;
-	case 0xf200b204: base_irq = 0; nr_irqs = 32; break;
-	case 0xf200b208: base_irq = 32; nr_irqs = 32; break;
-	default: BUG();
-	}
+	data->bank_mask = 0;
+	node->data = ref;
+	*ref = data;
 
 	if (!data->pending)
 		panic("unable to map vic pending cpu register\n");
@@ -196,8 +189,45 @@ int __init armctrl_of_init(struct device_node *node,
 	if (!data->disable)
 		panic("unable to map vic disable cpu register\n");
 
+/*
+	base_irq = of_get_property(node, "interrupt-base");
+	bank_id = of_get_property(node, "interrupt");
+*/
+
+	/* FIXME: provide an interrupt map from dt */
+	switch ((unsigned int)data->pending) {
+	case 0xf200b200:
+		base_irq = 64; nr_irqs = 10; bank_id = 0;
+		data->source_mask = 0xff;
+		break;
+	case 0xf200b204: base_irq = 0; nr_irqs = 32; bank_id = 8; break;
+	case 0xf200b208: base_irq = 32; nr_irqs = 32; bank_id = 9; break;
+	default: BUG();
+	}
+
+	if (parent == NULL) {
+		printk(KERN_DEBUG "bcm2708: interrupt-controller at %p\n", data->pending);
+
+		if (intc != NULL)
+			panic("attempted to register more than one top level vic\n");
+
+		intc = data;
+		data->parent = NULL;
+	} else {
+		data->parent = *(struct armctrl_irq **)parent->data;
+		printk(KERN_DEBUG "bcm2708: interrupt-controller at %p in %p bank %d\n", data->pending, data->parent->pending, bank_id);
+
+		BUG_ON(data->parent == NULL);
+		if (data->parent->bank_mask & BIT(bank_id))
+			panic("attempted to register vic bank twice\n");
+		data->parent->bank_mask |= BIT(bank_id);
+		data->parent->bank[bank_id - 1] = data;
+	}
+
 	for (i = 0; i < nr_irqs; i++) {
-		if (!(data->source_mask & (1 << i)))
+		int irq;
+
+		if (!(data->source_mask & BIT(i)))
 			continue;
 
 		irq = base_irq + i;
@@ -207,11 +237,10 @@ int __init armctrl_of_init(struct device_node *node,
 	}
 
 	data->domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
-			&irq_domain_simple_ops, NULL);
+		&irq_domain_simple_ops, NULL);
 	if (!data->domain)
 		panic("unable to create IRQ domain\n");
 
-	irq_id++;
 	return 0;
 }
 
@@ -226,9 +255,15 @@ static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 	u32 stat, irq;
 	int handled = 0;
 
-	while (likely(stat = readl_relaxed(dev->pending) & dev->source_mask)) {
+	while (likely(stat = readl_relaxed(dev->pending) & (dev->source_mask | dev->bank_mask))) {
 		irq = ffs(stat) - 1;
-		handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+		if (dev->bank_mask & BIT(irq)) {
+			do {
+				handled = handle_one_irq(dev->bank[irq - 1], regs);
+			} while (handled);
+		} else {
+			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+		}
 		handled = 1;
 	}
 
@@ -237,11 +272,9 @@ static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 
 asmlinkage void __exception_irq_entry armctrl_handle_irq(struct pt_regs *regs)
 {
-	int i, handled;
+	int handled;
 
 	do {
-		for (i = 0, handled = 0; i < irq_id; i++)
-			handled |= handle_one_irq(&irq_devices[i], regs);
+		handled = handle_one_irq(intc, regs);
 	} while (handled);
 }
-

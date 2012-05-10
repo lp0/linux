@@ -101,7 +101,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 	u32 intsize = 1, addrsize, newintsize = 0, newaddrsize = 0;
 	int imaplen, match, i;
 
-	pr_debug("of_irq_map_raw: par=%s,intspec=[0x%08x 0x%08x...],ointsize=%d\n",
+	pr_info("of_irq_map_raw: par=%s,intspec=[0x%08x 0x%08x...],ointsize=%d\n",
 		 parent->full_name, be32_to_cpup(intspec),
 		 be32_to_cpup(intspec + 1), ointsize);
 
@@ -122,11 +122,11 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 		of_node_put(tnode);
 	} while (ipar);
 	if (ipar == NULL) {
-		pr_debug(" -> no parent found !\n");
+		pr_info(" -> no parent found !\n");
 		goto fail;
 	}
 
-	pr_debug("of_irq_map_raw: ipar=%s, size=%d\n", ipar->full_name, intsize);
+	pr_info("of_irq_map_raw: ipar=%s, size=%d\n", ipar->full_name, intsize);
 
 	if (ointsize != intsize) {
 		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
@@ -147,7 +147,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 	old = NULL;
 	addrsize = (tmp == NULL) ? 2 : be32_to_cpu(*tmp);
 
-	pr_debug(" -> addrsize=%d\n", addrsize);
+	pr_info(" -> addrsize=%d\n", addrsize);
 
 	/* Now start the actual "proper" walk of the interrupt tree */
 	while (ipar != NULL) {
@@ -156,7 +156,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 		 */
 		if (of_get_property(ipar, "interrupt-controller", NULL) !=
 				NULL) {
-			pr_debug(" -> got it !\n");
+			pr_info(" -> got it !\n");
 			for (i = 0; i < intsize; i++)
 				out_irq->specifier[i] =
 						of_read_number(intspec +i, 1);
@@ -170,7 +170,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 		imap = of_get_property(ipar, "interrupt-map", &imaplen);
 		/* No interrupt map, check for an interrupt parent */
 		if (imap == NULL) {
-			pr_debug(" -> no map, getting parent\n");
+			pr_info(" -> no map, getting parent\n");
 			newpar = of_irq_find_parent(ipar);
 			goto skiplevel;
 		}
@@ -184,7 +184,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 		 * Fail if it's not.
 		 */
 		if (addr == NULL && addrsize != 0) {
-			pr_debug(" -> no reg passed in when needed !\n");
+			pr_info(" -> no reg passed in when needed !\n");
 			goto fail;
 		}
 
@@ -205,7 +205,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 			imap += addrsize + intsize;
 			imaplen -= addrsize + intsize;
 
-			pr_debug(" -> match=%d (imaplen=%d)\n", match, imaplen);
+			pr_info(" -> match=%d (imaplen=%d)\n", match, imaplen);
 
 			/* Get the interrupt parent */
 			if (of_irq_workarounds & OF_IMAP_NO_PHANDLE)
@@ -217,7 +217,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 
 			/* Check if not found */
 			if (newpar == NULL) {
-				pr_debug(" -> imap parent not found !\n");
+				pr_info(" -> imap parent not found !\n");
 				goto fail;
 			}
 
@@ -226,14 +226,14 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 			 */
 			tmp = of_get_property(newpar, "#interrupt-cells", NULL);
 			if (tmp == NULL) {
-				pr_debug(" -> parent lacks #interrupt-cells!\n");
+				pr_info(" -> parent lacks #interrupt-cells!\n");
 				goto fail;
 			}
 			newintsize = be32_to_cpu(*tmp);
 			tmp = of_get_property(newpar, "#address-cells", NULL);
 			newaddrsize = (tmp == NULL) ? 0 : be32_to_cpu(*tmp);
 
-			pr_debug(" -> newintsize=%d, newaddrsize=%d\n",
+			pr_info(" -> newintsize=%d, newaddrsize=%d\n",
 			    newintsize, newaddrsize);
 
 			/* Check for malformed properties */
@@ -243,7 +243,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 			imap += newaddrsize + newintsize;
 			imaplen -= newaddrsize + newintsize;
 
-			pr_debug(" -> imaplen=%d\n", imaplen);
+			pr_info(" -> imaplen=%d\n", imaplen);
 		}
 		if (!match)
 			goto fail;
@@ -257,7 +257,7 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 
 	skiplevel:
 		/* Iterate again with new parent */
-		pr_debug(" -> new parent: %s\n", newpar ? newpar->full_name : "<>");
+		pr_info(" -> new parent: %s\n", newpar ? newpar->full_name : "<>");
 		of_node_put(ipar);
 		ipar = newpar;
 		newpar = NULL;
@@ -288,7 +288,7 @@ int of_irq_map_one(struct device_node *device, int index, struct of_irq *out_irq
 	u32 intsize, intlen;
 	int res = -EINVAL;
 
-	pr_debug("of_irq_map_one: dev=%s, index=%d\n", device->full_name, index);
+	pr_info("of_irq_map_one: dev=%s, index=%d\n", device->full_name, index);
 
 	/* OldWorld mac stuff is "special", handle out of line */
 	if (of_irq_workarounds & OF_IMAP_OLDWORLD_MAC)
@@ -302,7 +302,7 @@ int of_irq_map_one(struct device_node *device, int index, struct of_irq *out_irq
 	}
 	intlen /= sizeof(*intspec);
 
-	pr_debug(" intspec=%d intlen=%d\n", be32_to_cpup(intspec), intlen);
+	pr_info(" intspec=%d intlen=%d\n", be32_to_cpup(intspec), intlen);
 
 	/* Get the reg property (if any) */
 	addr = of_get_property(device, "reg", NULL);
@@ -320,7 +320,7 @@ int of_irq_map_one(struct device_node *device, int index, struct of_irq *out_irq
 		goto out;
 	intsize = be32_to_cpu(*tmp);
 
-	pr_debug(" intsize=%d intlen=%d\n", intsize, intlen);
+	pr_info(" intsize=%d intlen=%d\n", intsize, intlen);
 
 	/* Check index */
 	if ((index + 1) * intsize > intlen)
@@ -468,7 +468,7 @@ void __init of_irq_init(const struct of_device_id *matches)
 				continue;
 			}
 
-			pr_debug("of_irq_init: init %s @ %p, parent %p\n",
+			pr_info("of_irq_init: init %s @ %p, parent %p\n",
 				 match->compatible,
 				 desc->dev, desc->interrupt_parent);
 			irq_init_cb = match->data;
