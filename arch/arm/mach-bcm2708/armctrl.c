@@ -26,43 +26,21 @@
 #include <mach/hardware.h>
 #include "armctrl.h"
 
-/* assume only one VIC for now */
-static unsigned int remap_irqs[(INTERRUPT_ARASANSDIO + 1) - INTERRUPT_JPEG] = {
-	INTERRUPT_VC_JPEG,
-	INTERRUPT_VC_USB,
-	INTERRUPT_VC_3D,
-	INTERRUPT_VC_DMA2,
-	INTERRUPT_VC_DMA3,
-	INTERRUPT_VC_I2C,
-	INTERRUPT_VC_SPI,
-	INTERRUPT_VC_I2SPCM,
-	INTERRUPT_VC_SDIO,
-	INTERRUPT_VC_UART,
-	INTERRUPT_VC_ARASANSDIO
+struct armctrl_irq {
+	unsigned int enable;
+	unsigned int disable;
 };
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
-	static const unsigned int disables[4] = {
-		IO_ADDRESS(ARM_IRQ_DIBL1),
-		IO_ADDRESS(ARM_IRQ_DIBL2),
-		IO_ADDRESS(ARM_IRQ_DIBL3),
-		0
-	};
-	unsigned int data = (unsigned int)irq_get_chip_data(d->irq);
-	writel(1 << (data & 0x1f), __io(disables[(data >> 5) & 0x3]));
+	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
+	writel(1 << d->hwirq, __io(data->disable));
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
-	static const unsigned int enables[4] = {
-		IO_ADDRESS(ARM_IRQ_ENBL1),
-		IO_ADDRESS(ARM_IRQ_ENBL2),
-		IO_ADDRESS(ARM_IRQ_ENBL3),
-		0
-	};
-	unsigned int data = (unsigned int)irq_get_chip_data(d->irq);
-	writel(1 << (data & 0x1f), __io(enables[(data >> 5) & 0x3]));
+	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
+	writel(1 << d->hwirq, __io(data->enable));
 }
 
 #if defined(CONFIG_PM)
@@ -169,27 +147,28 @@ static struct irq_chip armctrl_chip = {
 
 /**
  * armctrl_init - initialise a vectored interrupt controller
- * @base: iomem base address
- * @irq_start: starting interrupt number, must be muliple of 32
+ * @pending: iomem pending address
+ * @enable: iomem enable address
+ * @disable: iomem disable address
  * @armctrl_sources: bitmask of interrupt sources to allow
  * @resume_sources: bitmask of interrupt sources to allow for resume
  */
-int __init armctrl_init(void __iomem * base, unsigned int irq_start,
-			u32 armctrl_sources, u32 resume_sources)
+int __init armctrl_init(void __iomem *pending, void __iomem *enable,
+		void __iomem *disable, u32 armctrl_sources, u32 resume_sources)
 {
+	struct armctrl_irq data = {
+		.enable = (unsigned int)enable,
+		.disable = (unsigned int)disable
+	};
 	unsigned int irq;
 
-	for (irq = 0; irq < NR_IRQS; irq++) {
-		unsigned int data = irq;
-		if (irq >= INTERRUPT_JPEG)
-			data = remap_irqs[irq - INTERRUPT_JPEG];
-
+	for (irq = 0; irq < 32; irq++) {
 		irq_set_chip(irq, &armctrl_chip);
-		irq_set_chip_data(irq, (void *)data);
+		irq_set_chip_data(irq, (void *)&data);
 		irq_set_handler(irq, handle_level_irq);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
 	}
 
-	armctrl_pm_register(base, irq_start, resume_sources);
+	//armctrl_pm_register(base, irq_start, resume_sources);
 	return 0;
 }

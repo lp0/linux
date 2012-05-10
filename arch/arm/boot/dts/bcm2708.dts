@@ -6,7 +6,6 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 	compatible = "broadcom,bcm2708";
-	interrupt-parent = <&intc>;
 
 	cpus {
 		cpu@0 {
@@ -42,9 +41,31 @@
 			reg = <0xB000 0x1000>;
 			ranges = <0 0xB000 0x1000>;
 
-			intc: interrupt-controller@0x200 {
-				compatible = "broadcom,bcm2708-armctrl-ic";
-				reg = <0x200 0x200>;
+			vic0: interrupt-controller@0x200 {
+				compatible = "broadcom,bcm2708-armctrl-ic", "arm,primecell";
+				reg = <0x200 0x4 0x218 0x4 0x224 0x4>;
+				interrupt-controller;
+				#interrupt-cells = <1>;
+			};
+
+			vic1: interrupt-controller@0x204 {
+				compatible = "broadcom,bcm2708-armctrl-ic", "arm,primecell";
+				reg = <0x204 0x4 0x210 0x4 0x21C 0x4>;
+/*
+				interrupt-parent = <&vic0>;
+				interrupts = <8>;
+*/
+				interrupt-controller;
+				#interrupt-cells = <1>;
+			};
+
+			vic2: interrupt-controller@0x208 {
+				compatible = "broadcom,bcm2708-armctrl-ic", "arm,primecell";
+				reg = <0x208 0x4 0x214 0x4 0x220 0x4>;
+/*
+				interrupt-parent = <&vic0>;
+				interrupts = <9>;
+*/
 				interrupt-controller;
 				#interrupt-cells = <1>;
 			};
@@ -59,7 +80,8 @@
 			uart0: uart@0x201000 {
 				compatible = "arm,pl011", "arm,primecell";
 				reg = <0x201000 0x1000>;
-				interrupts = <83>;
+				interrupt-parent = <&vic0>;
+				interrupts = <19>;
 			};
 		};
 	};
