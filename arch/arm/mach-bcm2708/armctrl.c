@@ -21,6 +21,7 @@
 #include <linux/version.h>
 #include <linux/syscore_ops.h>
 #include <linux/interrupt.h>
+#include <linux/slab.h>
 
 #include <asm/mach/irq.h>
 #include <mach/hardware.h>
@@ -34,14 +35,14 @@ struct armctrl_irq {
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	printk(KERN_DEBUG "mask irq %08lx (%08x) using %08x\n", d->hwirq, d->irq, (unsigned int)data->disable);
+	printk(KERN_DEBUG "mask irq %08lx (%08x) using %p\n", d->hwirq, d->irq, data->disable);
 	writel(1 << d->hwirq, __io((unsigned int)data->disable));
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	printk(KERN_DEBUG "unmask irq %08lx (%08x) using %08x\n", d->hwirq, d->irq, (unsigned int)data->enable);
+	printk(KERN_DEBUG "unmask irq %08lx (%08x) using %p\n", d->hwirq, d->irq, data->enable);
 	writel(1 << d->hwirq, __io((unsigned int)data->enable));
 }
 
@@ -160,19 +161,22 @@ int __init armctrl_init(void __iomem *pending, void __iomem *enable,
 		void __iomem *disable, unsigned int nr_irqs, u32 armctrl_sources,
 		u32 resume_sources)
 {
-	struct armctrl_irq data = {
-		.enable = enable,
-		.disable = disable
-	};
+	struct armctrl_irq *data = kmalloc(sizeof(struct armctrl_irq), GFP_KERNEL);
 	unsigned int irq;
 
-	printk(KERN_DEBUG "pending = %08x\n", pending);
-	printk(KERN_DEBUG "enable = %08x\n", enable);
-	printk(KERN_DEBUG "disable = %08x\n", disable);
+	if (data == NULL)
+		return -ENOMEM;
+
+	data->enable = enable;
+	data->disable = disable;
+
+	printk(KERN_DEBUG "pending = %p\n", pending);
+	printk(KERN_DEBUG "enable = %p\n", enable);
+	printk(KERN_DEBUG "disable = %p\n", disable);
 
 	for (irq = 0; irq < nr_irqs; irq++) {
 		irq_set_chip(irq, &armctrl_chip);
-		irq_set_chip_data(irq, (void *)&data);
+		irq_set_chip_data(irq, (void *)data);
 		irq_set_handler(irq, handle_level_irq);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
 	}
