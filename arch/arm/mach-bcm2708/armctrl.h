@@ -20,7 +20,10 @@
 #define __BCM2708_ARMCTRL_H
 
 extern int __init armctrl_init(void __iomem *pending, void __iomem *enable,
-		void __iomem *disable, unsigned int nr_irqs, u32 armctrl_sources,
-		u32 resume_sources);
+		void __iomem *disable, unsigned int base_irq, unsigned int nr_irqs,
+		u32 armctrl_sources, u32 resume_sources);
+
+extern asmlinkage void __exception_irq_entry armctrl_handle_irq(
+		struct pt_regs *regs);
 
 #endif

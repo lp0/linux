@@ -24,6 +24,7 @@
 #include <linux/slab.h>
 
 #include <asm/mach/irq.h>
+#include <asm/exception.h>
 #include <mach/hardware.h>
 #include "armctrl.h"
 
@@ -34,16 +35,14 @@ struct armctrl_irq {
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
-	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	printk(KERN_DEBUG "mask irq %08lx (%08x) using %p\n", d->hwirq, d->irq, data->disable);
-	writel(1 << d->hwirq, __io((unsigned int)data->disable));
+	struct armctrl_irq *data = irq_get_chip_data(d->irq);
+	writel(1 << d->hwirq, data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
-	struct armctrl_irq *data = (struct armctrl_irq *)irq_get_chip_data(d->irq);
-	printk(KERN_DEBUG "unmask irq %08lx (%08x) using %p\n", d->hwirq, d->irq, data->enable);
-	writel(1 << d->hwirq, __io((unsigned int)data->enable));
+	struct armctrl_irq *data = irq_get_chip_data(d->irq);
+	writel(1 << d->hwirq, data->enable);
 }
 
 #if defined(CONFIG_PM)
@@ -158,10 +157,11 @@ static struct irq_chip armctrl_chip = {
  * @resume_sources: bitmask of interrupt sources to allow for resume
  */
 int __init armctrl_init(void __iomem *pending, void __iomem *enable,
-		void __iomem *disable, unsigned int nr_irqs, u32 armctrl_sources,
+		void __iomem *disable, unsigned int base_irq,
+		unsigned int nr_irqs, u32 armctrl_sources,
 		u32 resume_sources)
 {
-	struct armctrl_irq *data = kmalloc(sizeof(struct armctrl_irq), GFP_KERNEL);
+	struct armctrl_irq *data = kmalloc(sizeof(*data), GFP_KERNEL);
 	unsigned int irq;
 
 	if (data == NULL)
@@ -174,13 +174,73 @@ int __init armctrl_init(void __iomem *pending, void __iomem *enable,
 	printk(KERN_DEBUG "enable = %p\n", enable);
 	printk(KERN_DEBUG "disable = %p\n", disable);
 
-	for (irq = 0; irq < nr_irqs; irq++) {
-		irq_set_chip(irq, &armctrl_chip);
-		irq_set_chip_data(irq, (void *)data);
-		irq_set_handler(irq, handle_level_irq);
+	for (irq = base_irq; irq < base_irq + nr_irqs; irq++) {
+		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
+		irq_set_chip_data(irq, data);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
 	}
 
 	//armctrl_pm_register(base, irq_start, resume_sources);
 	return 0;
 }
+
+static int shortcut_irq_map[] = {
+	7,
+	9, 10,
+	18, 19,
+	53, 54, 55, 56, 57,
+	62
+};
+
+static inline u32 first_banked_irqnum(void __iomem *pending)
+{
+	u32 stat, irq;
+
+	stat = readl_relaxed(pending);
+	irq = ffs(stat) - 1;
+
+	return irq;
+}
+
+/*
+ * Handle each interrupt across the entire interrupt controller.  Returns
+ * non-zero if we've handled at least one interrupt.  This reads the status
+ * register before handling each interrupt, which is necessary given that
+ * handle_IRQ may briefly re-enable interrupts for soft IRQ handling.
+ */
+static int handle_one_irq(struct pt_regs *regs)
+{
+	u32 stat, irq;
+	int handled = 0;
+
+	while (likely(stat = readl_relaxed(__io_address(ARM_IRQ_PEND0)))) {
+		if (stat & 0xff) { /* ARM peripherals interrupts */
+			irq = ARM_IRQ0_BASE + ffs(stat & 0xff) - 1;
+		} else if (stat & 0x1ffc00) { /* Shortcut interrupts */
+			irq = shortcut_irq_map[ffs(stat & 0x1ffc00) - 11];
+		} else if (stat & ARM_I0_BANK1) { /* Bank 1 interrupts */
+			irq = ARM_IRQ1_BASE + first_banked_irqnum(
+					__io_address(ARM_IRQ_PEND1));
+		} else if (stat & ARM_I0_BANK2) { /* Bank 2 interrupts */
+			irq = ARM_IRQ2_BASE + first_banked_irqnum(
+					__io_address(ARM_IRQ_PEND2));
+		} else {
+			BUG();
+		}
+
+		handle_IRQ(irq, regs);
+		handled = 1;
+	}
+
+	return handled;
+}
+
+asmlinkage void __exception_irq_entry armctrl_handle_irq(struct pt_regs *regs)
+{
+	int handled;
+
+	do {
+		handled = handle_one_irq(regs);
+	} while (handled);
+}
+

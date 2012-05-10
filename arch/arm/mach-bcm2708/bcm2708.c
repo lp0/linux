@@ -36,6 +36,7 @@
 #include <asm/irq.h>
 #include <asm/mach-types.h>
 #include <asm/sched_clock.h>
+#include <asm/exception.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
@@ -72,10 +73,11 @@ int __init bcm2708_of_irq_init(struct device_node *node,
 	void __iomem *disable = of_iomap(node, 2);
 	int base_irq;
 	int nr_irqs;
+	struct irq_domain *domain;
 
 	/* provide an interrupt map from dt */
 	switch ((unsigned int)pending) {
-	case 0xf200b200: base_irq = 64; nr_irqs = 21; break;
+	case 0xf200b200: base_irq = 64; nr_irqs = 8; break;
 	case 0xf200b204: base_irq = 0; nr_irqs = 32; break;
 	case 0xf200b208: base_irq = 32; nr_irqs = 32; break;
 	default: BUG();
@@ -88,8 +90,12 @@ int __init bcm2708_of_irq_init(struct device_node *node,
 	if (!disable)
 		panic("unable to map vic disable cpu register\n");
 
-	irq_domain_add_legacy(node, nr_irqs, base_irq, 0, &irq_domain_simple_ops, NULL);
-	armctrl_init(pending, enable, disable, nr_irqs, 0, 0);
+	domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
+			&irq_domain_simple_ops, NULL);
+	if (!domain)
+		panic("unable to create IRQ domain\n");
+
+	armctrl_init(pending, enable, disable, base_irq, nr_irqs, 0, 0);
 	return 0;
 }
 
@@ -100,6 +106,11 @@ static const struct of_device_id irq_of_match[] __initconst = {
 void __init bcm2708_init_irq(void)
 {
 	of_irq_init(irq_of_match);
+}
+
+asmlinkage void __exception_irq_entry bcm2708_handle_irq(struct pt_regs *regs)
+{
+	armctrl_handle_irq(regs);
 }
 
 /*
@@ -271,6 +282,7 @@ MACHINE_START(BCM2708, "BCM2708")
 	.init_machine = bcm2708_init,
 	.map_io = bcm2708_map_io,
 	.init_irq = bcm2708_init_irq,
+	.handle_irq = armctrl_handle_irq,
 	.timer = &bcm2708_timer,
 	.dt_compat = bcm2708_compat
 MACHINE_END
