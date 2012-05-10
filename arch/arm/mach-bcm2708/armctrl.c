@@ -22,6 +22,8 @@
 #include <linux/syscore_ops.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
+#include <linux/of_address.h>
+#include <linux/irqdomain.h>
 
 #include <asm/mach/irq.h>
 #include <asm/exception.h>
@@ -29,20 +31,28 @@
 #include "armctrl.h"
 
 struct armctrl_irq {
+	void __iomem *pending;
 	void __iomem *enable;
 	void __iomem *disable;
+	u32 source_mask;
+	struct irq_domain *domain;
 };
+
+static struct armctrl_irq irq_devices[3];
+static int irq_id;
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	writel(1 << d->hwirq, data->disable);
+	if ((1 << d->hwirq) & data->source_mask)
+		writel(1 << d->hwirq, data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	writel(1 << d->hwirq, data->enable);
+	if ((1 << d->hwirq) & data->source_mask)
+		writel(1 << d->hwirq, data->enable);
 }
 
 #if defined(CONFIG_PM)
@@ -143,63 +153,66 @@ static struct irq_chip armctrl_chip = {
 	.name = "ARMCTRL",
 	.irq_ack = armctrl_mask_irq,
 	.irq_mask = armctrl_mask_irq,
+	.irq_mask_ack = armctrl_mask_irq,
 	.irq_unmask = armctrl_unmask_irq,
 	.irq_set_wake = armctrl_set_wake,
 };
 
-/**
- * armctrl_init - initialise a vectored interrupt controller
- * @pending: iomem pending address
- * @enable: iomem enable address
- * @disable: iomem disable address
- * @nr_irqs
- * @armctrl_sources: bitmask of interrupt sources to allow
- * @resume_sources: bitmask of interrupt sources to allow for resume
- */
-int __init armctrl_init(void __iomem *pending, void __iomem *enable,
-		void __iomem *disable, unsigned int base_irq,
-		unsigned int nr_irqs, u32 armctrl_sources,
-		u32 resume_sources)
+int __init armctrl_of_init(struct device_node *node,
+		struct device_node *parent)
 {
-	struct armctrl_irq *data = kmalloc(sizeof(*data), GFP_KERNEL);
-	unsigned int irq;
+	struct armctrl_irq *data;
+	unsigned int i, irq;
 
-	if (data == NULL)
-		return -ENOMEM;
+	int base_irq;
+	int nr_irqs;
 
-	data->enable = enable;
-	data->disable = disable;
+	if (irq_id >= ARRAY_SIZE(irq_devices)) {
+		printk(KERN_ERR "%s: too few IRQ devices\n", __func__);
+		return -EBUSY;
+	}
 
-	printk(KERN_DEBUG "pending = %p\n", pending);
-	printk(KERN_DEBUG "enable = %p\n", enable);
-	printk(KERN_DEBUG "disable = %p\n", disable);
+	data = &irq_devices[irq_id];
+	data->pending = of_iomap(node, 0);
+	data->enable = of_iomap(node, 1);
+	data->disable = of_iomap(node, 2);
+	data->source_mask = ~0;
 
-	for (irq = base_irq; irq < base_irq + nr_irqs; irq++) {
+	/* FIXME: provide an interrupt map from dt */
+	switch ((unsigned int)data->pending) {
+	case 0xf200b200:
+		base_irq = 64; nr_irqs = 10;
+		data->source_mask = 0xff;
+		break;
+	case 0xf200b204: base_irq = 0; nr_irqs = 32; break;
+	case 0xf200b208: base_irq = 32; nr_irqs = 32; break;
+	default: BUG();
+	}
+
+	if (!data->pending)
+		panic("unable to map vic pending cpu register\n");
+	if (!data->enable)
+		panic("unable to map vic enable cpu register\n");
+	if (!data->disable)
+		panic("unable to map vic disable cpu register\n");
+
+	for (i = 0; i < nr_irqs; i++) {
+		if (!(data->source_mask & (1 << i)))
+			continue;
+
+		irq = base_irq + i;
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
 		irq_set_chip_data(irq, data);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
 	}
 
-	//armctrl_pm_register(base, irq_start, resume_sources);
+	data->domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
+			&irq_domain_simple_ops, NULL);
+	if (!data->domain)
+		panic("unable to create IRQ domain\n");
+
+	irq_id++;
 	return 0;
-}
-
-static int shortcut_irq_map[] = {
-	7,
-	9, 10,
-	18, 19,
-	53, 54, 55, 56, 57,
-	62
-};
-
-static inline u32 first_banked_irqnum(void __iomem *pending)
-{
-	u32 stat, irq;
-
-	stat = readl_relaxed(pending);
-	irq = ffs(stat) - 1;
-
-	return irq;
 }
 
 /*
@@ -208,27 +221,14 @@ static inline u32 first_banked_irqnum(void __iomem *pending)
  * register before handling each interrupt, which is necessary given that
  * handle_IRQ may briefly re-enable interrupts for soft IRQ handling.
  */
-static int handle_one_irq(struct pt_regs *regs)
+static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 {
 	u32 stat, irq;
 	int handled = 0;
 
-	while (likely(stat = readl_relaxed(__io_address(ARM_IRQ_PEND0)))) {
-		if (stat & 0xff) { /* ARM peripherals interrupts */
-			irq = ARM_IRQ0_BASE + ffs(stat & 0xff) - 1;
-		} else if (stat & 0x1ffc00) { /* Shortcut interrupts */
-			irq = shortcut_irq_map[ffs(stat & 0x1ffc00) - 11];
-		} else if (stat & ARM_I0_BANK1) { /* Bank 1 interrupts */
-			irq = ARM_IRQ1_BASE + first_banked_irqnum(
-					__io_address(ARM_IRQ_PEND1));
-		} else if (stat & ARM_I0_BANK2) { /* Bank 2 interrupts */
-			irq = ARM_IRQ2_BASE + first_banked_irqnum(
-					__io_address(ARM_IRQ_PEND2));
-		} else {
-			BUG();
-		}
-
-		handle_IRQ(irq, regs);
+	while (likely(stat = readl_relaxed(dev->pending) & dev->source_mask)) {
+		irq = ffs(stat) - 1;
+		handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
 		handled = 1;
 	}
 
@@ -237,10 +237,11 @@ static int handle_one_irq(struct pt_regs *regs)
 
 asmlinkage void __exception_irq_entry armctrl_handle_irq(struct pt_regs *regs)
 {
-	int handled;
+	int i, handled;
 
 	do {
-		handled = handle_one_irq(regs);
+		for (i = 0, handled = 0; i < irq_id; i++)
+			handled |= handle_one_irq(&irq_devices[i], regs);
 	} while (handled);
 }
 

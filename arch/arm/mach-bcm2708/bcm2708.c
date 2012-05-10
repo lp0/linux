@@ -25,7 +25,6 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
-#include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/irqdomain.h>
 
@@ -65,42 +64,8 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-int __init bcm2708_of_irq_init(struct device_node *node,
-		struct device_node *parent)
-{
-	void __iomem *pending = of_iomap(node, 0);
-	void __iomem *enable = of_iomap(node, 1);
-	void __iomem *disable = of_iomap(node, 2);
-	int base_irq;
-	int nr_irqs;
-	struct irq_domain *domain;
-
-	/* provide an interrupt map from dt */
-	switch ((unsigned int)pending) {
-	case 0xf200b200: base_irq = 64; nr_irqs = 8; break;
-	case 0xf200b204: base_irq = 0; nr_irqs = 32; break;
-	case 0xf200b208: base_irq = 32; nr_irqs = 32; break;
-	default: BUG();
-	}
-
-	if (!pending)
-		panic("unable to map vic pending cpu register\n");
-	if (!enable)
-		panic("unable to map vic enable cpu register\n");
-	if (!disable)
-		panic("unable to map vic disable cpu register\n");
-
-	domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
-			&irq_domain_simple_ops, NULL);
-	if (!domain)
-		panic("unable to create IRQ domain\n");
-
-	armctrl_init(pending, enable, disable, base_irq, nr_irqs, 0, 0);
-	return 0;
-}
-
 static const struct of_device_id irq_of_match[] __initconst = {
-	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = bcm2708_of_irq_init }
+	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = armctrl_of_init }
 };
 
 void __init bcm2708_init_irq(void)
