@@ -168,7 +168,7 @@ int __init armctrl_of_init(struct device_node *node,
 	int nr_irqs;
 
 	if (irq_id >= ARRAY_SIZE(irq_devices)) {
-		printk(KERN_ERR "%s: too few IRQ devices\n", __func__);
+		printk(KERN_ERR "%s: too many IRQ devices\n", __func__);
 		return -EBUSY;
 	}
 
