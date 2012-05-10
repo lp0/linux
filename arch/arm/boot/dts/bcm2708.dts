@@ -80,8 +80,8 @@
 			uart0: uart@0x201000 {
 				compatible = "arm,pl011", "arm,primecell";
 				reg = <0x201000 0x1000>;
-				interrupt-parent = <&vic0>;
-				interrupts = <19>;
+				interrupt-parent = <&vic2>;
+				interrupts = <25>;
 			};
 		};
 	};
