@@ -14,6 +14,36 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ *
+ * Quirk 1: Shortcut interrupts don't set the bank 1/2 register pending bits
+ *
+ * If an interrupt fires on bank 1 that isn't in the shortcuts list, bit 8
+ * on bank 0 is set to signify that an interrupt in bank 1 has fired, and
+ * to look in the bank 1 status register for more information.
+ *
+ * If an interrupt fires on bank 1 that _is_ in the shortcuts list, its
+ * shortcut bit in bank 0 is set as well as its interrupt bit in the bank 1
+ * status register, but bank 0 bit 8 is _not_ set.
+ *
+ * Quirk 2: You can't mask the register 1/2 pending interrupts
+ *
+ * In a proper cascaded interrupt controller, the interrupt lines with
+ * cascaded interrupt controllers on them are just normal interrupt lines.
+ * You can mask the interrupts and get on with things. With this controller
+ * you can't do that.
+ *
+ * Quirk 3: The shortcut interrupts can't be (un)masked in bank 0
+ *
+ * Those interrupts that have shortcuts can only be masked/unmasked in
+ * their respective banks' enable/disable registers. Doing so in the bank 0
+ * enable/disable registers has no effect.
+ *
+ *
+ * Each bank is registered as a separate interrupt controller but the
+ * interrupt handler only acts on the top level interrupt controller,
+ * routing shortcut interrupts directly and reading interrupts from the
+ * other banks only when required.
  */
 #include <linux/init.h>
 #include <linux/list.h>
