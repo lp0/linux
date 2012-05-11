@@ -205,7 +205,7 @@ int __init armctrl_of_init(struct device_node *node,
 	data->source_mask = of_read_u32(node, "source-mask", ~0);
 	data->bank_mask = of_read_u32(node, "bank-mask", 0);
 	data->shortcut_mask = of_read_u32(node, "shortcut-mask", 0);
-	data->valid_mask = data->source_mask | data->bank_mask | data->shortcut_mask;
+	data->valid_mask = data->source_mask;
 
 	if (data->source_mask & data->bank_mask)
 		panic("%s: vic source mask %08x overlap with bank mask %08x: %08x\n",
@@ -245,6 +245,13 @@ int __init armctrl_of_init(struct device_node *node,
 				node->full_name, bank_id);
 
 		data->parent->bank[bank_id] = data;
+		data->parent->valid_mask |= BIT(bank_id);
+
+		for (i = 0; i < 32; i++) {
+			if (data->parent->shortcut_bank[i] == bank_id) {
+				data->parent->valid_mask |= BIT(i);
+			}
+		}
 	}
 
 	nr_smap = 0;
@@ -324,14 +331,10 @@ static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 			int bank = dev->shortcut_bank[irq];
 			irq = dev->shortcut_irq[irq];
 
-			if (dev->bank[bank]) {
-				handle_IRQ(irq_find_mapping(
-					dev->bank[bank]->domain, irq), regs);
-			}
+			handle_IRQ(irq_find_mapping(dev->bank[bank]->domain,
+				irq), regs);
 		} else if (dev->bank_mask & BIT(irq)) {
-			if (dev->bank[irq]) {
-				handle_one_irq(dev->bank[irq], regs);
-			}
+			handle_one_irq(dev->bank[irq], regs);
 		} else {
 			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
 		}
