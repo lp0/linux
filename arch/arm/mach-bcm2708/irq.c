@@ -70,6 +70,7 @@ struct armctrl_ic {
 	struct irq_domain *domain;
 
 	u32 valid_mask;
+	u32 source_mask;
 	u32 shortcut_mask;
 	u32 bank_mask;
 
@@ -84,7 +85,6 @@ struct armctrl_ic {
 struct of_armctrl_ic {
 	u32 base_irq;
 	u32 bank_id;
-	u32 source_mask;
 
 	struct armctrl_ic *ic;
 };
@@ -164,16 +164,19 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 	of_property_read_u32(node, "interrupt-base", &data->base_irq);
 	of_property_read_u32(node, "bank-interrupt", &data->bank_id);
 
-	if (of_property_read_u32(node, "source-mask", &data->source_mask))
-		data->source_mask = ~0;
+	if (of_property_read_u32(node, "source-mask", &data->ic->source_mask))
+		data->ic->source_mask = ~0;
 	of_property_read_u32(node, "bank-mask", &data->ic->bank_mask);
 	of_property_read_u32(node, "shortcut-mask", &data->ic->shortcut_mask);
-	data->ic->valid_mask = data->source_mask;
+	data->ic->valid_mask = data->ic->source_mask;
 
-	if ((data->source_mask & data->ic->bank_mask)
-			|| (data->source_mask & data->ic->shortcut_mask)
-			|| (data->ic->bank_mask & data->ic->shortcut_mask))
-		panic("%s: vic mask overlap\n", node->full_name);
+	if ((data->ic->source_mask & data->ic->bank_mask)
+			|| (data->ic->source_mask & data->ic->shortcut_mask)
+			|| (data->ic->bank_mask & data->ic->shortcut_mask)) {
+		panic("%s: vic mask overlap %08x,%08x,%08x\n", node->full_name,
+			data->ic->source_mask, data->ic->shortcut_mask,
+			data->ic->bank_mask);
+	}
 
 	nr_shortcuts = 0;
 	for (i = 0; i < 32; i++) {
@@ -236,7 +239,7 @@ int __init armctrl_of_init(struct device_node *node,
 
 	nr_irqs = 0;
 	for (i = 0, irq = data->base_irq; i < 32; i++, irq++) {
-		if (!(data->source_mask & BIT(i)))
+		if (!(data->ic->source_mask & BIT(i)))
 			continue;
 
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
@@ -267,15 +270,19 @@ void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 {
 	u32 stat, irq;
 
-	while (likely(stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
-		irq = ffs(stat) - 1;
-		if (dev->shortcut_mask & BIT(irq)) {
+	while ((stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
+		if (stat & dev->source_mask) {
+			irq = ffs(stat & dev->source_mask) - 1;
+			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+		} else if (stat & dev->shortcut_mask) {
+			irq = ffs(stat & dev->shortcut_mask) - 1;
 			handle_IRQ(irq_find_mapping(dev->shortcuts[irq].domain,
 				dev->shortcuts[irq].irq), regs);
-		} else if (dev->bank_mask & BIT(irq)) {
+		} else if (stat & dev->bank_mask) {
+			irq = ffs(stat & dev->bank_mask) - 1;
 			handle_one_irq(dev->banks[irq], regs);
 		} else {
-			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+			BUG();
 		}
 	}
 }
