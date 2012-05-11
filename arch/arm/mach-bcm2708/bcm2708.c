@@ -102,7 +102,7 @@ static cycle_t stc_read_cycles(struct clocksource *cs)
 }
 
 static struct clocksource clocksource_stc = {
-	.name	= "stc",
+	.name	= "xstc",
 	.rating	= 300,
 	.read	= stc_read_cycles,
 	.mask	= CLOCKSOURCE_MASK(32),
@@ -154,9 +154,9 @@ static void timer_set_mode(enum clock_event_mode mode,
 		/* stc3 */
 		writel(stc + TIMER_PERIOD, __io_address(ST_BASE + 0x18));
 		break;
-	case CLOCK_EVT_MODE_ONESHOT:
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
+	case CLOCK_EVT_MODE_RESUME:
 		break;
 	default:
 		printk(KERN_ERR "timer_set_mode: unhandled mode: %d\n",
@@ -210,7 +210,7 @@ static struct irqaction bcm2708_timer_irq = {
 static void __init bcm2708_timer_init(void)
 {
 	/* init high res timer */
-	bcm2708_clocksource_init();
+//	bcm2708_clocksource_init();
 
 	/* Initialise to a known state (all timers off) */
 	writel(0, __io_address(ARM_T_CONTROL));

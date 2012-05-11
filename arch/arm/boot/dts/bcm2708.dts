@@ -20,7 +20,8 @@
 		reg = <0x20000000 0x01000000>;
 		ranges = <0 0x20000000 0x01000000>;
 
-		st: timer@0x3000 {
+
+		st@0x3000 {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -28,9 +29,47 @@
 			ranges = <0 0x3000 0x1000>;
 
 			stc: clock@0x004 {
-				compatible = "fixed-clock";
-				clock-outputs = "sys";
+				compatible = "broadcom,bcm2708-armctrl-sc", "mmio-clock";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x004 0x4 0x000 0x4>;
 				clock-frequency = <1000000>;
+
+				timer0: timer@0x00c {
+					compatible = "broadcom,bcm2708-armctrl-st";
+					reg = <0x00c 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <0>;
+
+					index = <0>;
+				};
+
+				timer1: timer@0x010 {
+					compatible = "broadcom,bcm2708-armctrl-st";
+					reg = <0x010 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <1>;
+
+					index = <1>;
+				};
+
+				timer2: timer@0x014 {
+					compatible = "broadcom,bcm2708-armctrl-st";
+					reg = <0x014 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <2>;
+
+					index = <2>;
+				};
+
+				timer3: timer@0x018 {
+					compatible = "broadcom,bcm2708-armctrl-st";
+					reg = <0x018 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <3>;
+
+					index = <3>;
+				};
 			};
 		};
 
@@ -96,6 +135,16 @@
 					bank-interrupt = <9>;
 					interrupt-base = <32>;
 				};
+			};
+
+			armtimer@0x400 {
+				compatible = "broadcom,bcm2708-armtimer";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x400 0x24>;
+
+				interrupt-parent = <&vic0>;
+				interrupts = <0>;
 			};
 		};
 
