@@ -58,7 +58,7 @@
 #include <asm/mach/irq.h>
 #include <asm/exception.h>
 #include <mach/hardware.h>
-#include "armctrl.h"
+#include "irq.h"
 
 #define IS_VALID_BANK(x) ((x > 0) && (x < 32))
 #define IS_VALID_IRQ(x) (x < 32)

@@ -44,8 +44,8 @@
 #include <asm/mach/map.h>
 
 #include "bcm2708.h"
-#include "armctrl.h"
 #include "clock.h"
+#include "irq.h"
 
 /* command line parameters */
 static unsigned boardrev, serial;

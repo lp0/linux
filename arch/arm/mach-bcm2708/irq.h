@@ -16,8 +16,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef __BCM2708_ARMCTRL_H
-#define __BCM2708_ARMCTRL_H
+#ifndef __BCM2708_IRQ_H
+#define __BCM2708_IRQ_H
 
 extern int __init armctrl_of_init(struct device_node *node,
 		struct device_node *parent);
