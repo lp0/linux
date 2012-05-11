@@ -295,7 +295,7 @@ int __init armctrl_of_init(struct device_node *node,
 		}
 	}
 
-	for (i = 0; i < nr_irqs; i++) {
+	for (i = 0; i < 32; i++) {
 		int irq;
 
 		if (!(data->source_mask & BIT(i)))
