@@ -55,7 +55,6 @@
 					#interrupt-cells = <1>;
 
 					interrupt-base = <64>;
-					interrupt-count = <10>;
 
 					source-mask = <0x000000ff>;
 					bank-mask = <0x00000300>;
@@ -84,7 +83,6 @@
 
 					bank-interrupt = <8>;
 					interrupt-base = <0>;
-					interrupt-count = <32>;
 				};
 
 				vic2: interrupt-controller@0x008 {
@@ -97,7 +95,6 @@
 
 					bank-interrupt = <9>;
 					interrupt-base = <32>;
-					interrupt-count = <32>;
 				};
 			};
 		};

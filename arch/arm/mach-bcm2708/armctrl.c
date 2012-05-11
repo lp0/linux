@@ -202,11 +202,7 @@ int __init armctrl_of_init(struct device_node *node,
 			node->full_name);
 
 	base_irq = of_read_u32(node, "interrupt-base", 0);
-	nr_irqs = of_read_u32(node, "interrupt-count", 0);
 	bank_id = of_read_u32(node, "bank-interrupt", 0);
-
-	if (nr_irqs > 32)
-		panic("%s: nr_irqs too large: %u\n", node->full_name, nr_irqs);
 
 	data->source_mask = of_read_u32(node, "source-mask", ~0);
 	data->bank_mask = of_read_u32(node, "bank-mask", 0);
@@ -227,9 +223,6 @@ int __init armctrl_of_init(struct device_node *node,
 			data->bank_mask & data->shortcut_mask);
 
 	if (parent == NULL) {
-		printk(KERN_DEBUG "%s: %d+%d IRQs at 0x%p\n", node->full_name,
-			base_irq, nr_irqs, data->pending);
-
 		if (intc != NULL)
 			panic("%s: attempted to register more than one top level vic\n",
 				node->full_name);
@@ -242,18 +235,17 @@ int __init armctrl_of_init(struct device_node *node,
 				node->full_name);
 
 		data->parent = *(struct armctrl_irq **)parent->data;
-		printk(KERN_DEBUG "%s: %d+%d IRQs at 0x%p[%d]->0x%p\n",
-			node->full_name, base_irq, nr_irqs,
-			data->parent->pending, bank_id, data->pending);
-
 		BUG_ON(data->parent == NULL);
+
 		if (bank_id == 0 || bank_id > 32
 				|| !(data->parent->bank_mask & BIT(bank_id)))
 			panic("%s: attempted to register invalid vic bank %d\n",
 				node->full_name, bank_id);
+
 		if (data->parent->bank[bank_id])
 			panic("%s: attempted to register vic bank %d twice\n",
 				node->full_name, bank_id);
+
 		data->parent->bank[bank_id] = data;
 	}
 
@@ -295,6 +287,7 @@ int __init armctrl_of_init(struct device_node *node,
 		}
 	}
 
+	nr_irqs = 0;
 	for (i = 0; i < 32; i++) {
 		int irq;
 
@@ -305,6 +298,7 @@ int __init armctrl_of_init(struct device_node *node,
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
 		irq_set_chip_data(irq, data);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
+		nr_irqs++;
 	}
 
 	data->domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
