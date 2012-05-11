@@ -25,7 +25,6 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
-#include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/irqdomain.h>
 
@@ -36,6 +35,7 @@
 #include <asm/irq.h>
 #include <asm/mach-types.h>
 #include <asm/sched_clock.h>
+#include <asm/exception.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
@@ -64,25 +64,18 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-int __init bcm_of_irq_init(struct device_node *node,
-		struct device_node *parent)
-{
-	void __iomem *base = of_iomap(node, 0);
-	if (!base)
-		panic("unable to map intc cpu registers\n");
-
-	irq_domain_add_legacy(node, NR_IRQS, 0, 0, &irq_domain_simple_ops, NULL);
-	armctrl_init(base, 0, 0, 0);
-	return 0;
-}
-
 static const struct of_device_id irq_of_match[] __initconst = {
-	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = bcm_of_irq_init }
+	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = armctrl_of_init }
 };
 
 void __init bcm2708_init_irq(void)
 {
 	of_irq_init(irq_of_match);
+}
+
+asmlinkage void __exception_irq_entry bcm2708_handle_irq(struct pt_regs *regs)
+{
+	armctrl_handle_irq(regs);
 }
 
 /*
@@ -254,6 +247,7 @@ MACHINE_START(BCM2708, "BCM2708")
 	.init_machine = bcm2708_init,
 	.map_io = bcm2708_map_io,
 	.init_irq = bcm2708_init_irq,
+	.handle_irq = armctrl_handle_irq,
 	.timer = &bcm2708_timer,
 	.dt_compat = bcm2708_compat
 MACHINE_END
