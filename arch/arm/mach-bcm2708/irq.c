@@ -111,14 +111,6 @@ static struct irq_chip armctrl_chip = {
 	.irq_unmask = armctrl_unmask_irq
 };
 
-static u32 of_read_u32(const struct device_node *np, const char *name, u32 def)
-{
-	const __be32 *prop = of_get_property(np, name, NULL);
-	if (prop)
-		return be32_to_cpup(prop);
-	return def;
-}
-
 void of_read_armctrl_shortcuts(struct device_node *node, int count)
 {
 	struct of_armctrl_ic *data = node->data;
@@ -169,12 +161,13 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 		panic("%s: unable to map all vic cpu registers\n",
 			node->full_name);
 
-	data->base_irq = of_read_u32(node, "interrupt-base", 0);
-	data->bank_id = of_read_u32(node, "bank-interrupt", 0);
+	of_property_read_u32(node, "interrupt-base", &data->base_irq);
+	of_property_read_u32(node, "bank-interrupt", &data->bank_id);
 
-	data->source_mask = of_read_u32(node, "source-mask", ~0);
-	data->ic->bank_mask = of_read_u32(node, "bank-mask", 0);
-	data->ic->shortcut_mask = of_read_u32(node, "shortcut-mask", 0);
+	if (of_property_read_u32(node, "source-mask", &data->source_mask))
+		data->source_mask = ~0;
+	of_property_read_u32(node, "bank-mask", &data->ic->bank_mask);
+	of_property_read_u32(node, "shortcut-mask", &data->ic->shortcut_mask);
 	data->ic->valid_mask = data->source_mask;
 
 	if ((data->source_mask & data->ic->bank_mask)
