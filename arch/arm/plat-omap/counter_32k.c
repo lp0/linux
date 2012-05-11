@@ -112,7 +112,7 @@ int __init omap_init_clocksource_32k(void)
 				32768, NSEC_PER_SEC, 120000);
 
 		if (clocksource_mmio_init(base, "32k_counter", 32768, 250, 32,
-					  clocksource_mmio_readl_up))
+					  NULL, clocksource_mmio_readl_up))
 			printk(err, "32k_counter");
 
 		setup_sched_clock(omap_32k_read_sched_clock, 32, 32768);

@@ -122,7 +122,7 @@ static int __init mxc_clocksource_init(struct clk *timer_clk)
 
 	setup_sched_clock(mxc_read_sched_clock, 32, c);
 	return clocksource_mmio_init(reg, "mxc_timer1", c, 200, 32,
-			clocksource_mmio_readl_up);
+			NULL, clocksource_mmio_readl_up);
 }
 
 /* clock event */

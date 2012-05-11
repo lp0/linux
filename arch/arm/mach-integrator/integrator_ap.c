@@ -346,7 +346,7 @@ static void integrator_clocksource_init(unsigned long inrate)
 	writel(ctrl, base + TIMER_CTRL);
 
 	clocksource_mmio_init(base + TIMER_VALUE, "timer2",
-			rate, 200, 16, clocksource_mmio_readl_down);
+			rate, 200, 16, NULL, clocksource_mmio_readl_down);
 	setup_sched_clock(integrator_read_sched_clock, 16, rate);
 }
 

@@ -88,7 +88,7 @@ static int __init epit_clocksource_init(struct clk *timer_clk)
 	unsigned int c = clk_get_rate(timer_clk);
 
 	return clocksource_mmio_init(timer_base + EPITCNR, "epit", c, 200, 32,
-			clocksource_mmio_readl_down);
+			NULL, clocksource_mmio_readl_down);
 }
 
 /* clock event */

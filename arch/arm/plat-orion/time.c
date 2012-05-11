@@ -215,7 +215,7 @@ orion_time_init(u32 _bridge_base, u32 _bridge_timer1_clr_mask,
 	u = readl(timer_base + TIMER_CTRL_OFF);
 	writel(u | TIMER0_EN | TIMER0_RELOAD_EN, timer_base + TIMER_CTRL_OFF);
 	clocksource_mmio_init(timer_base + TIMER0_VAL_OFF, "orion_clocksource",
-		tclk, 300, 32, clocksource_mmio_readl_down);
+		tclk, 300, 32, NULL, clocksource_mmio_readl_down);
 
 	/*
 	 * Setup clockevent timer (interrupt-driven).

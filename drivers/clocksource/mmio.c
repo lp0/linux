@@ -47,13 +47,15 @@ cycle_t clocksource_mmio_readw_down(struct clocksource *c)
  * @hz:		Frequency of the clocksource in Hz
  * @rating:	Rating of the clocksource
  * @bits:	Number of valid bits
+ * @cp:         Returned registered clocksource
  * @read:	One of clocksource_mmio_read*() above
  */
-int __init clocksource_mmio_init(void __iomem *base, const char *name,
-	unsigned long hz, int rating, unsigned bits,
+int __devinit clocksource_mmio_init(void __iomem *base, const char *name,
+	unsigned long hz, int rating, unsigned bits, struct clocksource **cp,
 	cycle_t (*read)(struct clocksource *))
 {
 	struct clocksource_mmio *cs;
+	int ret;
 
 	if (bits > 32 || bits < 16)
 		return -EINVAL;
@@ -69,5 +71,21 @@ int __init clocksource_mmio_init(void __iomem *base, const char *name,
 	cs->clksrc.mask = CLOCKSOURCE_MASK(bits);
 	cs->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
-	return clocksource_register_hz(&cs->clksrc, hz);
+	ret = clocksource_register_hz(&cs->clksrc, hz);
+	if (ret) {
+		kfree(cs);
+	} else if (cp != NULL) {
+		*cp = &cs->clksrc;
+	}
+	return ret;
+}
+
+/**
+ * clocksource_mmio_remove - Remove a simple mmio based clocksource
+ * @cp:         Returned registered clocksource
+ */
+void __devexit clocksource_mmio_remove(struct clocksource *cp)
+{
+	clocksource_unregister(cp);
+	kfree(to_mmio_clksrc(cp));
 }

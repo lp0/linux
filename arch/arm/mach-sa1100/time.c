@@ -101,7 +101,7 @@ static void __init sa1100_timer_init(void)
 	setup_irq(IRQ_OST0, &sa1100_timer_irq);
 
 	clocksource_mmio_init(&OSCR, "oscr", CLOCK_TICK_RATE, 200, 32,
-		clocksource_mmio_readl_up);
+		NULL, clocksource_mmio_readl_up);
 	clockevents_register_device(&ckevt_sa1100_osmr0);
 }
 

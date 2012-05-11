@@ -238,7 +238,7 @@ static int __init mxs_clocksource_init(struct clk *timer_clk)
 		clocksource_register_hz(&clocksource_mxs, c);
 	else
 		clocksource_mmio_init(mxs_timrot_base + HW_TIMROT_RUNNING_COUNTn(1),
-			"mxs_timer", c, 200, 32, clocksource_mmio_readl_down);
+			"mxs_timer", c, 200, 32, NULL, clocksource_mmio_readl_down);
 
 	return 0;
 }

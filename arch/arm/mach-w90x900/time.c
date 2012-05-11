@@ -164,7 +164,7 @@ static void __init nuc900_clocksource_init(void)
 	__raw_writel(val, REG_TCSR1);
 
 	clocksource_mmio_init(REG_TDR1, "nuc900-timer1", rate, 200,
-		TDR_SHIFT, clocksource_mmio_readl_down);
+		TDR_SHIFT, NULL, clocksource_mmio_readl_down);
 }
 
 static void __init nuc900_timer_init(void)
