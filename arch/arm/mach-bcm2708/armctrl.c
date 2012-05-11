@@ -1,5 +1,6 @@
 /*
- *  Copyright (C) 2010 Broadcom
+ *  Copyright 2010 Broadcom
+ *  Copyright 2012 Simon Arlott, Chris Boot
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
