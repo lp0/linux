@@ -73,11 +73,6 @@ void __init bcm2708_init_irq(void)
 	of_irq_init(irq_of_match);
 }
 
-asmlinkage void __exception_irq_entry bcm2708_handle_irq(struct pt_regs *regs)
-{
-	armctrl_handle_irq(regs);
-}
-
 /*
  * These are fixed clocks (and device tree doesn't support clk!).
  */
