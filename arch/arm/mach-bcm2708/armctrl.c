@@ -229,15 +229,13 @@ int __init armctrl_of_init(struct device_node *node,
 }
 
 /*
- * Handle each interrupt across the entire interrupt controller.  Returns
- * non-zero if we've handled at least one interrupt.  This reads the status
- * register before handling each interrupt, which is necessary given that
+ * Handle each interrupt across the entire interrupt controller.  This reads the
+ * status register before handling each interrupt, which is necessary given that
  * handle_IRQ may briefly re-enable interrupts for soft IRQ handling.
  */
-static int handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
+void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 {
 	u32 stat, irq;
-	int handled = 0;
 
 	while (likely(stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
 		irq = ffs(stat) - 1;
@@ -249,17 +247,10 @@ static int handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 		} else {
 			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
 		}
-		handled = 1;
 	}
-
-	return handled;
 }
 
 asmlinkage void __exception_irq_entry armctrl_handle_irq(struct pt_regs *regs)
 {
-	int handled;
-
-	do {
-		handled = handle_one_irq(intc, regs);
-	} while (handled);
+	handle_one_irq(intc, regs);
 }
