@@ -30,33 +30,46 @@
 #include <mach/hardware.h>
 #include "armctrl.h"
 
-struct armctrl_irq {
+#define IS_VALID_BANK(x) ((x > 0) && (x < 32))
+#define IS_VALID_IRQ(x) (x < 32)
+
+struct armctrl_ic {
 	void __iomem *pending;
 	void __iomem *enable;
 	void __iomem *disable;
+	struct irq_domain *domain;
 
 	u32 valid_mask;
-	u32 source_mask;
-	u32 bank_mask;
 	u32 shortcut_mask;
-	u32 shortcut_bank[32];
-	u32 shortcut_irq[32];
+	u32 bank_mask;
 
-	struct armctrl_irq *bank[32];
-	struct irq_domain *domain;
+	struct armctrl_ic_shortcut {
+		u32 bank;
+		u32 irq;
+		struct irq_domain *domain;
+	} shortcuts[32];
+	struct armctrl_ic *banks[32];
 };
 
-static struct armctrl_irq *intc = NULL;
+struct of_armctrl_ic {
+	u32 base_irq;
+	u32 bank_id;
+	u32 source_mask;
+
+	struct armctrl_ic *ic;
+};
+
+static struct armctrl_ic *intc = NULL;
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
-	struct armctrl_irq *data = irq_get_chip_data(d->irq);
+	struct armctrl_ic *data = irq_get_chip_data(d->irq);
 	writel(BIT(d->hwirq), data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
-	struct armctrl_irq *data = irq_get_chip_data(d->irq);
+	struct armctrl_ic *data = irq_get_chip_data(d->irq);
 	writel(BIT(d->hwirq), data->enable);
 }
 
@@ -171,145 +184,142 @@ static u32 of_read_u32(const struct device_node *np, const char *name, u32 def)
 	return def;
 }
 
+void of_read_armctrl_shortcuts(struct device_node *node, int count)
+{
+	struct of_armctrl_ic *data = node->data;
+	u32 smap[count * 2];
+	int ret, i, j;
+
+	/* smap is multiple pairs of {bank_id, irq} */
+	ret = of_property_read_u32_array(node, "shortcut-map", smap, count * 2);
+	if (ret != 0)
+		panic("%s: invalid shortcut map (%d)\n", node->full_name, ret);
+
+	for (i = 0, j = 0; i < 32; i++) {
+		if (!(data->ic->shortcut_mask & BIT(i)))
+			continue;
+
+		if (!IS_VALID_BANK(smap[j]) || !IS_VALID_IRQ(smap[j + 1]))
+			panic("%s: invalid vic shortcut %u: %u->%u\n",
+				node->full_name, i, smap[j], smap[j + 1]);
+
+		data->ic->shortcuts[i].bank = smap[j];
+		data->ic->shortcuts[i].irq = smap[j + 1];
+		j += 2;
+	}
+}
+
+struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
+{
+	struct of_armctrl_ic *data = kmalloc(sizeof(*data), GFP_ATOMIC);
+	int nr_shortcuts, i;
+
+	BUG_ON(data == NULL);
+	node->data = data;
+
+	data->ic = kzalloc(sizeof(*data->ic), GFP_ATOMIC);
+	BUG_ON(data->ic == NULL);
+
+	data->ic->pending = of_iomap(node, 0);
+	data->ic->enable = of_iomap(node, 1);
+	data->ic->disable = of_iomap(node, 2);
+
+	if (!data->ic->pending || !data->ic->enable || !data->ic->disable)
+		panic("%s: unable to map all vic cpu registers\n",
+			node->full_name);
+
+	data->base_irq = of_read_u32(node, "interrupt-base", 0);
+	data->bank_id = of_read_u32(node, "bank-interrupt", 0);
+
+	data->source_mask = of_read_u32(node, "source-mask", ~0);
+	data->ic->bank_mask = of_read_u32(node, "bank-mask", 0);
+	data->ic->shortcut_mask = of_read_u32(node, "shortcut-mask", 0);
+	data->ic->valid_mask = data->source_mask;
+
+	if ((data->source_mask & data->ic->bank_mask)
+			|| (data->source_mask & data->ic->shortcut_mask)
+			|| (data->ic->bank_mask & data->ic->shortcut_mask))
+		panic("%s: vic mask overlap\n", node->full_name);
+
+	nr_shortcuts = 0;
+	for (i = 0; i < 32; i++) {
+		if (data->ic->shortcut_mask & BIT(i))
+			nr_shortcuts++;
+	}
+
+	if (nr_shortcuts > 0) {
+		of_read_armctrl_shortcuts(node, nr_shortcuts);
+	}
+
+	return data;
+}
+
+void __init armctrl_of_link(const char *name, struct of_armctrl_ic *c,
+	struct of_armctrl_ic *p)
+{
+	BUG_ON(c == NULL);
+	BUG_ON(p == NULL);
+
+	if (!c->bank_id)
+		panic("%s: missing bank id for child vic\n", name);
+
+	if (c->bank_id > 32 || !(p->ic->bank_mask & BIT(c->bank_id)))
+		panic("%s: invalid vic bank %d\n", name, c->bank_id);
+
+	if (p->ic->banks[c->bank_id])
+		panic("%s: duplicate vic bank %d\n", name, c->bank_id);
+
+	p->ic->banks[c->bank_id] = c->ic;
+	p->ic->valid_mask |= BIT(c->bank_id);
+}
+
+void __init armctrl_of_link_shortcuts(struct of_armctrl_ic *c,
+	struct of_armctrl_ic *p)
+{
+	int i;
+
+	for (i = 0; i < 32; i++) {
+		if (p->ic->shortcuts[i].bank == c->bank_id) {
+			p->ic->valid_mask |= BIT(i);
+			p->ic->shortcuts[i].domain = c->ic->domain;
+		}
+	}
+}
+
 int __init armctrl_of_init(struct device_node *node,
 		struct device_node *parent)
 {
-	struct armctrl_irq **ref = kmalloc(sizeof(**ref), GFP_ATOMIC);
-	struct armctrl_irq *data = kzalloc(sizeof(*data), GFP_ATOMIC);
-	u32 base_irq, nr_irqs, bank_id;
-	int i, nr_smap;
+	struct of_armctrl_ic *data = of_read_armctrl_ic(node);
+	int nr_irqs, irq, i;
 
-	BUG_ON(ref == NULL);
-	BUG_ON(data == NULL);
-	node->data = ref;
-	*ref = data;
-
-	data->pending = of_iomap(node, 0);
-	data->enable = of_iomap(node, 1);
-	data->disable = of_iomap(node, 2);
-
-	if (!data->pending)
-		panic("%s: unable to map vic pending cpu register\n",
-			node->full_name);
-	if (!data->enable)
-		panic("%s: unable to map vic enable cpu register\n",
-			node->full_name);
-	if (!data->disable)
-		panic("%s: unable to map vic disable cpu register\n",
-			node->full_name);
-
-	base_irq = of_read_u32(node, "interrupt-base", 0);
-	bank_id = of_read_u32(node, "bank-interrupt", 0);
-
-	data->source_mask = of_read_u32(node, "source-mask", ~0);
-	data->bank_mask = of_read_u32(node, "bank-mask", 0);
-	data->shortcut_mask = of_read_u32(node, "shortcut-mask", 0);
-	data->valid_mask = data->source_mask;
-
-	if (data->source_mask & data->bank_mask)
-		panic("%s: vic source mask %08x overlap with bank mask %08x: %08x\n",
-			node->full_name, data->source_mask, data->bank_mask,
-			data->source_mask & data->bank_mask);
-	if (data->source_mask & data->shortcut_mask)
-		panic("%s: vic source mask %08x overlap with shortcut mask %08x: %08x\n",
-			node->full_name, data->source_mask, data->shortcut_mask,
-			data->source_mask & data->shortcut_mask);
-	if (data->bank_mask & data->shortcut_mask)
-		panic("%s: vic bank mask %08x overlap with shortcut mask %08x: %08x\n",
-			node->full_name, data->bank_mask, data->shortcut_mask,
-			data->bank_mask & data->shortcut_mask);
-
-	if (parent == NULL) {
-		if (intc != NULL)
-			panic("%s: attempted to register more than one top level vic\n",
-				node->full_name);
-
-		intc = data;
+	if (parent != NULL) {
+		armctrl_of_link(node->full_name, node->data, parent->data);
+	} else if (intc != NULL) {
+		panic("%s: multiple top level vics\n", node->full_name);
 	} else {
-		struct armctrl_irq *p_vic;
-
-		if (!bank_id)
-			panic("%s: missing bank id for child vic\n",
-				node->full_name);
-
-		p_vic = *(struct armctrl_irq **)parent->data;
-		BUG_ON(p_vic == NULL);
-
-		if (bank_id == 0 || bank_id > 32
-				|| !(p_vic->bank_mask & BIT(bank_id)))
-			panic("%s: attempted to register invalid vic bank %d\n",
-				node->full_name, bank_id);
-
-		if (p_vic->bank[bank_id])
-			panic("%s: attempted to register vic bank %d twice\n",
-				node->full_name, bank_id);
-
-		p_vic->bank[bank_id] = data;
-		p_vic->valid_mask |= BIT(bank_id);
-
-		for (i = 0; i < 32; i++) {
-			if (p_vic->shortcut_bank[i] == bank_id) {
-				p_vic->valid_mask |= BIT(i);
-			}
-		}
-	}
-
-	nr_smap = 0;
-	for (i = 0; i < 32; i++) {
-		if (data->shortcut_mask & BIT(i))
-			nr_smap += 2;
-	}
-
-	if (nr_smap > 0) {
-		u32 shortcuts[nr_smap];
-		int ret = of_property_read_u32_array(node, "shortcut-map",
-			shortcuts, nr_smap);
-
-		if (ret != 0)
-			panic("%s: invalid shortcut map (%d)\n", node->full_name, ret);
-
-		nr_smap = 0;
-		for (i = 0; i < 32; i++) {
-			if (data->shortcut_mask & BIT(i)) {
-				data->shortcut_bank[i] = shortcuts[nr_smap];
-				data->shortcut_irq[i] = shortcuts[nr_smap + 1];
-
-				if (data->shortcut_bank[i] == 0
-						|| data->shortcut_bank[i] > 32)
-					panic("%s: attempted to map shortcut %d to invalid vic bank %d\n",
-						node->full_name,
-						data->shortcut_irq[i],
-						data->shortcut_bank[i]);
-
-				if (data->shortcut_irq[i] > 32)
-					panic("%s: attempted to map invalid shortcut %d to vic bank %d\n",
-						node->full_name,
-						data->shortcut_irq[i],
-						data->shortcut_bank[i]);
-
-				nr_smap += 2;
-			}
-		}
+		intc = data->ic;
 	}
 
 	nr_irqs = 0;
-	for (i = 0; i < 32; i++) {
-		int irq;
-
+	for (i = 0, irq = data->base_irq; i < 32; i++, irq++) {
 		if (!(data->source_mask & BIT(i)))
 			continue;
 
-		irq = base_irq + i;
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
-		irq_set_chip_data(irq, data);
+		irq_set_chip_data(irq, data->ic);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
 		nr_irqs++;
 	}
 
-	data->domain = irq_domain_add_legacy(node, nr_irqs, base_irq, 0,
-		&irq_domain_simple_ops, NULL);
-	if (!data->domain)
-		panic("unable to create IRQ domain\n");
+	data->ic->domain = irq_domain_add_legacy(node, nr_irqs, data->base_irq,
+		0, &irq_domain_simple_ops, NULL);
+	if (!data->ic->domain)
+		panic("%s: unable to create IRQ domain\n",
+			node->full_name);
+
+	if (parent != NULL) {
+		armctrl_of_link_shortcuts(node->data, parent->data);
+	}
 
 	return 0;
 }
@@ -320,7 +330,7 @@ int __init armctrl_of_init(struct device_node *node,
  * register before handling each interrupt, which is necessary given that
  * handle_IRQ may briefly re-enable interrupts for soft IRQ handling.
  */
-static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
+static int handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 {
 	u32 stat, irq;
 	int handled = 0;
@@ -328,12 +338,10 @@ static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 	while (likely(stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
 		irq = ffs(stat) - 1;
 		if (dev->shortcut_mask & BIT(irq)) {
-			int bank = dev->shortcut_bank[irq];
-
-			handle_IRQ(irq_find_mapping(dev->bank[bank]->domain,
-				dev->shortcut_irq[irq]), regs);
+			handle_IRQ(irq_find_mapping(dev->shortcuts[irq].domain,
+				dev->shortcuts[irq].irq), regs);
 		} else if (dev->bank_mask & BIT(irq)) {
-			handle_one_irq(dev->bank[irq], regs);
+			handle_one_irq(dev->banks[irq], regs);
 		} else {
 			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
 		}
