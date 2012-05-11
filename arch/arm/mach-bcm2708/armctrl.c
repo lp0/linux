@@ -43,7 +43,6 @@ struct armctrl_irq {
 	u32 shortcut_irq[32];
 
 	struct armctrl_irq *bank[32];
-	struct armctrl_irq *parent;
 	struct irq_domain *domain;
 };
 
@@ -226,30 +225,31 @@ int __init armctrl_of_init(struct device_node *node,
 				node->full_name);
 
 		intc = data;
-		data->parent = NULL;
 	} else {
+		struct armctrl_irq *p_vic;
+
 		if (!bank_id)
 			panic("%s: missing bank id for child vic\n",
 				node->full_name);
 
-		data->parent = *(struct armctrl_irq **)parent->data;
-		BUG_ON(data->parent == NULL);
+		p_vic = *(struct armctrl_irq **)parent->data;
+		BUG_ON(p_vic == NULL);
 
 		if (bank_id == 0 || bank_id > 32
-				|| !(data->parent->bank_mask & BIT(bank_id)))
+				|| !(p_vic->bank_mask & BIT(bank_id)))
 			panic("%s: attempted to register invalid vic bank %d\n",
 				node->full_name, bank_id);
 
-		if (data->parent->bank[bank_id])
+		if (p_vic->bank[bank_id])
 			panic("%s: attempted to register vic bank %d twice\n",
 				node->full_name, bank_id);
 
-		data->parent->bank[bank_id] = data;
-		data->parent->valid_mask |= BIT(bank_id);
+		p_vic->bank[bank_id] = data;
+		p_vic->valid_mask |= BIT(bank_id);
 
 		for (i = 0; i < 32; i++) {
-			if (data->parent->shortcut_bank[i] == bank_id) {
-				data->parent->valid_mask |= BIT(i);
+			if (p_vic->shortcut_bank[i] == bank_id) {
+				p_vic->valid_mask |= BIT(i);
 			}
 		}
 	}
