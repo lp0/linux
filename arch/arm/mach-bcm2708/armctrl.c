@@ -175,8 +175,8 @@ static u32 of_read_u32(const struct device_node *np, const char *name, u32 def)
 int __init armctrl_of_init(struct device_node *node,
 		struct device_node *parent)
 {
-	struct armctrl_irq **ref = kmalloc(sizeof(**ref), GFP_KERNEL);
-	struct armctrl_irq *data = kzalloc(sizeof(*data), GFP_KERNEL);
+	struct armctrl_irq **ref = kmalloc(sizeof(**ref), GFP_ATOMIC);
+	struct armctrl_irq *data = kzalloc(sizeof(*data), GFP_ATOMIC);
 	u32 base_irq, nr_irqs, bank_id;
 	int i, nr_smap;
 
