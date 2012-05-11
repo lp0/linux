@@ -329,10 +329,9 @@ static int handle_one_irq(struct armctrl_irq *dev, struct pt_regs *regs)
 		irq = ffs(stat) - 1;
 		if (dev->shortcut_mask & BIT(irq)) {
 			int bank = dev->shortcut_bank[irq];
-			irq = dev->shortcut_irq[irq];
 
 			handle_IRQ(irq_find_mapping(dev->bank[bank]->domain,
-				irq), regs);
+				dev->shortcut_irq[irq]), regs);
 		} else if (dev->bank_mask & BIT(irq)) {
 			handle_one_irq(dev->bank[irq], regs);
 		} else {
