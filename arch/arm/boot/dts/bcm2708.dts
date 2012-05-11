@@ -55,47 +55,49 @@
 					#interrupt-cells = <1>;
 
 					interrupt-base = <64>;
-					interrupt-mask = <0x000000ff>;
+					interrupt-count = <10>;
+
+					source-mask = <0x000000ff>;
+					bank-mask = <0x00000300>;
+					shortcut-mask = <0x000ffc00>;
+					shortcut-map = <
+						8  7
+						8  9
+						8 10
+						8 18
+						8 19
+						9 21
+						9 22
+						9 23
+						9 24
+						9 25
+					>;
 				};
 
 				vic1: interrupt-controller@0x004 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x004 0x4 0x010 0x4 0x01C 0x4>;
 					interrupt-parent = <&vic0>;
-					interrupts = <8>;
 					interrupt-controller;
 					#interrupt-cells = <1>;
 					#address-cells = <0>;
 
+					bank-interrupt = <8>;
 					interrupt-base = <0>;
-					interrupt-mask = <0x00000004>;
-					shortcut-map = <
-						 7 10
-						 9 11
-						10 12
-						18 13
-						19 14
-					>;
+					interrupt-count = <32>;
 				};
 
 				vic2: interrupt-controller@0x008 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x008 0x4 0x014 0x4 0x020 0x4>;
 					interrupt-parent = <&vic0>;
-					interrupts = <9>;
 					interrupt-controller;
 					#interrupt-cells = <1>;
 					#address-cells = <0>;
 
+					bank-interrupt = <9>;
 					interrupt-base = <32>;
-					interrupt-mask = <0x0016ff40>;
-					shortcut-map = <
-						21 15
-						22 16
-						23 17
-						24 18
-						25 19
-					>;
+					interrupt-count = <32>;
 				};
 			};
 		};
