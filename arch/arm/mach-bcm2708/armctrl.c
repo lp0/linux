@@ -52,15 +52,13 @@ static struct armctrl_irq *intc = NULL;
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	if (BIT(d->hwirq) & data->source_mask)
-		writel(BIT(d->hwirq), data->disable);
+	writel(BIT(d->hwirq), data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_irq *data = irq_get_chip_data(d->irq);
-	if (BIT(d->hwirq) & data->source_mask)
-		writel(BIT(d->hwirq), data->enable);
+	writel(BIT(d->hwirq), data->enable);
 }
 
 #if defined(CONFIG_PM)
