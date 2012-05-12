@@ -13,3 +13,5 @@ static inline void sp804_clocksource_and_sched_clock_init(void __iomem *base,
 }
 
 void sp804_clockevents_init(void __iomem *, unsigned int, const char *);
+
+void sp804_disable(void __iomem *);

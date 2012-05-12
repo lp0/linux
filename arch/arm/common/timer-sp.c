@@ -189,3 +189,8 @@ void __init sp804_clockevents_init(void __iomem *base, unsigned int irq,
 	setup_irq(irq, &sp804_timer_irq);
 	clockevents_config_and_register(evt, rate, 0xf, 0xffffffff);
 }
+
+void __init sp804_disable(void __iomem *base)
+{
+	writel(0, base + TIMER_CTRL);
+}
