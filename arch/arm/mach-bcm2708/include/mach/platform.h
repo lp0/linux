@@ -188,8 +188,8 @@
 #define PM_RSTC_WRCFG_FULL_RESET       0x00000020
 #define PM_RSTC_RESET			0x00000102
 
-/* AMBA clock */
-#define APB_CLOCK			3000000
+/* AMBA UART clock */
+#define UART0_CLOCK			3000000
 
 #define UART1_CLOCK			125000000
 

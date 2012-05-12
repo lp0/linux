@@ -56,8 +56,8 @@ static inline void arch_decomp_setup(void)
 	int temp, div, rem, frac;
 
 	temp = 16 * UART_BAUD;
-	div = APB_CLOCK / temp;
-	rem = APB_CLOCK % temp;
+	div = UART0_CLOCK / temp;
+	rem = UART0_CLOCK % temp;
 	temp = (8 * rem) / UART_BAUD;
 	frac = (temp >> 1) + (temp & 1);
 
