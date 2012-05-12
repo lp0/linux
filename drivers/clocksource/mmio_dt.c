@@ -79,7 +79,7 @@ struct of_mmio_dt {
 			bool (*get)(struct of_mmio_dt *);
 			int (*set)(struct of_mmio_dt *, unsigned int);
 			void (*clear)(struct of_mmio_dt *);
-			struct clock_event_device *ce;
+			struct clock_event_device ce;
 		} timer;
 	};
 };
