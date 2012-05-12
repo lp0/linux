@@ -91,36 +91,9 @@ static struct clk_lookup lookups[] = {
 	}
 };
 
-
-/* The STC is a free running counter that increments at the rate of 1MHz */
-#define STC_FREQ_HZ 1000000
-
-static cycle_t stc_read_cycles(struct clocksource *cs)
-{
-	/* STC: a free running counter that increments at the rate of 1MHz */
-	return (cycle_t)readl(__io_address(ST_BASE+0x04));
-}
-
-static struct clocksource clocksource_stc = {
-	.name	= "xstc",
-	.rating	= 300,
-	.read	= stc_read_cycles,
-	.mask	= CLOCKSOURCE_MASK(32),
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
-};
-
-static void __init bcm2708_clocksource_init(void)
-{
-	/* calculate .shift and .mult values and register clocksource */
-	if (clocksource_register_hz(&clocksource_stc, STC_FREQ_HZ)) {
-		printk(KERN_ERR "timer: failed to initialize clock source %s\n",
-				clocksource_stc.name);
-	}
-}
-
 u32 notrace bcm2708_read_sched_clock(void)
 {
-	return clocksource_stc.read(&clocksource_stc);
+	return readl(__io_address(ST_BASE+0x04));
 }
 
 void __init bcm2708_init(void)
@@ -140,6 +113,9 @@ void __init bcm2708_init(void)
 		BUG();
 	}
 }
+
+/* The STC is a free running counter that increments at the rate of 1MHz */
+#define STC_FREQ_HZ 1000000
 
 #define TIMER_PERIOD 10000	/* HZ in microsecs */
 
@@ -209,9 +185,6 @@ static struct irqaction bcm2708_timer_irq = {
  */
 static void __init bcm2708_timer_init(void)
 {
-	/* init high res timer */
-//	bcm2708_clocksource_init();
-
 	/* Initialise to a known state (all timers off) */
 	writel(0, __io_address(ARM_T_CONTROL));
 
