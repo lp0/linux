@@ -40,7 +40,6 @@
 				rating = <300>;
 
 				/* DO NOT USE (it doesn't work) */
-				/*
 				timer0@0x00c {
 					compatible = "mmio-timer";
 					reg = <0x00c 0x4>;
@@ -48,9 +47,9 @@
 					interrupts = <0>;
 
 					index = <0>;
+					rating = <0>;
 					min-delta = <0xf>;
 				};
-				*/
 
 				/* Usable system timer */
 				timer1@0x010 {
@@ -60,11 +59,11 @@
 					interrupts = <1>;
 
 					index = <1>;
+					rating = <200>;
 					min-delta = <0xf>;
 				};
 
 				/* DO NOT USE (generates extra interrupts) */
-				/*
 				timer2@0x014 {
 					compatible = "mmio-timer";
 					reg = <0x014 0x4>;
@@ -72,9 +71,9 @@
 					interrupts = <2>;
 
 					index = <2>;
+					rating = <0>;
 					min-delta = <0xf>;
 				};
-				*/
 
 				/* Usable system timer */
 				timer3@0x018 {
@@ -84,6 +83,7 @@
 					interrupts = <3>;
 
 					index = <3>;
+					rating = <300>;
 					min-delta = <0xf>;
 				};
 			};
