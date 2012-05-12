@@ -191,6 +191,7 @@
 /* AMBA clock */
 #define APB_CLOCK			3000000
 
+#define UART1_CLOCK			125000000
 
 #endif
 

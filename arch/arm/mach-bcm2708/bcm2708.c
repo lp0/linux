@@ -76,18 +76,21 @@ void __init bcm2708_init_irq(void)
 /*
  * These are fixed clocks (and device tree doesn't support clk!).
  */
-static struct clk apb_pclk = {
-	.rate = APB_CLOCK
+static struct clk uart0_pclk = {
+	.rate = UART0_CLOCK
+};
+static struct clk uart1_pclk = {
+	.rate = UART1_CLOCK
 };
 
 static struct clk_lookup lookups[] = {
 	{
-		.con_id = "apb_pclk",
-		.clk = &apb_pclk,
+		.dev_id = "20201000.uart0",
+		.clk = &uart0_pclk
 	},
 	{
-		.dev_id = "20201000.uart0",
-		.clk = &apb_pclk,
+		.dev_id = "20215000.uart1",
+		.clk = &uart1_pclk
 	}
 };
 

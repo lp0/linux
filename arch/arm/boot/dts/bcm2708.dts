@@ -187,5 +187,15 @@
 				interrupts = <25>;
 			};
 		};
+
+		/* Auxiliary device disabled by default */
+		/*
+		uart1@0x215000 {
+			compatible = "ns16550";
+			reg = <0x215040 0x38>;
+			interrupt-parent = <&vic1>;
+			interrupts = <29>;
+		};
+		*/
 	};
 };
