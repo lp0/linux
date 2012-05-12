@@ -35,12 +35,14 @@ static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 	struct resource res;
 	void __iomem *base;
 	int size;
-	u32 freq;
-	u32 rating;
-	u32 invert;
+	u32 freq = 0;
+	u32 rating = 0;
+	u32 invert = 0;
 	cycle_t (*func)(struct clocksource *);
+	struct clocksource *cp;
+	int ret;
 
-	if (of_address_to_resource(node, 0, &res))
+	if (of_address_to_resource(node, 0, &res)) // FIXME get it from of_dev
 		return -EFAULT;
 	
 	base = ioremap(res.start, resource_size(&res));
@@ -62,12 +64,21 @@ static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 		func = invert ? clocksource_mmio_readl_down : clocksource_mmio_readl_up;
 	}
 
-	return clocksource_mmio_init(base, node->name, freq, rating, resource_size(&res) * 8, (struct clocksource **)&of_dev->dev.p, func);
+	ret = clocksource_mmio_init(base, node->name, freq, rating, resource_size(&res) * 8, &cp, func);
+	if (ret)
+		return ret;
+
+	platform_set_drvdata(of_dev, cp);
+
+	printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
+		node->name, size, (unsigned long)res.start, freq);
+	return ret;
 }
 
 static int __devexit clocksource_mmio_dt_remove(struct platform_device *of_dev)
 {
-	clocksource_mmio_remove((struct clocksource *)of_dev->dev.p);
+	struct clocksource *cp = platform_get_drvdata(of_dev);
+	clocksource_mmio_remove(cp);
 	return 0;
 }
 
