@@ -62,7 +62,7 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-static const struct of_device_id irq_of_match[] __initconst = {
+static struct of_device_id irq_of_match[] __initconst = {
 	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = armctrl_of_init }
 };
 

@@ -357,7 +357,7 @@ void __init clockevent_mmio_dt_init(void)
 			continue;
 		}
 
-		if (timer->rating == 0) {
+		if (data->rating == 0) {
 			mmio_dt_free(data);
 			continue;
 		}
