@@ -45,45 +45,23 @@ cycle_t clocksource_mmio_readw_down(struct clocksource *c)
  * @bits:	Number of valid bits
  * @read:	One of clocksource_mmio_read*() above
  */
-int __devinit clocksource_mmio_init(void __iomem *base, const char *name,
-	unsigned long hz, int rating, unsigned bits,
-	cycle_t (*read)(struct clocksource *))
-{
-	int ret;
-	struct clocksource_mmio *cs = clocksource_mmio_create(base, name,
-		rating, bits, read);
-
-	if (IS_ERR(cs))
-		return PTR_ERR(cs);
-	
-	ret = clocksource_register_hz(&cs->clksrc, hz);
-	if (ret)
-		kfree(cs);
-	return ret;
-}
-
-/**
- * clocksource_mmio_create - Create a simple mmio based clocksource
- * @base:	Virtual address of the clock readout register
- * @name:	Name of the clocksource
- * @rating:	Rating of the clocksource
- * @bits:	Number of valid bits
- * @read:	One of clocksource_mmio_read*() above
- *
- * Does not register the clocksource
- */
-struct clocksource_mmio __devinit *clocksource_mmio_create(void __iomem *base,
-	const char *name, int rating, unsigned bits,
+struct clocksource_mmio __devinit *clocksource_mmio_init(void __iomem *base,
+	const char *name, unsigned long hz, int rating, unsigned bits,
 	cycle_t (*read)(struct clocksource *))
 {
 	struct clocksource_mmio *cs;
-
-	if (bits > 32 || bits < 16)
-		return -EINVAL;
+	int ret;
 
 	cs = kzalloc(sizeof(struct clocksource_mmio), GFP_KERNEL);
-	if (!cs)
-		return -ENOMEM;
+	if (!cs) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	if (bits > 32 || bits < 16) {
+		ret = -EINVAL;
+		goto err;
+	}
 
 	cs->reg = base;
 	cs->clksrc.name = name;
@@ -92,5 +70,23 @@ struct clocksource_mmio __devinit *clocksource_mmio_create(void __iomem *base,
 	cs->clksrc.mask = CLOCKSOURCE_MASK(bits);
 	cs->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
+	ret = clocksource_register_hz(&cs->clksrc, hz);
+	if (ret)
+		goto err;
+
 	return cs;
+
+err:
+	kfree(cs);
+	return ERR_PTR(ret);
+}
+
+/**
+ * clocksource_mmio_setup - Setup a simple mmio based clocksource
+ * @cs:         MMIO clock source
+ */
+void clocksource_mmio_remove(struct clocksource_mmio *cs)
+{
+	clocksource_unregister(&cs->clksrc);
+	kfree(cs);
 }
