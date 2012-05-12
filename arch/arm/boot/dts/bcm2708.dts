@@ -45,6 +45,7 @@
 					interrupts = <0>;
 
 					index = <0>;
+					min-delta = <0xf>;
 				};
 
 				st1@0x010 {
@@ -54,6 +55,7 @@
 					interrupts = <1>;
 
 					index = <1>;
+					min-delta = <0xf>;
 				};
 
 				st2@0x014 {
@@ -63,8 +65,9 @@
 					interrupts = <2>;
 
 					index = <2>;
+					min-delta = <0xf>;
 				};
-
+/*
 				st3@0x018 {
 					compatible = "mmio-timer";
 					reg = <0x018 0x4>;
@@ -72,7 +75,9 @@
 					interrupts = <3>;
 
 					index = <3>;
+					min-delta = <0xf>;
 				};
+*/
 			};
 		};
 

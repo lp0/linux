@@ -21,10 +21,14 @@
 #include <linux/clocksource.h>
 #include <linux/clockchips.h>
 #include <linux/err.h>
+#include <linux/interrupt.h>
+#include <linux/irqreturn.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <asm/irq.h>
 
 enum mmio_dt_type {
 	MMIO_CLOCK,
@@ -74,7 +78,12 @@ struct of_mmio_dt {
 		} clock;
 
 		struct of_mmio_dt_timer {
+			int irq;
+
+			u32 cpu;
 			u32 index;
+			u32 min_delta;
+			u32 max_delta;
 
 			bool (*get)(struct of_mmio_dt *);
 			int (*set)(struct of_mmio_dt *, unsigned int);
@@ -107,13 +116,52 @@ static bool clockevent_mmio_dt_getl(struct of_mmio_dt *dev)
 
 static int clockevent_mmio_dt_setl(struct of_mmio_dt *dev, unsigned int value)
 {
+	printk(KERN_DEBUG "%s: %d -> %p\n", __func__, (u32)value, dev->control);
 	writel_relaxed((u32)value, dev->value);
 	return 0;
 }
 
 static void clockevent_mmio_dt_clearl(struct of_mmio_dt *dev)
 {
+	printk(KERN_DEBUG "%s: %d -> %p\n", __func__, dev->timer.index, dev->control);
 	writel_relaxed(BIT(dev->timer.index), dev->control);
+}
+
+static void mmio_dt_timer_set_mode(enum clock_event_mode mode,
+	struct clock_event_device *evt_dev)
+{
+	switch (mode) {
+	case CLOCK_EVT_MODE_ONESHOT:
+	case CLOCK_EVT_MODE_UNUSED:
+	case CLOCK_EVT_MODE_SHUTDOWN:
+	case CLOCK_EVT_MODE_RESUME:
+		break;
+	default:
+		WARN(1, "%s: unhandled event mode %d\n", __func__, mode);
+		break;
+	}
+}
+
+static int mmio_dt_timer_set_next_event(unsigned long event,
+	struct clock_event_device *evt_dev)
+{
+	struct of_mmio_dt *dev = container_of(evt_dev, struct of_mmio_dt, timer.ce);
+	unsigned int value = dev->cs->clksrc.read(&dev->cs->clksrc);
+	value = dev->invert ? (value - event) : (value + event);
+	return dev->timer.set(dev, value);
+}
+
+static irqreturn_t mmio_dt_timer_interrupt(int irq, void *dev_id)
+{
+	struct of_mmio_dt *dev = dev_id;
+	if (dev->timer.get(dev)) {
+		dev->timer.clear(dev);
+		BUG_ON(dev->timer.ce.event_handler == NULL);
+		dev->timer.ce.event_handler(&dev->timer.ce);
+		return IRQ_HANDLED;
+	} else {
+		return IRQ_NONE;
+	}
 }
 
 static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
@@ -169,30 +217,32 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 	}
 
 	case MMIO_TIMER: {
-		struct of_mmio_dt clock;
+		struct of_mmio_dt cdata;
 		struct of_mmio_dt_timer *timer = &data->timer;
 		int ret;
 
-		ret = of_clocksource_mmio_dt(&clock, MMIO_CLOCK, of_get_parent(node));
+		ret = of_clocksource_mmio_dt(&cdata, MMIO_CLOCK, of_get_parent(node));
 		printk(KERN_DEBUG "%s: parent=%d\n", __func__, ret);
 		if (ret)
 			return ret;
 
-		data->invert = clock.invert;
-		data->cs = clock.cs;
-
-		if (clock.control_sz != 16 && clock.control_sz != 32) {
-			ret = -EINVAL;
-			goto err_timer;
-		}
+		data->invert = cdata.invert;
+		data->cs = cdata.cs;
 
 		data->base = (unsigned long)res[0].start;
 		data->value = ioremap(res[0].start, resource_size(&res[0]));
 		data->value_sz = resource_size(&res[0]) * 8;
-		data->control = clock.control;
-		data->control_sz = clock.control_sz;
+		data->control = cdata.control;
+		data->control_sz = cdata.control_sz;
 
-		timer->index = 0;
+		if (data->control_sz != 16 && data->control_sz != 32) {
+			ret = -EINVAL;
+			goto err_timer;
+		}
+
+		timer->irq = irq_of_parse_and_map(node, 0);
+		timer->cpu = timer->index = 0;
+		of_property_read_u32(node, "cpu", &timer->cpu);
 		of_property_read_u32(node, "index", &timer->index);
 
 		if (timer->index >= data->control_sz) {
@@ -200,7 +250,16 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 			goto err_timer;
 		}
 
-		if (clock.control_sz == 16) {
+		timer->min_delta = 1;
+		if (data->value_sz == 16) {
+			timer->max_delta = 0xffff;
+		} else {
+			timer->max_delta = 0xffffffff;
+		}
+		of_property_read_u32(node, "min-delta", &timer->min_delta);
+		of_property_read_u32(node, "max-delta", &timer->max_delta);
+
+		if (data->control_sz == 16) {
 			timer->get = clockevent_mmio_dt_getw;
 			timer->set = clockevent_mmio_dt_setw;
 			timer->clear = clockevent_mmio_dt_clearw;
@@ -209,6 +268,16 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 			timer->set = clockevent_mmio_dt_setl;
 			timer->clear = clockevent_mmio_dt_clearl;
 		}
+
+		timer->ce.name = node->name;
+		timer->ce.shift = data->value_sz;
+		timer->ce.features = CLOCK_EVT_FEAT_ONESHOT;
+		timer->ce.set_mode = mmio_dt_timer_set_mode;
+		timer->ce.set_next_event = mmio_dt_timer_set_next_event;
+		timer->ce.mult = div_sc(cdata.clock.freq, NSEC_PER_SEC, timer->ce.shift);
+		timer->ce.max_delta_ns = clockevent_delta2ns(timer->max_delta, &timer->ce);
+		timer->ce.min_delta_ns = clockevent_delta2ns(timer->min_delta, &timer->ce);
+		timer->ce.cpumask = cpumask_of(timer->cpu);
 
 		break;
 
@@ -221,38 +290,6 @@ err_timer:
 
 	return 0;
 }
-
-static int mmio_dt_timer_set_next_event(unsigned long event,
-	struct clock_event_device *evt_dev)
-{
-	struct of_mmio_dt *dev = container_of(evt_dev, struct of_mmio_dt, timer.ce);
-	unsigned int value = dev->cs->clksrc.read(&dev->cs->clksrc);
-	value = dev->invert ? (value - event) : (value + event);
-	return dev->timer.set(dev, value);
-}
-
-static void mmio_dt_timer_set_mode(enum clock_event_mode mode,
-	struct clock_event_device *evt_dev)
-{
-	switch (mode) {
-	case CLOCK_EVT_MODE_ONESHOT:
-	case CLOCK_EVT_MODE_UNUSED:
-	case CLOCK_EVT_MODE_SHUTDOWN:
-	case CLOCK_EVT_MODE_RESUME:
-		break;
-	default:
-		WARN(1, "%s: unhandled event mode %d\n", __func__, mode);
-		break;
-	}
-}
-
-static struct clock_event_device timer0_clockevent = {
-	.name = "timer0",
-	.shift = 32,
-	.features = CLOCK_EVT_FEAT_ONESHOT,
-	.set_mode = mmio_dt_timer_set_mode,
-	.set_next_event = mmio_dt_timer_set_next_event
-};
 
 static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 {
@@ -277,23 +314,33 @@ static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 	case MMIO_CLOCK: {
 		struct of_mmio_dt_clock *clock = &data->clock;
 
-		ret = clocksource_register_hz(&data->cs->clksrc, clock->freq);
-		if (ret)
-			goto err_cs;
-
 		printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
 			node->name, data->value_sz, data->base, clock->freq);
 
+		ret = clocksource_register_hz(&data->cs->clksrc, clock->freq);
+		if (ret)
+			goto err_cs;
 		break;
 	}
 
 	case MMIO_TIMER: {
 		struct of_mmio_dt_timer *timer = &data->timer;
+		static struct irqaction timer_irq = {
+			.flags = IRQF_TIMER,
+			.handler = mmio_dt_timer_interrupt
+		};
 
-		(void)timer;
+		timer_irq.name = node->name;
+		timer_irq.dev_id = data;
 
-		printk(KERN_INFO "%s: timer at MMIO %#lx\n",
-			node->name, data->base);
+		printk(KERN_INFO "%s: timer at MMIO %#lx (irq = %d)\n",
+			node->name, data->base, timer->irq);
+
+		clockevents_register_device(&timer->ce);
+		setup_irq(timer->irq, &timer_irq);
+
+		/* clockevents can't be unregistered */
+		__module_get(THIS_MODULE);
 		break;
 	}
 
@@ -323,7 +370,7 @@ static int __devexit clocksource_mmio_dt_remove(struct platform_device *of_dev)
 		break;
 
 	case MMIO_TIMER:
-		break;
+		return -EBUSY;
 	}
 
 	return 0;
