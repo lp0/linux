@@ -357,9 +357,13 @@ void __init clockevent_mmio_dt_init(void)
 			continue;
 		}
 
+		if (timer->rating == 0) {
+			mmio_dt_free(data);
+			continue;
+		}
+
 #ifdef CONFIG_ARM
-		if (!sched_setup && timer->clock.system)
-		{
+		if (!sched_setup && timer->clock.system) {
 			system_clock.read = timer->clock.read;
 			system_clock.cs = timer->cs;
 
