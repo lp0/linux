@@ -24,6 +24,7 @@
 #include <linux/clocksource.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
 #include <linux/irqdomain.h>
@@ -41,6 +42,7 @@
 #include <asm/mach/irq.h>
 #include <asm/mach/time.h>
 #include <asm/mach/map.h>
+#include <asm/hardware/timer-sp.h>
 
 #include "clock.h"
 #include "irq.h"
@@ -107,10 +109,21 @@ void __init bcm2708_init(void)
 	}
 }
 
+static struct of_device_id sp804_match[] __initconst = {
+	{
+		.compatible = "arm,sp804"
+	},
+	{}
+};
+
 static void __init bcm2708_timer_init(void)
 {
-	/* Initialise to a known state (all timers off) */
-	writel(0, __io_address(ARM_T_CONTROL));
+	struct device_node *node;
+
+	/* Disable the SP804 */
+	for_each_matching_node(node, sp804_match) {
+		sp804_disable(of_iomap(node, 0));
+	}
 
 	clockevent_mmio_dt_init();
 }
