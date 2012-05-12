@@ -1,6 +1,8 @@
 /*
  * Generic MMIO clocksource support (Device Tree)
  *
+ * Copyright 2012 Simon Arlott
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -20,65 +22,227 @@
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/slab.h>
+
+enum mmio_dt_type {
+	MMIO_CLOCK,
+	MMIO_TIMER
+};
+
+cycle_t (*func_16[])(struct clocksource *) __devinitconst = {
+	clocksource_mmio_readw_up,
+	clocksource_mmio_readw_down
+};
+
+cycle_t (*func_32[])(struct clocksource *) __devinitconst = {
+	clocksource_mmio_readl_up,
+	clocksource_mmio_readl_down
+};
 
 static const struct of_device_id clocksource_mmio_dt_match[] = {
 	{
-		.compatible = "mmio-clock"
+		/* clocksource */
+		.compatible = "mmio-clock",
+		.data = (void *)MMIO_CLOCK
+	},
+	{
+		/* clockevent */
+		.compatible = "mmio-timer",
+		.data = (void *)MMIO_TIMER
 	},
 	{}
 };
 MODULE_DEVICE_TABLE(of, clocksource_mmio_dt_match);
 
-static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
+struct of_mmio_dt {
+	enum mmio_dt_type type;
+	unsigned long base;
+	void __iomem *value;
+	int value_sz;
+	void __iomem *control;
+	int control_sz;
+
+	union {
+		struct of_mmio_dt_clock {
+			u32 freq;
+			u32 rating;
+			u32 invert;
+
+			cycle_t (*func)(struct clocksource *);
+			struct clocksource *cp;
+		} clock;
+
+		struct of_mmio_dt_timer {
+			u32 index;
+
+			bool (*get)(struct of_mmio_dt *);
+			void (*set)(struct of_mmio_dt *);
+			struct clock_event_device *evt;
+		} timer;
+	};
+};
+
+static bool clockevent_mmio_dt_readw(struct of_mmio_dt *dev)
 {
-	struct device_node *node = of_dev->dev.of_node;
-	struct resource res;
-	void __iomem *base;
-	int size;
-	u32 freq = 0;
-	u32 rating = 0;
-	u32 invert = 0;
-	cycle_t (*func)(struct clocksource *);
-	struct clocksource *cp;
-	int ret;
+	return readw_relaxed(dev->control) & BIT(dev->timer.index);
+}
 
-	if (of_address_to_resource(node, 0, &res)) // FIXME get it from of_dev
-		return -EFAULT;
-	
-	base = ioremap(res.start, resource_size(&res));
-	size = resource_size(&res) * 8;
+static void clockevent_mmio_dt_writew(struct of_mmio_dt *dev)
+{
+	writew_relaxed(BIT(dev->timer.index), dev->control);
+}
 
-	of_property_read_u32(node, "clock-frequency", &freq);
-	of_property_read_u32(node, "clock-rating", &rating);
-	of_property_read_u32(node, "clock-invert", &invert);
+static bool clockevent_mmio_dt_readl(struct of_mmio_dt *dev)
+{
+	return readl_relaxed(dev->control) & BIT(dev->timer.index);
+}
 
-	if (!base || !freq)
+static void clockevent_mmio_dt_writel(struct of_mmio_dt *dev)
+{
+	writel_relaxed(BIT(dev->timer.index), dev->control);
+}
+
+static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
+	enum mmio_dt_type type, struct device_node *node)
+{
+	struct resource res[2];
+
+	printk(KERN_DEBUG "%s(%p, %d, %p)\n", __func__, data, type, node);
+
+	if (node == NULL)
 		return -EINVAL;
 
-	if (size > 32)
-		return -EOVERFLOW;
+	data->type = type;
+	if (of_address_to_resource(node, 0, &res[0]))
+		return -EFAULT;
 
-	if (size <= 16) {
-		func = invert ? clocksource_mmio_readw_down : clocksource_mmio_readw_up;
-	} else {
-		func = invert ? clocksource_mmio_readl_down : clocksource_mmio_readl_up;
+	switch (data->type) {
+	case MMIO_CLOCK: {
+		struct of_mmio_dt_clock *clock = &data->clock;
+
+		if (of_address_to_resource(node, 1, &res[1]))
+			return -EFAULT;
+
+		data->base = (unsigned long)res[0].start;
+		data->value = ioremap(res[0].start, resource_size(&res[0]));
+		data->value_sz = resource_size(&res[0]) * 8;
+		data->control = ioremap(res[1].start, resource_size(&res[1]));
+		data->control_sz = resource_size(&res[1]) * 8;
+
+		clock->freq = clock->rating = clock->invert = 0;
+		of_property_read_u32(node, "clock-frequency", &clock->freq);
+		of_property_read_u32(node, "clock-rating", &clock->rating);
+		of_property_read_u32(node, "clock-invert", &clock->invert);
+
+		if (!data->base || !clock->freq || clock->invert & ~1)
+			return -EINVAL;
+
+		if (data->value_sz > 32)
+			return -EOVERFLOW;
+
+		if (data->value_sz <= 16) {
+			clock->func = func_16[clock->invert];
+		} else {
+			clock->func = func_32[clock->invert];
+		}
+		break;
 	}
 
-	ret = clocksource_mmio_init(base, node->name, freq, rating, resource_size(&res) * 8, &cp, func);
+	case MMIO_TIMER: {
+		struct of_mmio_dt clock;
+		struct of_mmio_dt_timer *timer = &data->timer;
+		int ret;
+
+		ret = of_clocksource_mmio_dt(&clock, MMIO_CLOCK, of_get_parent(node));
+		printk(KERN_DEBUG "%s: parent=%d\n", __func__, ret);
+		if (ret)
+			return ret;
+
+		if (clock.control_sz != 16 && clock.control_sz != 32)
+			return -EINVAL;
+
+		data->base = (unsigned long)res[0].start;
+		data->value = ioremap(res[0].start, resource_size(&res[0]));
+		data->value_sz = resource_size(&res[0]) * 8;
+		data->control = clock.control;
+		data->control_sz = clock.control_sz;
+
+		timer->index = 0;
+		of_property_read_u32(node, "index", &timer->index);
+
+		if (timer->index >= data->control_sz)
+			return -EINVAL;
+		break;
+	}
+
+	}
+
+	return 0;
+}
+
+static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
+{
+	const struct of_device_id *match;
+	struct device_node *node = of_dev->dev.of_node;
+	struct of_mmio_dt *data = kzalloc(sizeof(*data), GFP_KERNEL);
+	enum mmio_dt_type type;
+	int ret;
+
+	match = of_match_device(clocksource_mmio_dt_match, &of_dev->dev);
+	if (!match)
+		return -EINVAL;
+	type = (enum mmio_dt_type)match->data;
+
+	ret = of_clocksource_mmio_dt(data, type, node);
 	if (ret)
 		return ret;
 
-	platform_set_drvdata(of_dev, cp);
+	switch (data->type) {
+	case MMIO_CLOCK: {
+		struct of_mmio_dt_clock *clock = &data->clock;
 
-	printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
-		node->name, size, (unsigned long)res.start, freq);
-	return ret;
+		ret = clocksource_mmio_init(data->value, node->name,
+			clock->freq, clock->rating, data->value_sz,
+			&clock->cp, clock->func);
+		if (ret)
+			return ret;
+
+		printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
+			node->name, data->value_sz, data->base, clock->freq);
+		break;
+	}
+
+	case MMIO_TIMER: {
+		struct of_mmio_dt_timer *timer = &data->timer;
+
+		(void)timer;
+
+		printk(KERN_INFO "%s: timer at MMIO %#lx\n",
+			node->name, data->base);
+		break;
+	}
+
+	default:
+		return -ENODEV;
+	}
+
+	platform_set_drvdata(of_dev, data);
+	return 0;
 }
 
 static int __devexit clocksource_mmio_dt_remove(struct platform_device *of_dev)
 {
-	struct clocksource *cp = platform_get_drvdata(of_dev);
-	clocksource_mmio_remove(cp);
+	struct of_mmio_dt *data = platform_get_drvdata(of_dev);
+
+	switch (data->type) {
+	case MMIO_CLOCK:
+		clocksource_mmio_remove(data->clock.cp);
+		break;
+
+	case MMIO_TIMER:
+		break;
+	}
+
 	return 0;
 }
 
@@ -107,4 +271,3 @@ module_exit(clocksource_mmio_dt_exit);
 MODULE_AUTHOR("Simon Arlott");
 MODULE_DESCRIPTION("Driver for MMIO clock source (Device Tree)");
 MODULE_LICENSE("GPL");
-

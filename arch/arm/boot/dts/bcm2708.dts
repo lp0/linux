@@ -29,15 +29,17 @@
 			ranges = <0 0x3000 0x1000>;
 
 			stc@0x004 {
-				compatible = "mmio-clock";
+				compatible = "mmio-clock", "simple-bus";
 				#address-cells = <1>;
 				#size-cells = <1>;
 				reg = <0x004 0x4 0x000 0x4>;
+				ranges;
+
 				clock-frequency = <1000000>;
 				clock-rating = <300>;
 
-				timer0@0x00c {
-					compatible = "broadcom,bcm2708-armctrl-st";
+				st0@0x00c {
+					compatible = "mmio-timer";
 					reg = <0x00c 0x4>;
 					interrupt-parent = <&vic1>;
 					interrupts = <0>;
@@ -45,8 +47,8 @@
 					index = <0>;
 				};
 
-				timer1@0x010 {
-					compatible = "broadcom,bcm2708-armctrl-st";
+				st1@0x010 {
+					compatible = "mmio-timer";
 					reg = <0x010 0x4>;
 					interrupt-parent = <&vic1>;
 					interrupts = <1>;
@@ -54,8 +56,8 @@
 					index = <1>;
 				};
 
-				timer2@0x014 {
-					compatible = "broadcom,bcm2708-armctrl-st";
+				st2@0x014 {
+					compatible = "mmio-timer";
 					reg = <0x014 0x4>;
 					interrupt-parent = <&vic1>;
 					interrupts = <2>;
@@ -63,8 +65,8 @@
 					index = <2>;
 				};
 
-				timer3@0x018 {
-					compatible = "broadcom,bcm2708-armctrl-st";
+				st3@0x018 {
+					compatible = "mmio-timer";
 					reg = <0x018 0x4>;
 					interrupt-parent = <&vic1>;
 					interrupts = <3>;
