@@ -28,6 +28,7 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <asm/irq.h>
 
 enum mmio_dt_type {
@@ -61,6 +62,7 @@ static const struct of_device_id clocksource_mmio_dt_match[] = {
 MODULE_DEVICE_TABLE(of, clocksource_mmio_dt_match);
 
 struct of_mmio_dt {
+	char *name;
 	enum mmio_dt_type type;
 	u32 invert;
 	struct clocksource_mmio *cs;
@@ -168,15 +170,20 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 	enum mmio_dt_type type, struct device_node *node)
 {
 	struct resource res[2];
+	int ret;
 
 	printk(KERN_DEBUG "%s(%p, %d, %p)\n", __func__, data, type, node);
 
 	if (node == NULL)
 		return -EINVAL;
 
+	data->name = kstrdup(node->name, GFP_KERNEL);
 	data->type = type;
-	if (of_address_to_resource(node, 0, &res[0]))
-		return -EFAULT;
+
+	if (of_address_to_resource(node, 0, &res[0])) {
+		ret = -EFAULT;
+		goto err;
+	}
 
 	switch (data->type) {
 	case MMIO_CLOCK: {
@@ -199,11 +206,15 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 		of_property_read_u32(node, "clock-rating", &clock->rating);
 		of_property_read_u32(node, "clock-invert", &data->invert);
 
-		if (!data->base || !clock->freq || data->invert & ~1)
-			return -EINVAL;
+		if (!data->base || !clock->freq || data->invert & ~1) {
+			ret = -EINVAL;
+			goto err;
+		}
 
-		if (data->value_sz > 32)
-			return -EOVERFLOW;
+		if (data->value_sz > 32) {
+			ret = -EOVERFLOW;
+			goto err;
+		}
 
 		if (data->value_sz <= 16) {
 			func = func_16[data->invert];
@@ -211,22 +222,23 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 			func = func_32[data->invert];
 		}
 
-		data->cs = clocksource_mmio_create(data->value, node->name,
+		data->cs = clocksource_mmio_create(data->value, data->name,
 			clock->rating, data->value_sz, func);
-		if (IS_ERR(data->cs))
-			return PTR_ERR(data->cs);
+		if (IS_ERR(data->cs)) {
+			ret = PTR_ERR(data->cs);
+			goto err;
+		}
 		break;
 	}
 
 	case MMIO_TIMER: {
 		struct of_mmio_dt cdata;
 		struct of_mmio_dt_timer *timer = &data->timer;
-		int ret;
 
 		ret = of_clocksource_mmio_dt(&cdata, MMIO_CLOCK, of_get_parent(node));
 		printk(KERN_DEBUG "%s: parent=%d\n", __func__, ret);
 		if (ret)
-			return ret;
+			goto err;
 
 		data->invert = cdata.invert;
 		data->cs = cdata.cs;
@@ -239,7 +251,7 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 
 		if (data->control_sz != 16 && data->control_sz != 32) {
 			ret = -EINVAL;
-			goto err_timer;
+			goto err_cs;
 		}
 
 		timer->irq = irq_of_parse_and_map(node, 0);
@@ -249,7 +261,7 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 
 		if (timer->index >= data->control_sz) {
 			ret = -EINVAL;
-			goto err_timer;
+			goto err_cs;
 		}
 
 		timer->min_delta = 1;
@@ -271,7 +283,7 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 			timer->clear = clockevent_mmio_dt_clearl;
 		}
 
-		timer->ce.name = node->name;
+		timer->ce.name = data->name;
 		timer->ce.shift = data->value_sz;
 		timer->ce.features = CLOCK_EVT_FEAT_ONESHOT;
 		timer->ce.set_mode = mmio_dt_timer_set_mode;
@@ -282,15 +294,17 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 		timer->ce.cpumask = cpumask_of(timer->cpu);
 
 		break;
-
-err_timer:
-		kfree(data->cs);
-		return ret;
 	}
 
 	}
 
 	return 0;
+
+err_cs:
+	kfree(data->cs);
+err:
+	kfree(data->name);
+	return ret;
 }
 
 static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
@@ -317,7 +331,7 @@ static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 		struct of_mmio_dt_clock *clock = &data->clock;
 
 		printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
-			node->name, data->value_sz, data->base, clock->freq);
+			data->name, data->value_sz, data->base, clock->freq);
 
 		ret = clocksource_register_hz(&data->cs->clksrc, clock->freq);
 		if (ret)
@@ -332,11 +346,11 @@ static int __devinit clocksource_mmio_dt_probe(struct platform_device *of_dev)
 			.handler = mmio_dt_timer_interrupt
 		};
 
-		timer_irq.name = node->name;
+		timer_irq.name = data->name;
 		timer_irq.dev_id = data;
 
 		printk(KERN_INFO "%s: timer at MMIO %#lx (irq = %d)\n",
-			node->name, data->base, timer->irq);
+			data->name, data->base, timer->irq);
 
 		clockevents_register_device(&timer->ce);
 		setup_irq(timer->irq, &timer_irq);
@@ -368,7 +382,9 @@ static int __devexit clocksource_mmio_dt_remove(struct platform_device *of_dev)
 	switch (data->type) {
 	case MMIO_CLOCK:
 		clocksource_unregister(&data->cs->clksrc);
+		kfree(data->name);
 		kfree(data->cs);
+		kfree(data);
 		break;
 
 	case MMIO_TIMER:
