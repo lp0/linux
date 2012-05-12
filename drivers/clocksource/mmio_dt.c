@@ -156,8 +156,8 @@ static irqreturn_t mmio_dt_timer_interrupt(int irq, void *dev_id)
 	struct of_mmio_dt *dev = dev_id;
 	if (dev->timer.get(dev)) {
 		dev->timer.clear(dev);
-		BUG_ON(dev->timer.ce.event_handler == NULL);
-		dev->timer.ce.event_handler(&dev->timer.ce);
+		if (dev->timer.ce.event_handler)
+			dev->timer.ce.event_handler(&dev->timer.ce);
 		return IRQ_HANDLED;
 	} else {
 		return IRQ_NONE;
