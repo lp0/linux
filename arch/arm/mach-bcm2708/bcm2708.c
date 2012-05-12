@@ -86,7 +86,7 @@ static struct clk_lookup lookups[] = {
 		.clk = &apb_pclk,
 	},
 	{
-		.dev_id = "20201000.uart",
+		.dev_id = "20201000.uart0",
 		.clk = &apb_pclk,
 	}
 };
