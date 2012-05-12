@@ -87,7 +87,7 @@
 				reg = <0x200 0x200>;
 				ranges = <0 0x200 0x200>;
 
-				vic0: interrupt-controller@0x000 {
+				vic0: bank0@0x000 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x000 0x4 0x018 0x4 0x024 0x4>;
 					interrupt-controller;
@@ -112,7 +112,7 @@
 					>;
 				};
 
-				vic1: interrupt-controller@0x004 {
+				vic1: bank1@0x004 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x004 0x4 0x010 0x4 0x01C 0x4>;
 					interrupt-parent = <&vic0>;
@@ -124,7 +124,7 @@
 					interrupt-base = <0>;
 				};
 
-				vic2: interrupt-controller@0x008 {
+				vic2: bank2@0x008 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x008 0x4 0x014 0x4 0x020 0x4>;
 					interrupt-parent = <&vic0>;
