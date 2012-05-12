@@ -183,14 +183,16 @@ static int __devinit of_clocksource_mmio_dt(struct of_mmio_dt *data,
 		struct of_mmio_dt_clock *clock = &data->clock;
 		cycle_t (*func)(struct clocksource *);
 
-		if (of_address_to_resource(node, 1, &res[1]))
-			return -EFAULT;
-
 		data->base = (unsigned long)res[0].start;
 		data->value = ioremap(res[0].start, resource_size(&res[0]));
 		data->value_sz = resource_size(&res[0]) * 8;
-		data->control = ioremap(res[1].start, resource_size(&res[1]));
-		data->control_sz = resource_size(&res[1]) * 8;
+		if (of_address_to_resource(node, 1, &res[1])) {
+			data->control = NULL;
+			data->control_sz = 0;
+		} else {
+			data->control = ioremap(res[1].start, resource_size(&res[1]));
+			data->control_sz = resource_size(&res[1]) * 8;
+		}
 
 		clock->freq = clock->rating = data->invert = 0;
 		of_property_read_u32(node, "clock-frequency", &clock->freq);
