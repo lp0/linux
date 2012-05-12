@@ -20,17 +20,72 @@
 		reg = <0x20000000 0x01000000>;
 		ranges = <0 0x20000000 0x01000000>;
 
-		st: timer@0x3000 {
+
+		st@0x3000 {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			reg = <0x3000 0x1000>;
 			ranges = <0 0x3000 0x1000>;
 
-			stc: clock@0x004 {
-				compatible = "fixed-clock";
+			stc@0x004 {
+				compatible = "mmio-clock", "simple-bus";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x004 0x4 0x000 0x4>;
+				ranges;
+
 				clock-outputs = "sys";
 				clock-frequency = <1000000>;
+				rating = <300>;
+
+				/* DO NOT USE (it doesn't work) */
+				/*
+				timer0@0x00c {
+					compatible = "mmio-timer";
+					reg = <0x00c 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <0>;
+
+					index = <0>;
+					min-delta = <0xf>;
+				};
+				*/
+
+				/* Usable system timer */
+				timer1@0x010 {
+					compatible = "mmio-timer";
+					reg = <0x010 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <1>;
+
+					index = <1>;
+					min-delta = <0xf>;
+				};
+
+				/* DO NOT USE (generates extra interrupts) */
+				/*
+				timer2@0x014 {
+					compatible = "mmio-timer";
+					reg = <0x014 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <2>;
+
+					index = <2>;
+					min-delta = <0xf>;
+				};
+				*/
+
+				/* Usable system timer */
+				timer3@0x018 {
+					compatible = "mmio-timer";
+					reg = <0x018 0x4>;
+					interrupt-parent = <&vic1>;
+					interrupts = <3>;
+
+					index = <3>;
+					min-delta = <0xf>;
+				};
 			};
 		};
 
