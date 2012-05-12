@@ -83,6 +83,7 @@ struct armctrl_ic {
 };
 
 struct of_armctrl_ic {
+	unsigned long base;
 	u32 base_irq;
 	u32 bank_id;
 
@@ -144,6 +145,7 @@ void of_read_armctrl_shortcuts(struct device_node *node, int count)
 struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 {
 	struct of_armctrl_ic *data = kmalloc(sizeof(*data), GFP_ATOMIC);
+	struct resource res;
 	int nr_shortcuts, i;
 
 	BUG_ON(data == NULL);
@@ -153,6 +155,8 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 	data->ic = kzalloc(sizeof(*data->ic), GFP_ATOMIC);
 	BUG_ON(data->ic == NULL);
 
+	if (!of_address_to_resource(node, 0, &res))
+		data->base = (unsigned long)res.start;
 	data->ic->pending = of_iomap(node, 0);
 	data->ic->enable = of_iomap(node, 1);
 	data->ic->disable = of_iomap(node, 2);
@@ -256,6 +260,12 @@ int __init armctrl_of_init(struct device_node *node,
 
 	if (parent != NULL) {
 		armctrl_of_link_shortcuts(node->data, parent->data);
+
+		printk(KERN_INFO "%s: VIC at %#lx (%d IRQs)\n",
+			node->name, data->base, nr_irqs);
+	} else {
+		printk(KERN_INFO "%s: VIC at %#lx (%d IRQs)\n",
+			node->name, data->base, nr_irqs);
 	}
 
 	return 0;
