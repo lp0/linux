@@ -43,9 +43,8 @@
 #include <asm/mach/time.h>
 #include <asm/mach/map.h>
 
-#include "bcm2708.h"
-#include "armctrl.h"
 #include "clock.h"
+#include "irq.h"
 
 /* command line parameters */
 static unsigned boardrev, serial;
@@ -71,11 +70,6 @@ static const struct of_device_id irq_of_match[] __initconst = {
 void __init bcm2708_init_irq(void)
 {
 	of_irq_init(irq_of_match);
-}
-
-asmlinkage void __exception_irq_entry bcm2708_handle_irq(struct pt_regs *regs)
-{
-	armctrl_handle_irq(regs);
 }
 
 /*

@@ -1,5 +1,6 @@
 /*
- *  Copyright (C) 2010 Broadcom
+ *  Copyright 2010 Broadcom
+ *  Copyright 2012 Simon Arlott, Chris Boot
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -57,7 +58,7 @@
 #include <asm/mach/irq.h>
 #include <asm/exception.h>
 #include <mach/hardware.h>
-#include "armctrl.h"
+#include "irq.h"
 
 #define IS_VALID_BANK(x) ((x > 0) && (x < 32))
 #define IS_VALID_IRQ(x) (x < 32)
@@ -69,6 +70,7 @@ struct armctrl_ic {
 	struct irq_domain *domain;
 
 	u32 valid_mask;
+	u32 source_mask;
 	u32 shortcut_mask;
 	u32 bank_mask;
 
@@ -81,9 +83,9 @@ struct armctrl_ic {
 };
 
 struct of_armctrl_ic {
+	unsigned long base;
 	u32 base_irq;
 	u32 bank_id;
-	u32 source_mask;
 
 	struct armctrl_ic *ic;
 };
@@ -109,14 +111,6 @@ static struct irq_chip armctrl_chip = {
 	.irq_mask_ack = armctrl_mask_irq,
 	.irq_unmask = armctrl_unmask_irq
 };
-
-static u32 of_read_u32(const struct device_node *np, const char *name, u32 def)
-{
-	const __be32 *prop = of_get_property(np, name, NULL);
-	if (prop)
-		return be32_to_cpup(prop);
-	return def;
-}
 
 void of_read_armctrl_shortcuts(struct device_node *node, int count)
 {
@@ -151,6 +145,7 @@ void of_read_armctrl_shortcuts(struct device_node *node, int count)
 struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 {
 	struct of_armctrl_ic *data = kmalloc(sizeof(*data), GFP_ATOMIC);
+	struct resource res;
 	int nr_shortcuts, i;
 
 	BUG_ON(data == NULL);
@@ -160,6 +155,8 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 	data->ic = kzalloc(sizeof(*data->ic), GFP_ATOMIC);
 	BUG_ON(data->ic == NULL);
 
+	if (!of_address_to_resource(node, 0, &res))
+		data->base = (unsigned long)res.start;
 	data->ic->pending = of_iomap(node, 0);
 	data->ic->enable = of_iomap(node, 1);
 	data->ic->disable = of_iomap(node, 2);
@@ -168,18 +165,22 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 		panic("%s: unable to map all vic cpu registers\n",
 			node->full_name);
 
-	data->base_irq = of_read_u32(node, "interrupt-base", 0);
-	data->bank_id = of_read_u32(node, "bank-interrupt", 0);
+	of_property_read_u32(node, "interrupt-base", &data->base_irq);
+	of_property_read_u32(node, "bank-interrupt", &data->bank_id);
 
-	data->source_mask = of_read_u32(node, "source-mask", ~0);
-	data->ic->bank_mask = of_read_u32(node, "bank-mask", 0);
-	data->ic->shortcut_mask = of_read_u32(node, "shortcut-mask", 0);
-	data->ic->valid_mask = data->source_mask;
+	if (of_property_read_u32(node, "source-mask", &data->ic->source_mask))
+		data->ic->source_mask = ~0;
+	of_property_read_u32(node, "bank-mask", &data->ic->bank_mask);
+	of_property_read_u32(node, "shortcut-mask", &data->ic->shortcut_mask);
+	data->ic->valid_mask = data->ic->source_mask;
 
-	if ((data->source_mask & data->ic->bank_mask)
-			|| (data->source_mask & data->ic->shortcut_mask)
-			|| (data->ic->bank_mask & data->ic->shortcut_mask))
-		panic("%s: vic mask overlap\n", node->full_name);
+	if ((data->ic->source_mask & data->ic->bank_mask)
+			|| (data->ic->source_mask & data->ic->shortcut_mask)
+			|| (data->ic->bank_mask & data->ic->shortcut_mask)) {
+		panic("%s: vic mask overlap %08x,%08x,%08x\n", node->full_name,
+			data->ic->source_mask, data->ic->shortcut_mask,
+			data->ic->bank_mask);
+	}
 
 	nr_shortcuts = 0;
 	for (i = 0; i < 32; i++) {
@@ -242,7 +243,7 @@ int __init armctrl_of_init(struct device_node *node,
 
 	nr_irqs = 0;
 	for (i = 0, irq = data->base_irq; i < 32; i++, irq++) {
-		if (!(data->source_mask & BIT(i)))
+		if (!(data->ic->source_mask & BIT(i)))
 			continue;
 
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
@@ -259,6 +260,12 @@ int __init armctrl_of_init(struct device_node *node,
 
 	if (parent != NULL) {
 		armctrl_of_link_shortcuts(node->data, parent->data);
+
+		printk(KERN_INFO "%s: VIC at %#lx (%d IRQs)\n",
+			node->name, data->base, nr_irqs);
+	} else {
+		printk(KERN_INFO "%s: VIC at %#lx (%d IRQs)\n",
+			node->name, data->base, nr_irqs);
 	}
 
 	return 0;
@@ -273,15 +280,19 @@ void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 {
 	u32 stat, irq;
 
-	while (likely(stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
-		irq = ffs(stat) - 1;
-		if (dev->shortcut_mask & BIT(irq)) {
+	while ((stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
+		if (stat & dev->source_mask) {
+			irq = ffs(stat & dev->source_mask) - 1;
+			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+		} else if (stat & dev->shortcut_mask) {
+			irq = ffs(stat & dev->shortcut_mask) - 1;
 			handle_IRQ(irq_find_mapping(dev->shortcuts[irq].domain,
 				dev->shortcuts[irq].irq), regs);
-		} else if (dev->bank_mask & BIT(irq)) {
+		} else if (stat & dev->bank_mask) {
+			irq = ffs(stat & dev->bank_mask) - 1;
 			handle_one_irq(dev->banks[irq], regs);
 		} else {
-			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+			BUG();
 		}
 	}
 }
