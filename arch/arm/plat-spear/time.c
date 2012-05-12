@@ -91,7 +91,7 @@ static void spear_clocksource_init(void)
 
 	/* register the clocksource */
 	clocksource_mmio_init(gpt_base + COUNT(CLKSRC), "tmr1", tick_rate,
-		200, 16, NULL, clocksource_mmio_readw_up);
+		200, 16, clocksource_mmio_readw_up);
 }
 
 static struct clock_event_device clkevt = {

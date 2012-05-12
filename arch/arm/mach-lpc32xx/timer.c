@@ -159,8 +159,7 @@ static void __init lpc32xx_timer_init(void)
 		LPC32XX_TIMER_TCR(LPC32XX_TIMER1_BASE));
 
 	clocksource_mmio_init(LPC32XX_TIMER_TC(LPC32XX_TIMER1_BASE),
-		"lpc32xx_clksrc", clkrate, 300, 32, NULL,
-		clocksource_mmio_readl_up);
+		"lpc32xx_clksrc", clkrate, 300, 32, clocksource_mmio_readl_up);
 }
 
 struct sys_timer lpc32xx_timer = {

@@ -92,7 +92,7 @@ void __init __sp804_clocksource_and_sched_clock_init(void __iomem *base,
 		base + TIMER_CTRL);
 
 	clocksource_mmio_init(base + TIMER_VALUE, name,
-		rate, 200, 32, NULL, clocksource_mmio_readl_down);
+		rate, 200, 32, clocksource_mmio_readl_down);
 
 	if (use_sched_clock) {
 		sched_clock_base = base;

@@ -138,7 +138,7 @@ static void __init netx_timer_init(void)
 			NETX_GPIO_COUNTER_CTRL(TIMER_CLOCKSOURCE));
 
 	clocksource_mmio_init(NETX_GPIO_COUNTER_CURRENT(TIMER_CLOCKSOURCE),
-		"netx_timer", CLOCK_TICK_RATE, 200, 32, NULL,
+		"netx_timer", CLOCK_TICK_RATE, 200, 32,
 		clocksource_mmio_readl_up);
 
 	netx_clockevent.mult = div_sc(CLOCK_TICK_RATE, NSEC_PER_SEC,

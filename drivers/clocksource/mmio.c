@@ -9,11 +9,7 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-
-struct clocksource_mmio {
-	void __iomem *reg;
-	struct clocksource clksrc;
-};
+#include <linux/err.h>
 
 static inline struct clocksource_mmio *to_mmio_clksrc(struct clocksource *c)
 {
@@ -47,15 +43,40 @@ cycle_t clocksource_mmio_readw_down(struct clocksource *c)
  * @hz:		Frequency of the clocksource in Hz
  * @rating:	Rating of the clocksource
  * @bits:	Number of valid bits
- * @cp:         Returned registered clocksource
  * @read:	One of clocksource_mmio_read*() above
  */
 int __devinit clocksource_mmio_init(void __iomem *base, const char *name,
-	unsigned long hz, int rating, unsigned bits, struct clocksource **cp,
+	unsigned long hz, int rating, unsigned bits,
+	cycle_t (*read)(struct clocksource *))
+{
+	int ret;
+	struct clocksource_mmio *cs = clocksource_mmio_create(base, name,
+		rating, bits, read);
+
+	if (IS_ERR(cs))
+		return PTR_ERR(cs);
+	
+	ret = clocksource_register_hz(&cs->clksrc, hz);
+	if (ret)
+		kfree(cs);
+	return ret;
+}
+
+/**
+ * clocksource_mmio_create - Create a simple mmio based clocksource
+ * @base:	Virtual address of the clock readout register
+ * @name:	Name of the clocksource
+ * @rating:	Rating of the clocksource
+ * @bits:	Number of valid bits
+ * @read:	One of clocksource_mmio_read*() above
+ *
+ * Does not register the clocksource
+ */
+struct clocksource_mmio __devinit *clocksource_mmio_create(void __iomem *base,
+	const char *name, int rating, unsigned bits,
 	cycle_t (*read)(struct clocksource *))
 {
 	struct clocksource_mmio *cs;
-	int ret;
 
 	if (bits > 32 || bits < 16)
 		return -EINVAL;
@@ -71,21 +92,5 @@ int __devinit clocksource_mmio_init(void __iomem *base, const char *name,
 	cs->clksrc.mask = CLOCKSOURCE_MASK(bits);
 	cs->clksrc.flags = CLOCK_SOURCE_IS_CONTINUOUS;
 
-	ret = clocksource_register_hz(&cs->clksrc, hz);
-	if (ret) {
-		kfree(cs);
-	} else if (cp != NULL) {
-		*cp = &cs->clksrc;
-	}
-	return ret;
-}
-
-/**
- * clocksource_mmio_remove - Remove a simple mmio based clocksource
- * @cp:         Returned registered clocksource
- */
-void __devexit clocksource_mmio_remove(struct clocksource *cp)
-{
-	clocksource_unregister(cp);
-	kfree(to_mmio_clksrc(cp));
+	return cs;
 }

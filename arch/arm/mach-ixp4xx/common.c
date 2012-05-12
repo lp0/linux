@@ -431,7 +431,7 @@ static void __init ixp4xx_clocksource_init(void)
 	setup_sched_clock(ixp4xx_read_sched_clock, 32, ixp4xx_timer_freq);
 
 	clocksource_mmio_init(NULL, "OSTS", ixp4xx_timer_freq, 200, 32,
-			NULL, ixp4xx_clocksource_read);
+			ixp4xx_clocksource_read);
 }
 
 /*
