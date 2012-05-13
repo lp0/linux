@@ -176,7 +176,6 @@ void bcm2708_wdog_restart(char str, const char *cmd)
 static struct watchdog_ops bcm2708_ops = {
 	.owner = THIS_MODULE,
 	.start = bcm2708_wdog_start,
-	.ping = bcm2708_wdog_start,
 	.stop = bcm2708_wdog_stop,
 	.get_timeleft = bcm2708_wdog_get_timeleft
 };
