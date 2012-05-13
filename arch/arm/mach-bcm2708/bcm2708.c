@@ -140,6 +140,20 @@ static const char *bcm2708_compat[] = {
 	NULL
 };
 
+static void bcm2708_restart(char mode, const char *cmd)
+{
+	u32 pm_rstc, pm_wdog;
+	u32 timeout = 1;
+
+	pm_rstc = readl_relaxed(IO_ADDRESS(PM_RSTC));
+
+	pm_wdog = PM_PASSWORD | (timeout & PM_WDOG_TIME_SET); // watchdog timer = timer clock / 16; need password (31:16) + value (11:0)
+	pm_rstc = PM_PASSWORD | (pm_rstc & PM_RSTC_WRCFG_CLR) | PM_RSTC_WRCFG_FULL_RESET;
+
+	writel_relaxed(pm_wdog, IO_ADDRESS(PM_WDOG));
+	writel_relaxed(pm_rstc, IO_ADDRESS(PM_RSTC));
+}
+
 MACHINE_START(BCM2708, "BCM2708")
 	/* Maintainer: Broadcom Europe Ltd. */
 	.init_machine = bcm2708_init,
@@ -147,6 +161,7 @@ MACHINE_START(BCM2708, "BCM2708")
 	.init_irq = bcm2708_init_irq,
 	.handle_irq = armctrl_handle_irq,
 	.timer = &bcm2708_timer,
+	.restart = &bcm2708_restart,
 	.dt_compat = bcm2708_compat
 MACHINE_END
 module_param(boardrev, uint, 0644);
