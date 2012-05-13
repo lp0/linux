@@ -15,6 +15,6 @@
 #ifndef BCM2708_WDOG_H
 #define BCM2708_WDOG_H
 
-extern void bcm2708_wdog_restart(void);
+extern void bcm2708_wdog_restart(char str, const char *cmd);
 
 #endif

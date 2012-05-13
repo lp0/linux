@@ -153,7 +153,7 @@ static unsigned int bcm2708_wdog_get_timeleft(struct watchdog_device *dev)
 	return remaining;
 }
 
-void bcm2708_wdog_restart(void)
+void bcm2708_wdog_restart(char str, const char *cmd)
 {
 	struct bcm2708_wdog *wdog;
 	u32 cur;
