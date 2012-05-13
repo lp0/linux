@@ -990,9 +990,9 @@ config ARCH_BCM2708
 	bool "Broadcom BCM2708 family"
 	select CPU_V6
 	select ARM_AMBA
-	select HAVE_CLK
 	select NEED_MACH_MEMORY_H
 	select NEED_MACH_IO_H
+	select COMMON_CLK
 	select CLKDEV_LOOKUP
 	select CLKSRC_MMIO_DT
 	select ARM_TIMER_SP804

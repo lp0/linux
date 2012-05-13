@@ -17,7 +17,6 @@
  */
 
 #include <linux/clocksource.h>
-#include <linux/clkdev.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
@@ -52,34 +51,11 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-/*
- * These are fixed clocks (and device tree doesn't support clk!).
- */
-static struct clk uart0_pclk = {
-	.rate = UART0_CLOCK
-};
-static struct clk uart1_pclk = {
-	.rate = UART1_CLOCK
-};
-
-static struct clk_lookup lookups[] = {
-	{
-		.dev_id = "20201000.uart0",
-		.clk = &uart0_pclk
-	},
-	{
-		.dev_id = "20215000.uart1",
-		.clk = &uart1_pclk
-	}
-};
-
 void __init bcm2708_init(void)
 {
 	int ret;
-	int i;
 
-	for (i = 0; i < ARRAY_SIZE(lookups); i++)
-		clkdev_add(&lookups[i]);
+	bcm2708_init_clocks();
 
 	ret = of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 	if (ret) {
@@ -89,9 +65,7 @@ void __init bcm2708_init(void)
 }
 
 static struct of_device_id sp804_match[] __initconst = {
-	{
-		.compatible = "arm,sp804"
-	},
+	{ .compatible = "arm,sp804" },
 	{}
 };
 

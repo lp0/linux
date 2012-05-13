@@ -15,45 +15,39 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/device.h>
-#include <linux/list.h>
-#include <linux/errno.h>
-#include <linux/err.h>
-#include <linux/string.h>
-#include <linux/clk.h>
-#include <linux/mutex.h>
 
-#include <asm/clkdev.h>
+#include <linux/clk.h>
+#include <linux/clk-private.h>
+#include <linux/clk-provider.h>
+#include <linux/clkdev.h>
 
 #include "clock.h"
 
-int clk_enable(struct clk *clk)
-{
-	return 0;
-}
-EXPORT_SYMBOL(clk_enable);
+/*
+ * These are fixed clocks (and device tree doesn't support clk!).
+ *
+ * They're probably not all root clocks and it may be possible to
+ * turn them on and off but until this is mapped out better it's
+ * the only way they can be used.
+ */
+DEFINE_CLK_FIXED_RATE(sys_pclk,   CLK_IS_ROOT, 250000000, 0);
+DEFINE_CLK_FIXED_RATE(apb_pclk,   CLK_IS_ROOT, 126000000, 0);
+DEFINE_CLK_FIXED_RATE(uart0_pclk, CLK_IS_ROOT,   3000000, 0);
+DEFINE_CLK_FIXED_RATE(uart1_pclk, CLK_IS_ROOT, 125000000, 0);
 
-void clk_disable(struct clk *clk)
-{
-}
-EXPORT_SYMBOL(clk_disable);
+static struct clk_lookup lookups[] = {
+	{ .con_id = "sys_pclk", .clk = &sys_pclk },
+	{ .con_id = "apb_pclk", .clk = &apb_pclk },
+	{ .dev_id = "20201000.uart0", .clk = &uart0_pclk },
+	{ .dev_id = "20215000.uart1", .clk = &uart1_pclk }
+};
 
-unsigned long clk_get_rate(struct clk *clk)
+void __init bcm2708_init_clocks(void)
 {
-	return clk->rate;
-}
-EXPORT_SYMBOL(clk_get_rate);
+	int i;
 
-long clk_round_rate(struct clk *clk, unsigned long rate)
-{
-	return clk->rate;
+	for (i = 0; i < ARRAY_SIZE(lookups); i++) {
+		__clk_init(NULL, lookups[i].clk);
+		clkdev_add(&lookups[i]);
+	}
 }
-EXPORT_SYMBOL(clk_round_rate);
-
-int clk_set_rate(struct clk *clk, unsigned long rate)
-{
-	return -EIO;
-}
-EXPORT_SYMBOL(clk_set_rate);

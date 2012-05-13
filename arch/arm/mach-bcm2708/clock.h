@@ -16,9 +16,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-struct clk {
-	unsigned long		rate;
-};
+#ifndef __BCM2708_CLOCK_H
+#define __BCM2708_CLOCK_H
 
-#define UART0_CLOCK		3000000
-#define UART1_CLOCK		125000000
+void __init bcm2708_init_clocks(void);
+
+#endif
