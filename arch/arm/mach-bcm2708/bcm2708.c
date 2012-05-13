@@ -35,8 +35,8 @@
 #include "clock.h"
 #include "irq.h"
 
-/* command line parameters */
-static unsigned boardrev, serial;
+module_param_named(boardrev, system_rev, uint, 0);
+module_param_named(serial, system_serial_low, uint, 0);
 
 static struct map_desc bcm2708_io_desc[] __initdata = {
 	{
@@ -80,9 +80,6 @@ void __init bcm2708_init(void)
 
 	for (i = 0; i < ARRAY_SIZE(lookups); i++)
 		clkdev_add(&lookups[i]);
-
-	system_rev = boardrev;
-	system_serial_low = serial;
 
 	ret = of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 	if (ret) {
@@ -129,5 +126,3 @@ MACHINE_START(BCM2708, "BCM2708")
 	.restart = bcm2708_wdog_restart,
 	.dt_compat = bcm2708_compat
 MACHINE_END
-module_param(boardrev, uint, 0644);
-module_param(serial, uint, 0644);
