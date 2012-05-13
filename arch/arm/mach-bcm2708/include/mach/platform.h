@@ -174,20 +174,6 @@
 #define MAX_TIMER                       2
 #define MAX_PERIOD                      699050
 
-/*
- * Watchdog
- */
-#define PM_RSTC			       (PM_BASE+0x1c)
-#define PM_WDOG			       (PM_BASE+0x24)
-
-#define PM_WDOG_RESET                                         0000000000
-#define PM_PASSWORD		       0x5a000000
-#define PM_WDOG_TIME_SET	       0x000fffff
-#define PM_RSTC_WRCFG_CLR              0xffffffcf
-#define PM_RSTC_WRCFG_SET              0x00000030
-#define PM_RSTC_WRCFG_FULL_RESET       0x00000020
-#define PM_RSTC_RESET			0x00000102
-
 /* AMBA UART clock */
 #define UART0_CLOCK			3000000
 
