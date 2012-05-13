@@ -351,6 +351,13 @@ config IMX2_WDT
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx2_wdt.
 
+config BCM2708_WDOG
+	tristate "BCM2708 Watchdog"
+	depends on OF
+	select WATCHDOG_CORE
+	help
+	  Enables BCM2708 watchdog support. Required to be able to reboot.
+
 # AVR32 Architecture
 
 config AT32AP700X_WDT
