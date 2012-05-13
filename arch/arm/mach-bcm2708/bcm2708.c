@@ -16,36 +16,22 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <linux/init.h>
-#include <linux/device.h>
-#include <linux/syscore_ops.h>
-#include <linux/interrupt.h>
-#include <linux/clockchips.h>
 #include <linux/clocksource.h>
-#include <linux/io.h>
+#include <linux/clkdev.h>
+#include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
-#include <linux/of_irq.h>
-#include <linux/irqdomain.h>
-
-#include <linux/version.h>
-#include <linux/clkdev.h>
-#include <asm/system.h>
-#include <mach/hardware.h>
-#include <asm/irq.h>
-#include <asm/mach-types.h>
-#include <asm/exception.h>
-
 #include <asm/mach/arch.h>
-#include <asm/mach/flash.h>
-#include <asm/mach/irq.h>
 #include <asm/mach/time.h>
 #include <asm/mach/map.h>
+#include <asm/mach-types.h>
+#include <asm/system.h>
+#include <asm/exception.h>
+#include <mach/hardware.h>
 #include <asm/hardware/timer-sp.h>
 
 #include "../../../drivers/watchdog/bcm2708_wdog.h"
-
 #include "clock.h"
 #include "irq.h"
 
@@ -54,9 +40,9 @@ static unsigned boardrev, serial;
 
 static struct map_desc bcm2708_io_desc[] __initdata = {
 	{
-		.virtual = IO_ADDRESS(BCM2708_PERI_BASE),
-		.pfn = __phys_to_pfn(BCM2708_PERI_BASE),
-		.length = SZ_16M,
+		.virtual = IO_ADDRESS(BCM2708_PERIPH_BASE),
+		.pfn = __phys_to_pfn(BCM2708_PERIPH_BASE),
+		.length = BCM2708_PERIPH_SIZE,
 		.type = MT_DEVICE
 	}
 };

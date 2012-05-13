@@ -12,11 +12,11 @@
  *
 */
 
-#include <mach/platform.h>
+#include <mach/hardware.h>
 
 		.macro	addruart, rp, rv, tmp
-		ldr	\rp, =UART0_BASE
-		ldr	\rv, =IO_ADDRESS(UART0_BASE)
+		ldr	\rp, =BCM2708_DEBUG_BASE
+		ldr	\rv, =IO_ADDRESS(BCM2708_DEBUG_BASE)
 		.endm
 
 #include <asm/hardware/debug-pl01x.S>

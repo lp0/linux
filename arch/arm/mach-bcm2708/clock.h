@@ -15,6 +15,10 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
 struct clk {
 	unsigned long		rate;
 };
+
+#define UART0_CLOCK		3000000
+#define UART1_CLOCK		125000000
