@@ -223,12 +223,22 @@
 			armtimer@0x400 {
 				/* Not AMBA compatible */
 				compatible = "arm,sp804";
-				#address-cells = <1>;
-				#size-cells = <1>;
 				reg = <0x400 0x24>;
 
 				interrupt-parent = <&vic0>;
 				interrupts = <0>;
+			};
+
+			mbox0@0x880 {
+				compatible = "broadcom,bcm2708-mbox";
+				reg = <0x880 0x40>;
+				interrupt-parent = <&vic0>;
+				interrupts = <1>;
+
+				/* Read from 0x00..0x1f, Write to 0x20..3f */
+				access = "rw";
+				channels = <0 1 3>;
+				channel-names = "power", "fb", "vchiq";
 			};
 		};
 
