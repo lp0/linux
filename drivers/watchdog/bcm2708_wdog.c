@@ -89,10 +89,21 @@ static void bcm2708_wdog_unlock(struct bcm2708_wdog *wdog)
 	mutex_unlock(&wdog->lock);
 }
 
-static int bcm2708_wdog_start(struct watchdog_device *dev)
+static void bcm2708_wdog_rearm(struct watchdog_device *dev)
 {
 	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 	u32 cur;
+
+	writel_relaxed((SECS_TO_WDOG_TICKS(dev->timeout) & PM_WDOG_TIME_SET)
+		| PM_PASSWORD, wdog->pm + PM_WDOG);
+	cur = readl_relaxed(wdog->pm + PM_RSTC);
+	writel_relaxed(PM_PASSWORD | (cur & PM_RSTC_WRCFG_CLR)
+		| PM_RSTC_WRCFG_FULL_RESET, wdog->pm + PM_RSTC);
+}
+
+static int bcm2708_wdog_arm(struct watchdog_device *dev, bool start)
+{
+	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 
 	bcm2708_wdog_lock(wdog);
 	if (wdog->blocked) {
@@ -100,19 +111,32 @@ static int bcm2708_wdog_start(struct watchdog_device *dev)
 		return -EBUSY;
 	}
 
-	writel_relaxed((SECS_TO_WDOG_TICKS(dev->timeout) & PM_WDOG_TIME_SET)
-		| PM_PASSWORD, wdog->pm + PM_WDOG);
-	cur = readl_relaxed(wdog->pm + PM_RSTC);
-	writel_relaxed(PM_PASSWORD | (cur & PM_RSTC_WRCFG_CLR)
-		| PM_RSTC_WRCFG_FULL_RESET, wdog->pm + PM_RSTC);
+	/* Don't re-arm the watchdog if told to start multiple times */
+	if (wdog->started) {
+		if (!start)
+			bcm2708_wdog_rearm(dev);
+	} else {
+		/* Ping sent without the watchdog being started */
+		WARN_ON(!start);
 
-	if (!wdog->started) {
+		bcm2708_wdog_rearm(dev);
+
 		dev_info(wdog->dev, "watchdog started\n");
 		wdog->started = true;
 	}
 
 	bcm2708_wdog_unlock(wdog);
 	return 0;
+}
+
+static int bcm2708_wdog_start(struct watchdog_device *dev)
+{
+	return bcm2708_wdog_arm(dev, true);
+}
+
+static int bcm2708_wdog_ping(struct watchdog_device *dev)
+{
+	return bcm2708_wdog_arm(dev, false);
 }
 
 static int bcm2708_wdog_stop(struct watchdog_device *dev)
@@ -176,6 +200,7 @@ void bcm2708_wdog_restart(char str, const char *cmd)
 static struct watchdog_ops bcm2708_ops = {
 	.owner = THIS_MODULE,
 	.start = bcm2708_wdog_start,
+	.ping = bcm2708_wdog_ping,
 	.stop = bcm2708_wdog_stop,
 	.get_timeleft = bcm2708_wdog_get_timeleft
 };
