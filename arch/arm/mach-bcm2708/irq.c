@@ -47,17 +47,13 @@
  * other banks only when required.
  */
 
-#include <linux/init.h>
 #include <linux/io.h>
-#include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/irqdomain.h>
-
-#include <asm/mach/irq.h>
 #include <asm/exception.h>
-#include <mach/hardware.h>
+
 #include "irq.h"
 
 #define IS_VALID_BANK(x) ((x > 0) && (x < 32))
@@ -95,13 +91,13 @@ static struct armctrl_ic *intc = NULL;
 static void armctrl_mask_irq(struct irq_data *d)
 {
 	struct armctrl_ic *data = irq_get_chip_data(d->irq);
-	writel(BIT(d->hwirq), data->disable);
+	writel_relaxed(BIT(d->hwirq), data->disable);
 }
 
 static void armctrl_unmask_irq(struct irq_data *d)
 {
 	struct armctrl_ic *data = irq_get_chip_data(d->irq);
-	writel(BIT(d->hwirq), data->enable);
+	writel_relaxed(BIT(d->hwirq), data->enable);
 }
 
 static struct irq_chip armctrl_chip = {
@@ -145,8 +141,9 @@ void of_read_armctrl_shortcuts(struct device_node *node, int count)
 struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 {
 	struct of_armctrl_ic *data = kmalloc(sizeof(*data), GFP_ATOMIC);
-	struct resource res;
+	struct resource res[3];
 	int nr_shortcuts, i;
+	int ret;
 
 	BUG_ON(data == NULL);
 	/* this is freed in of_node_release */
@@ -155,11 +152,18 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 	data->ic = kzalloc(sizeof(*data->ic), GFP_ATOMIC);
 	BUG_ON(data->ic == NULL);
 
-	if (!of_address_to_resource(node, 0, &res))
-		data->base = (unsigned long)res.start;
-	data->ic->pending = of_iomap(node, 0);
-	data->ic->enable = of_iomap(node, 1);
-	data->ic->disable = of_iomap(node, 2);
+	ret = of_address_to_resource(node, 0, &res[0]);
+	ret |= of_address_to_resource(node, 1, &res[1]);
+	ret |= of_address_to_resource(node, 2, &res[2]);
+
+	if (ret)
+		panic("%s: unable to find all vic cpu registers\n",
+			node->full_name);
+
+	data->base = (unsigned long)res[0].start;
+	data->ic->pending = ioremap(res[0].start, resource_size(&res[0]));
+	data->ic->enable = ioremap(res[1].start, resource_size(&res[1]));
+	data->ic->disable = ioremap(res[2].start, resource_size(&res[2]));
 
 	if (!data->ic->pending || !data->ic->enable || !data->ic->disable)
 		panic("%s: unable to map all vic cpu registers\n",
@@ -248,7 +252,7 @@ int __init armctrl_of_init(struct device_node *node,
 
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
 		irq_set_chip_data(irq, data->ic);
-		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE | IRQF_DISABLED);
+		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
 		nr_irqs++;
 	}
 
