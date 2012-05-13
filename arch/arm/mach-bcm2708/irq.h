@@ -19,8 +19,7 @@
 #ifndef __BCM2708_IRQ_H
 #define __BCM2708_IRQ_H
 
-extern int __init armctrl_of_init(struct device_node *node,
-		struct device_node *parent);
+extern void bcm2708_init_irq(void);
 
 extern asmlinkage void __exception_irq_entry armctrl_handle_irq(
 		struct pt_regs *regs);

@@ -66,15 +66,6 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-static struct of_device_id irq_of_match[] __initconst = {
-	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = armctrl_of_init }
-};
-
-void __init bcm2708_init_irq(void)
-{
-	of_irq_init(irq_of_match);
-}
-
 /*
  * These are fixed clocks (and device tree doesn't support clk!).
  */

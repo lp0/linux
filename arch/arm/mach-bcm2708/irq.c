@@ -46,13 +46,13 @@
  * routing shortcut interrupts directly and reading interrupts from the
  * other banks only when required.
  */
+
 #include <linux/init.h>
-#include <linux/list.h>
 #include <linux/io.h>
-#include <linux/version.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/irqdomain.h>
 
 #include <asm/mach/irq.h>
@@ -269,6 +269,15 @@ int __init armctrl_of_init(struct device_node *node,
 	}
 
 	return 0;
+}
+
+static struct of_device_id irq_of_match[] __initconst = {
+	{ .compatible = "broadcom,bcm2708-armctrl-ic", .data = armctrl_of_init }
+};
+
+void __init bcm2708_init_irq(void)
+{
+	of_irq_init(irq_of_match);
 }
 
 /*
