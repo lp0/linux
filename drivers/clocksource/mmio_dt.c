@@ -248,9 +248,7 @@ err:
 
 
 static struct of_device_id clockevent_mmio_dt_match[] __initconst = {
-	{
-		.compatible = "mmio-timer"
-	},
+	{ .compatible = "mmio-timer" },
 	{}
 };
 
@@ -398,9 +396,7 @@ void __init clockevent_mmio_dt_init(void)
 
 
 static struct of_device_id clocksource_mmio_dt_match[] __devinitconst = {
-	{
-		.compatible = "mmio-clock"
-	},
+	{ .compatible = "mmio-clock" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, clocksource_mmio_dt_match);
