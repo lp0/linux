@@ -111,20 +111,38 @@
 
 					interrupt-base = <64>;
 
+					/* IRQs
+					 * 0: ARM_TIMER
+					 * 1: ARM_MAILBOX
+					 * 2: ARM_DOORBELL_0
+					 * 3: ARM_DOORBELL_1
+					 * 4: VPU0_HALTED
+					 * 5: VPU1_HALTED
+					 * 6: ILLEGAL_TYPE0
+					 * 7: ILLEGAL_TYPE1
+					 */
 					source-mask = <0x000000ff>;
+
+					/* Banks
+					 * 8: PENDING1
+					 * 9: PENDING2
+					 */
 					bank-mask = <0x00000300>;
-					shortcut-mask = <0x000ffc00>;
+
+					/* Shortcuts */
+					shortcut-mask = <0x001ffc00>;
 					shortcut-map = <
-						8  7
-						8  9
-						8 10
-						8 18
-						8 19
-						9 21
-						9 22
-						9 23
-						9 24
-						9 25
+						8  7	/* 10: VC_JPEG */
+						8  9	/* 11: VC_USB */
+						8 10	/* 12: VC_3D */
+						8 18	/* 13: VC_DMA2 */
+						8 19	/* 14: VC_DMA3 */
+						9 21	/* 15: VC_I2C */
+						9 22	/* 16: VC_SPI */
+						9 23	/* 17: VC_I2SPCM */
+						9 24	/* 18: VC_SDIO */
+						9 25	/* 19: VC_UART */
+						9 30	/* 20: VC_ARASANSDIO */
 					>;
 				};
 
@@ -138,6 +156,26 @@
 
 					bank-interrupt = <8>;
 					interrupt-base = <0>;
+
+					/* IRQs
+					 * 0: TIMER0		16: DMA0
+					 * 1: TIMER1		17: DMA1
+					 * 2: TIMER2		18: VC_DMA2
+					 * 3: TIMER3		19: VC_DMA3
+					 * 4: CODEC0		20: DMA4
+					 * 5: CODEC1		21: DMA5
+					 * 6: CODEC2		22: DMA6
+					 * 7: VC_JPEG		23: DMA7
+					 * 8: ISP		24: DMA8
+					 * 9: VC_USB		25: DMA9
+					 * 10: VC_3D		26: DMA10
+					 * 11: TRANSPOSER	27: DMA11
+					 * 12: MULTICORESYNC0	28: DMA12
+					 * 13: MULTICORESYNC1	29: AUX
+					 * 14: MULTICORESYNC2	30: ARM
+					 * 15: MULTICORESYNC3	31: VPUDMA
+					 */
+					source-mask = <0xffffffff>;
 				};
 
 				vic2: bank2@0x008 {
@@ -150,6 +188,26 @@
 
 					bank-interrupt = <9>;
 					interrupt-base = <32>;
+
+					/* IRQs
+					 * 0: HOSTPORT		16: SMI
+					 * 1: VIDEOSCALER	17: GPIO0
+					 * 2: CCP2TX		18: GPIO1
+					 * 3: SDC		19: GPIO2
+					 * 4: DSI0		20: GPIO3
+					 * 5: AVE		21: VC_I2C
+					 * 6: CAM0		22: VC_SPI
+					 * 7: CAM1		23: VC_I2SPCM
+					 * 8: HDMI0		24: VC_SDIO
+					 * 9: HDMI1		25: VC_UART
+					 * 10: PIXELVALVE1	26: SLIMBUS
+					 * 11: I2CSPISLV	27: VEC
+					 * 12: DSI1		28: CPG
+					 * 13: PWA0		29: RNG
+					 * 14: PWA1		30: VC_ARASANSDIO
+					 * 15: CPR		31: AVSPMON
+					 */
+					source-mask = <0xffffffff>;
 				};
 
 				fiq@0x00c {
