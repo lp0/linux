@@ -31,6 +31,7 @@
 #include <asm/hardware/timer-sp.h>
 
 #include "../../../drivers/clocksource/mmio_of.h"
+#include "../../../drivers/watchdog/bcm2708_wdog.h"
 #include "clock.h"
 #include "irq.h"
 
@@ -124,5 +125,6 @@ MACHINE_START(BCM2708, "BCM2708")
 	.init_irq = bcm2708_init_irq,
 	.handle_irq = armctrl_handle_irq,
 	.timer = &bcm2708_timer,
+	.restart = bcm2708_wdog_restart,
 	.dt_compat = bcm2708_compat
 MACHINE_END
