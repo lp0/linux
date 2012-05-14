@@ -446,6 +446,7 @@ static int __devexit clocksource_mmio_dt_remove(struct platform_device *of_dev)
 	}
 
 	mmio_dt_free(data);
+	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
 
