@@ -267,6 +267,7 @@ static int __devexit bcm2708_wdog_remove(struct platform_device *of_dev)
 	release_region(wdog->res.start, resource_size(&wdog->res));
 	kfree(wdog);
 	kfree(dev);
+	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
 
