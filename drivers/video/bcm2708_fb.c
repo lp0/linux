@@ -196,6 +196,7 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	uint32_t val = 0;
 	struct bcm2708_fb *fb = to_bcm2708_fb(info);
 	struct fbinfo_s *fbinfo = fb->info;
+	int ret;
 
 	fbinfo->xres = info->var.xres;
 	fbinfo->yres = info->var.yres;
@@ -213,12 +214,12 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	wmb();
 
 	/* inform vc about new framebuffer and get response */
-	bcm_mbox_call(fb->mbox, fb->dma, &val);
+	ret = bcm_mbox_call(fb->mbox, fb->dma, &val);
 
 	/* ensure GPU writes are visible to us */
 	rmb();
 
-	if (val != 0)
+	if (ret != 0 || val != 0)
 		return -EIO;
 
 	fb->fb.fix.line_length = fbinfo->pitch;
