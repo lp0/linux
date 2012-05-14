@@ -90,12 +90,12 @@ static void mmio_dt_free(struct of_mmio_dt *data)
 	kfree(data);
 }
 
-cycle_t (*read_16[])(struct clocksource *) __devinitconst = {
+static cycle_t (*read_16[])(struct clocksource *) __devinitconst = {
 	clocksource_mmio_readw_up,
 	clocksource_mmio_readw_down
 };
 
-cycle_t (*read_32[])(struct clocksource *) __devinitconst = {
+static cycle_t (*read_32[])(struct clocksource *) __devinitconst = {
 	clocksource_mmio_readl_up,
 	clocksource_mmio_readl_down
 };
