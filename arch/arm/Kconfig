@@ -1000,6 +1000,7 @@ config ARCH_BCM2708
 	select ARM_ERRATA_411920
 	select USE_OF
 	select MULTI_IRQ_HANDLER
+	select WATCHDOG
 	select BCM2708_WDOG
 	select MACH_BCM2708
 	help

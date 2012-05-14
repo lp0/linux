@@ -79,13 +79,10 @@ DEFINE_MUTEX(lock);
 static void bcm2708_wdog_lock(struct bcm2708_wdog *wdog)
 {
 	mutex_lock(&wdog->lock);
-	request_muxed_region(wdog->res.start, resource_size(&wdog->res),
-		dev_name(wdog->dev));
 }
 
 static void bcm2708_wdog_unlock(struct bcm2708_wdog *wdog)
 {
-	release_region(wdog->res.start, resource_size(&wdog->res));
 	mutex_unlock(&wdog->lock);
 }
 
@@ -199,11 +196,27 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 
 	wdog->dev = &of_dev->dev;
 	if (resource_size(&wdog->res) < PM_MINSZ) {
-		dev_err(wdog->dev, "resource %#x too small", resource_size(&wdog->res));
+		dev_err(wdog->dev, "resource too small (%#x)\n",
+			resource_size(&wdog->res));
 		ret = -EINVAL;
 		goto err;
 	}
+
+	if (!request_region(wdog->res.start, resource_size(&wdog->res),
+			dev_name(wdog->dev))) {
+		dev_err(wdog->dev, "resource %#lx unavailable\n",
+			(unsigned long)wdog->res.start);
+		ret = -EBUSY;
+		goto err;
+	}
+
 	wdog->pm = ioremap(wdog->res.start, resource_size(&wdog->res));
+	if (!wdog->pm) {
+		dev_err(wdog->dev, "error mapping io at %#lx\n",
+			(unsigned long)wdog->res.start);
+		ret = -EIO;
+		goto err;
+	}
 
 	mutex_init(&wdog->lock);
 	wdog->started = false;
@@ -251,6 +264,7 @@ static int __devexit bcm2708_wdog_remove(struct platform_device *of_dev)
 
 	watchdog_unregister_device(dev);
 	list_del(&wdog->list);
+	release_region(wdog->res.start, resource_size(&wdog->res));
 	kfree(wdog);
 	kfree(dev);
 	return 0;
@@ -289,13 +303,14 @@ static int __init bcm2708_wdog_init(void)
 			WD_MINT, WD_MAXT, WD_DEFT);
 	}
 
-	ret = platform_driver_register(&bcm2708_wdog_driver);
-	if (ret)
-		return ret;
-
 	printk(KERN_INFO MODULE_NAME ": default timeout=%d (nowayout=%d)\n",
 		timeout, nowayout);
-	return 0;
+
+	ret = platform_driver_register(&bcm2708_wdog_driver);
+	if (ret)
+		printk(KERN_ERR MODULE_NAME ": registration failed (%d)\n", ret);
+
+	return ret;
 }
 
 module_init(bcm2708_wdog_init);
