@@ -193,15 +193,28 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 		active = false;
 	spin_unlock_irqrestore(&mbox->lock, flags);
 
-	/* wait for the mailbox FIFO to have some data in it */
 	while (active) {
 		status = readl(mbox->status);
 		active = false;
 
 		if (status & MBOX_ERR_MASK) {
-			/* this will be cleared by reading it */
 			dev_err(mbox->dev, "mailbox error %08x\n",
 				status & MBOX_ERR_MASK);
+
+			/* clear it */
+			spin_lock_irqsave(&mbox->lock, flags);
+			if (mbox->running) {
+				if (mbox->waiting) {
+					writel(MBOX_STA_IRQ_DATA
+						| MBOX_STA_IRQ_WSPACE,
+						mbox->config);
+				} else {
+					writel(MBOX_STA_IRQ_DATA, mbox->config);
+				}
+			} else {
+				writel(0, mbox->config);
+			}
+			spin_unlock_irqrestore(&mbox->lock, flags);
 		}
 
 		if (!(status & MBOX_STA_EMPTY)) {
