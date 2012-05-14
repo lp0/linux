@@ -507,16 +507,13 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 
 static struct bcm_mbox_chan *bcm_mbox_find_channel(const char *name)
 {
-	struct bcm_mbox_chan *found = NULL;
-	struct bcm_mbox_chan *tmp;
+	struct bcm_mbox_chan *chan;
 
-	list_for_each_entry(tmp, &chans, list) {
-		if (!strcmp(tmp->name, name)) {
-			found = tmp;
-			break;
-		}
-	}
-	return found;
+	list_for_each_entry(chan, &chans, list)
+		if (!strcmp(chan->name, name))
+			return chan;
+
+	return NULL;
 }
 
 int bcm_mbox_write(const char *name, u32 data28)
