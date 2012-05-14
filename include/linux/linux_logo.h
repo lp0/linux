@@ -40,6 +40,7 @@ extern const struct linux_logo logo_blackfin_clut224;
 extern const struct linux_logo logo_dec_clut224;
 extern const struct linux_logo logo_mac_clut224;
 extern const struct linux_logo logo_parisc_clut224;
+extern const struct linux_logo logo_rpi_clut224;
 extern const struct linux_logo logo_sgi_clut224;
 extern const struct linux_logo logo_sun_clut224;
 extern const struct linux_logo logo_superh_mono;
