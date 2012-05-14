@@ -2,6 +2,7 @@
  *  linux/drivers/video/bcm2708_fb.c
  *
  * Copyright (C) 2010 Broadcom
+ * Copyright 2012 Simon Arlott
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file COPYING in the main directory of this archive
@@ -13,25 +14,17 @@
  * Copyright 1999-2001 Jeff Garzik <jgarzik@pobox.com>
  *
  */
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/slab.h>
-#include <linux/delay.h>
-#include <linux/mm.h>
-#include <linux/fb.h>
-#include <linux/init.h>
-#include <linux/ioport.h>
-#include <linux/list.h>
-#include <linux/platform_device.h>
-#include <linux/clk.h>
-#include <linux/printk.h>
 #include <linux/console.h>
-
-#include <asm/sizes.h>
-#include <linux/io.h>
 #include <linux/dma-mapping.h>
+#include <linux/module.h>
+#include <linux/fb.h>
+#include <linux/io.h>
+#include <linux/ioport.h>
+#include <linux/device.h>
+#include <linux/platform_device.h>
+#include <linux/printk.h>
+#include <linux/slab.h>
+#include <linux/string.h>
 
 #include "../misc/bcm-mbox.h"
 
@@ -42,7 +35,6 @@ static const char *bcm2708_name = "BCM2708 FB";
 #define MBOX_CHAN_FB "fb"
 
 /* this data structure describes each frame buffer device we find */
-
 struct fbinfo_s {
 	u32 xres, yres, xres_virtual, yres_virtual;
 	u32 pitch, bpp;
@@ -53,13 +45,25 @@ struct fbinfo_s {
 
 struct bcm2708_fb {
 	struct fb_info fb;
-	struct platform_device *dev;
+	struct device *dev;
 	struct fbinfo_s *info;
 	dma_addr_t dma;
 	u32 cmap[16];
 };
 
-#define to_bcm2708(info)	container_of(info, struct bcm2708_fb, fb)
+#define to_bcm2708_fb(info)	container_of(info, struct bcm2708_fb, fb)
+
+static unsigned int fbwidth = 800;
+static unsigned int fbheight = 480;
+static unsigned int fbdepth = 16;
+
+module_param(fbwidth, uint, 0444);
+module_param(fbheight, uint, 0444);
+module_param(fbdepth, uint, 0444);
+
+MODULE_PARM_DESC(fbwidth, "Width of ARM Framebuffer");
+MODULE_PARM_DESC(fbheight, "Height of ARM Framebuffer");
+MODULE_PARM_DESC(fbdepth, "Bit depth of ARM Framebuffer");
 
 static int bcm2708_fb_set_bitfields(struct fb_var_screeninfo *var)
 {
@@ -129,41 +133,32 @@ static int bcm2708_fb_set_bitfields(struct fb_var_screeninfo *var)
 	return ret;
 }
 
+/* @info: input
+ * @var: output
+ */
 static int bcm2708_fb_check_var(struct fb_var_screeninfo *var,
 				struct fb_info *info)
 {
-	/* info input, var output */
+	struct bcm2708_fb *fb = to_bcm2708_fb(info);
 	int yres;
-	/* memory size in pixels */
-	unsigned pixels = info->screen_size * 8 / var->bits_per_pixel;
-
-	/* info input, var output */
-	pr_info("bcm2708_fb_check_var info(%p) %dx%d (%dx%d), %d, %d\n", info,
-		info->var.xres, info->var.yres, info->var.xres_virtual,
-		info->var.yres_virtual, (int)info->screen_size,
-		info->var.bits_per_pixel);
-	pr_info("bcm2708_fb_check_var var(%p) %dx%d (%dx%d), %d, %d\n", var,
-		var->xres, var->yres, var->xres_virtual, var->yres_virtual,
-		var->bits_per_pixel, pixels);
 
 	if (!var->bits_per_pixel)
 		var->bits_per_pixel = 16;
 
 	if (bcm2708_fb_set_bitfields(var) != 0) {
-		pr_err("bcm2708_fb_check_var: invalid bits_per_pixel %d\n",
-		     var->bits_per_pixel);
+		dev_err(fb->dev, "invalid bits_per_pixel %d\n",
+			var->bits_per_pixel);
 		return -EINVAL;
 	}
 
-
 	if (var->xres_virtual < var->xres)
 		var->xres_virtual = var->xres;
+
 	/* use highest possible virtual resolution */
 	if (var->yres_virtual == -1) {
 		var->yres_virtual = 480;
 
-		pr_err
-		    ("bcm2708_fb_check_var: virtual resolution set to maximum of %dx%d\n",
+		dev_warn(fb->dev, "virtual resolution set to maximum of %dx%d\n",
 		     var->xres_virtual, var->yres_virtual);
 	}
 	if (var->yres_virtual < var->yres)
@@ -187,8 +182,8 @@ static int bcm2708_fb_check_var(struct fb_var_screeninfo *var,
 		yres = (yres + 1) / 2;
 
 	if (yres > 1200) {
-		pr_err("bcm2708_fb_check_var: ERROR: VerticalTotal >= 1200; "
-		       "special treatment required! (TODO)\n");
+		/* TODO: support yres > 1200 */
+		dev_err(fb->dev, "yres > 1200 unusupported\n");
 		return -EINVAL;
 	}
 
@@ -198,8 +193,9 @@ static int bcm2708_fb_check_var(struct fb_var_screeninfo *var,
 static int bcm2708_fb_set_par(struct fb_info *info)
 {
 	uint32_t val = 0;
-	struct bcm2708_fb *fb = to_bcm2708(info);
-	volatile struct fbinfo_s *fbinfo = fb->info;
+	struct bcm2708_fb *fb = to_bcm2708_fb(info);
+	struct fbinfo_s *fbinfo = fb->info;
+
 	fbinfo->xres = info->var.xres;
 	fbinfo->yres = info->var.yres;
 	fbinfo->xres_virtual = info->var.xres_virtual;
@@ -207,56 +203,45 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	fbinfo->bpp = info->var.bits_per_pixel;
 	fbinfo->xoffset = info->var.xoffset;
 	fbinfo->yoffset = info->var.yoffset;
-	fbinfo->base = 0;	/* filled in by VC */
-	fbinfo->pitch = 0;	/* filled in by VC */
 
-	pr_info("bcm2708_fb_set_par info(%p) %dx%d (%dx%d), %d, %d\n", info,
-		info->var.xres, info->var.yres, info->var.xres_virtual,
-		info->var.yres_virtual, (int)info->screen_size,
-		info->var.bits_per_pixel);
+	/* filled in by VC */
+	fbinfo->base = 0;
+	fbinfo->pitch = 0;
 
 	/* ensure last write to fbinfo is visible to GPU */
 	wmb();
 
-	/* inform vc about new framebuffer */
-	bcm_mbox_write(MBOX_CHAN_FB, fb->dma);
-
-	/* wait for response */
-	bcm_mbox_read(MBOX_CHAN_FB, &val);
+	/* inform vc about new framebuffer and get response */
+	bcm_mbox_call(MBOX_CHAN_FB, fb->dma, &val);
 
 	/* ensure GPU writes are visible to us */
 	rmb();
 
-        if (val == 0) {
-		fb->fb.fix.line_length = fbinfo->pitch;
+	if (val != 0)
+		return -EIO;
 
-		if (info->var.bits_per_pixel <= 8)
-			fb->fb.fix.visual = FB_VISUAL_PSEUDOCOLOR;
-		else
-			fb->fb.fix.visual = FB_VISUAL_TRUECOLOR;
+	fb->fb.fix.line_length = fbinfo->pitch;
 
-		fb->fb.fix.smem_start = fbinfo->base;
-		fb->fb.fix.smem_len = fbinfo->pitch * fbinfo->yres_virtual;
-		fb->fb.screen_size = fbinfo->screen_size;
-		if (fb->fb.screen_base)
-			iounmap(fb->fb.screen_base);
-		fb->fb.screen_base =
-			(void *)ioremap_wc(fb->fb.fix.smem_start, fb->fb.screen_size);
-		if (!fb->fb.screen_base) {
-			/* the console may currently be locked */
-			console_trylock();
-			console_unlock();
+	if (info->var.bits_per_pixel <= 8)
+		fb->fb.fix.visual = FB_VISUAL_PSEUDOCOLOR;
+	else
+		fb->fb.fix.visual = FB_VISUAL_TRUECOLOR;
 
-			BUG();		/* what can we do here */
-		}
+	fb->fb.fix.smem_start = fbinfo->base;
+	fb->fb.fix.smem_len = fbinfo->pitch * fbinfo->yres_virtual;
+	fb->fb.screen_size = fbinfo->screen_size;
+	if (fb->fb.screen_base)
+		iounmap(fb->fb.screen_base);
+	fb->fb.screen_base = ioremap_wc(fb->fb.fix.smem_start, fb->fb.screen_size);
+	if (!fb->fb.screen_base) {
+		/* the console may currently be locked */
+		console_trylock();
+		console_unlock();
+
+		/* what else can we do here? */
+		BUG();
 	}
-	pr_info
-	    ("BCM2708FB: start = %p,%p width=%d, height=%d, bpp=%d, pitch=%d size=%d success=%d\n",
-	     (void *)fb->fb.screen_base, (void *)fb->fb.fix.smem_start,
-	     fbinfo->xres, fbinfo->yres, fbinfo->bpp,
-	     fbinfo->pitch, (int)fb->fb.screen_size, val);
-
-	return val;
+	return 0;
 }
 
 static inline u32 convert_bitfield(int val, struct fb_bitfield *bf)
@@ -270,42 +255,20 @@ static int bcm2708_fb_setcolreg(unsigned int regno, unsigned int red,
 				unsigned int green, unsigned int blue,
 				unsigned int transp, struct fb_info *info)
 {
-	struct bcm2708_fb *fb = to_bcm2708(info);
+	struct bcm2708_fb *fb = to_bcm2708_fb(info);
 
 	if (regno < 16)
-		fb->cmap[regno] = convert_bitfield(transp, &fb->fb.var.transp) |
-		    convert_bitfield(blue, &fb->fb.var.blue) |
-		    convert_bitfield(green, &fb->fb.var.green) |
-		    convert_bitfield(red, &fb->fb.var.red);
+		fb->cmap[regno] = convert_bitfield(transp, &fb->fb.var.transp)
+			| convert_bitfield(blue, &fb->fb.var.blue)
+			| convert_bitfield(green, &fb->fb.var.green)
+			| convert_bitfield(red, &fb->fb.var.red);
 
-	return regno > 255;
+	return (regno < 256) ? 0 : -EINVAL;
 }
 
 static int bcm2708_fb_blank(int blank_mode, struct fb_info *info)
 {
-	/*pr_info("bcm2708_fb_blank\n"); */
-	return -1;
-}
-
-static void bcm2708_fb_fillrect(struct fb_info *info,
-				const struct fb_fillrect *rect)
-{
-	/* (is called) pr_info("bcm2708_fb_fillrect\n"); */
-	cfb_fillrect(info, rect);
-}
-
-static void bcm2708_fb_copyarea(struct fb_info *info,
-				const struct fb_copyarea *region)
-{
-	/*pr_info("bcm2708_fb_copyarea\n"); */
-	cfb_copyarea(info, region);
-}
-
-static void bcm2708_fb_imageblit(struct fb_info *info,
-				 const struct fb_image *image)
-{
-	/* (is called) pr_info("bcm2708_fb_imageblit\n"); */
-	cfb_imageblit(info, image);
+	return -EPERM;
 }
 
 static struct fb_ops bcm2708_fb_ops = {
@@ -314,27 +277,20 @@ static struct fb_ops bcm2708_fb_ops = {
 	.fb_set_par = bcm2708_fb_set_par,
 	.fb_setcolreg = bcm2708_fb_setcolreg,
 	.fb_blank = bcm2708_fb_blank,
-	.fb_fillrect = bcm2708_fb_fillrect,
-	.fb_copyarea = bcm2708_fb_copyarea,
-	.fb_imageblit = bcm2708_fb_imageblit,
+	.fb_fillrect = cfb_fillrect,
+	.fb_copyarea = cfb_copyarea,
+	.fb_imageblit = cfb_imageblit
 };
-
-static int fbwidth = 800;	/* module parameter */
-static int fbheight = 480;	/* module parameter */
-static int fbdepth = 16;	/* module parameter */
 
 static int bcm2708_fb_register(struct bcm2708_fb *fb)
 {
 	int ret;
 	dma_addr_t dma;
-	void *mem;
-
-	mem =
-	    dma_alloc_coherent(NULL, PAGE_ALIGN(sizeof(*fb->info)), &dma,
+	void *mem = dma_alloc_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), &dma,
 			       GFP_KERNEL);
 
-	if (NULL == mem) {
-		pr_err(": unable to allocate fbinfo buffer\n");
+	if (!mem) {
+		dev_err(fb->dev, "unable to allocate fbinfo buffer\n");
 		ret = -ENOMEM;
 	} else {
 		fb->info = (struct fbinfo_s *)mem;
@@ -373,101 +329,69 @@ static int bcm2708_fb_register(struct bcm2708_fb *fb)
 
 	bcm2708_fb_set_bitfields(&fb->fb.var);
 
-	/*
-	 * Allocate colourmap.
-	 */
-
+	/* Allocate colourmap */
 	fb_set_var(&fb->fb, &fb->fb.var);
 
-	pr_info("BCM2708FB: registering framebuffer (%dx%d@%d)\n", fbwidth,
+	dev_info(fb->dev, "registering framebuffer (%dx%d@%d)\n", fbwidth,
 		fbheight, fbdepth);
 
 	ret = register_framebuffer(&fb->fb);
-	pr_info("BCM2708FB: register framebuffer (%d)\n", ret);
-	if (ret == 0)
-		goto out;
-
-	pr_info("BCM2708FB: cannot register framebuffer (%d)\n", ret);
-out:
+	if (ret)
+		dev_err(fb->dev, "error registering framebuffer (%d)\n", ret);
 	return ret;
 }
 
-static int bcm2708_fb_probe(struct platform_device *dev)
+static int bcm2708_fb_probe(struct platform_device *of_dev)
 {
-	struct bcm2708_fb *fb;
+	struct bcm2708_fb *fb = kzalloc(sizeof(*fb), GFP_KERNEL);
 	int ret;
 
-	fb = kmalloc(sizeof(struct bcm2708_fb), GFP_KERNEL);
-	if (!fb) {
-		dev_err(&dev->dev,
-			"could not allocate new bcm2708_fb struct\n");
-		ret = -ENOMEM;
-		goto free_region;
-	}
-	memset(fb, 0, sizeof(struct bcm2708_fb));
+	if (!fb)
+		return -ENOMEM;
 
-	fb->dev = dev;
+	fb->dev = &of_dev->dev;
 
 	ret = bcm2708_fb_register(fb);
-	if (ret == 0) {
-		platform_set_drvdata(dev, fb);
-		goto out;
+	if (ret) {
+		kfree(fb);
+		return ret;
 	}
 
-	kfree(fb);
-free_region:
-	dev_err(&dev->dev, "probe failed, err %d\n", ret);
-out:
-	return ret;
-}
-
-static int bcm2708_fb_remove(struct platform_device *dev)
-{
-	struct bcm2708_fb *fb = platform_get_drvdata(dev);
-
-	platform_set_drvdata(dev, NULL);
-
-	if (fb->fb.screen_base)
-		iounmap(fb->fb.screen_base);
-	unregister_framebuffer(&fb->fb);
-
-	dma_free_coherent(NULL, PAGE_ALIGN(sizeof(*fb->info)), (void *)fb->info,
-			  fb->dma);
-	kfree(fb);
-
+	platform_set_drvdata(of_dev, fb);
 	return 0;
 }
+
+static int bcm2708_fb_remove(struct platform_device *of_dev)
+{
+	struct bcm2708_fb *fb = platform_get_drvdata(of_dev);
+
+	unregister_framebuffer(&fb->fb);
+	if (fb->fb.screen_base)
+		iounmap(fb->fb.screen_base);
+	dma_free_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), fb->info, fb->dma);
+
+	kfree(fb);
+	platform_set_drvdata(of_dev, NULL);
+	return 0;
+}
+
+static struct of_device_id bcm2708_fb_dt_match[] __devinitconst = {
+	{ .compatible = "broadcom,bcm2708-fb" },
+	{}
+};
+MODULE_DEVICE_TABLE(of, bcm2708_fb_dt_match);
 
 static struct platform_driver bcm2708_fb_driver = {
 	.probe = bcm2708_fb_probe,
 	.remove = bcm2708_fb_remove,
 	.driver = {
-		   .name = DRIVER_NAME,
-		   .owner = THIS_MODULE,
-		   },
+		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
+		.of_match_table = bcm2708_fb_dt_match
+	}
 };
-
-static int __init bcm2708_fb_init(void)
-{
-	return platform_driver_register(&bcm2708_fb_driver);
-}
-
-module_init(bcm2708_fb_init);
-
-static void __exit bcm2708_fb_exit(void)
-{
-	platform_driver_unregister(&bcm2708_fb_driver);
-}
-
-module_exit(bcm2708_fb_exit);
-
-module_param(fbwidth, int, 0644);
-module_param(fbheight, int, 0644);
-module_param(fbdepth, int, 0644);
+module_platform_driver(bcm2708_fb_driver);
 
 MODULE_DESCRIPTION("BCM2708 framebuffer driver");
 MODULE_LICENSE("GPL");
 
-MODULE_PARM_DESC(fbwidth, "Width of ARM Framebuffer");
-MODULE_PARM_DESC(fbheight, "Height of ARM Framebuffer");
-MODULE_PARM_DESC(fbdepth, "Bit depth of ARM Framebuffer");
