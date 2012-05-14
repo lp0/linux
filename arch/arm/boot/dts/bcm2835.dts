@@ -2,10 +2,10 @@
 /include/ "skeleton.dtsi"
 
 / {
-	model = "BCM2708";
+	model = "BCM2835";
 	#address-cells = <1>;
 	#size-cells = <1>;
-	compatible = "broadcom,bcm2708";
+	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
 	cpus {
 		cpu@0 {
