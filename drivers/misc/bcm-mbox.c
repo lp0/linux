@@ -39,8 +39,10 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
+#include <linux/rwsem.h>
 #include <linux/semaphore.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 
 #include "bcm-mbox.h"
 
@@ -73,6 +75,7 @@
 #define MBOX_STA_HAS_WSPACE	0x00000020	/* irq pending: other has space */
 #define MBOX_STA_HAS_WEMPTY	0x00000040	/* irq pending: other is empty */
 /* Bit 7 is unused */
+/* Writing anything to the status register clears the error bits */
 #define MBOX_ERR_EACCESS	0x00000100	/* error: non-owner read from mailbox */
 #define MBOX_ERR_OVERFLOW	0x00000200	/* error: write to full mailbox */
 #define MBOX_ERR_UNDERFLOW	0x00000400	/* error: read from empty mailbox */
@@ -157,9 +160,9 @@ struct bcm_mbox {
  * if there's a conflict only the first name will
  * be used.
  */
-DECLARE_RWSEM(devices);
-LIST_HEAD(mboxes);
-LIST_HEAD(chans);
+static DECLARE_RWSEM(devices);
+static LIST_HEAD(mboxes);
+static LIST_HEAD(chans);
 
 static void bcm_mbox_free(struct bcm_mbox *mbox)
 {
