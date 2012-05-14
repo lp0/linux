@@ -565,7 +565,7 @@ int bcm_mbox_read(const char *name, u32 *data28)
 		chan->index);
 	if (down_interruptible(&chan->recv)) {
 		/* The wait was interrupted */
-		ret = -ERESTARTSYS;
+		ret = -EINTR;
 		goto failed;
 	}
 	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
