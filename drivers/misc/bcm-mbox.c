@@ -488,6 +488,7 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 
 	release_region(mbox->res.start, resource_size(&mbox->res));
 	bcm_mbox_free(mbox);
+	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
 
@@ -565,7 +566,7 @@ int bcm_mbox_read(const char *name, u32 *data28)
 		chan->index);
 	if (down_interruptible(&chan->recv)) {
 		/* The wait was interrupted */
-		ret = -ERESTARTSYS;
+		ret = -EINTR;
 		goto failed;
 	}
 	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
@@ -594,6 +595,77 @@ failed:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_read);
+
+int bcm_mbox_call(const char *name, u32 out_data28, u32 *in_data28)
+{
+	struct bcm_mbox_chan *chan;
+	struct bcm_mbox *mbox;
+	struct bcm_mbox_msg *msg;
+	int ret;
+
+	down_read(&devices);
+	chan = bcm_mbox_find_channel(name);
+	if (name == NULL) {
+		up_read(&devices);
+		return -EINVAL;
+	}
+	mbox = chan->mbox;
+
+	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
+	if (msg == NULL) {
+		up_read(&devices);
+		return -ENOMEM;
+	}
+
+	msg->val = MBOX_MSG(chan->index, out_data28);
+	dev_dbg(mbox->dev, "writing message %08x\n", msg->val);
+
+	spin_lock_irq(&mbox->lock);
+	list_add_tail(&msg->list, &mbox->outbox);
+	if (!mbox->waiting) {
+		/* enable the interrupt on write space available */
+		dev_dbg(mbox->dev, "enable send interrupt\n");
+		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
+
+		mbox->waiting = true;
+	} else {
+		dev_dbg(mbox->dev, "send interrupt already enabled\n");
+	}
+	spin_unlock_irq(&mbox->lock);
+
+	dev_dbg(mbox->dev, "waiting for message from channel %d\n",
+		chan->index);
+	if (down_interruptible(&chan->recv)) {
+		/* The wait was interrupted */
+		ret = -EINTR;
+		goto failed;
+	}
+	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
+
+	spin_lock_irq(&chan->lock);
+	if (list_empty(&chan->inbox)) {
+		msg = NULL;
+	} else {
+		msg = list_first_entry(&chan->inbox, struct bcm_mbox_msg, list);
+		list_del(&msg->list);
+	}
+	spin_unlock_irq(&chan->lock);
+	WARN_ON(msg == NULL);
+
+	if (msg != NULL) {
+		dev_dbg(mbox->dev, "read message %08x\n", msg->val);
+		*in_data28 = MBOX_DATA28(msg->val);
+		kfree(msg);
+		ret = 0;
+	} else {
+		ret = -EIO;
+	}
+
+failed:
+	up_read(&devices);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_call);
 
 static struct of_device_id bcm_mbox_dt_match[] __devinitconst = {
 	{ .compatible = "broadcom,bcm2708-mbox" },
