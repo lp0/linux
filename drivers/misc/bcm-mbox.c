@@ -488,6 +488,7 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 
 	release_region(mbox->res.start, resource_size(&mbox->res));
 	bcm_mbox_free(mbox);
+	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
 
