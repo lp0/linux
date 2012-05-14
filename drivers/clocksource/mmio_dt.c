@@ -349,6 +349,7 @@ void __init clockevent_mmio_dt_init(void)
 		struct of_mmio_dt *data = kzalloc(sizeof(*data), GFP_KERNEL);
 		struct of_mmio_dt_timer *timer = &data->timer;
 		struct irqaction *timer_irq;
+		int ret;
 
 		if (of_clocksource_mmio_dt(data, MMIO_TIMER, node)) {
 			mmio_dt_free(data);
@@ -371,9 +372,6 @@ void __init clockevent_mmio_dt_init(void)
 		}
 #endif
 
-		printk(KERN_INFO "%s: timer at MMIO %#lx (irq = %d)\n",
-			data->name, data->base, timer->irq);
-
 		timer_irq = kzalloc(sizeof(*timer_irq), GFP_KERNEL);
 		BUG_ON(timer_irq == NULL);
 		timer_irq->name = data->name;
@@ -383,7 +381,15 @@ void __init clockevent_mmio_dt_init(void)
 
 		clockevents_config_and_register(&timer->ce, timer->clock.freq,
 			timer->min_delta, timer->max_delta);
-		setup_irq(timer->irq, timer_irq);
+		ret = setup_irq(timer->irq, timer_irq);
+		if (ret) {
+			kfree(timer_irq);
+			mmio_dt_free(data);
+			continue;
+		}
+
+		printk(KERN_INFO "%s: timer at MMIO %#lx (irq = %d)\n",
+			data->name, data->base, timer->irq);
 
 		if (!found)
 			found = true;
@@ -461,7 +467,7 @@ arch_initcall(clocksource_mmio_dt_init);
 
 static void __exit clocksource_mmio_dt_exit(void)
 {
-	return platform_driver_unregister(&clocksource_mmio_dt_driver);
+	platform_driver_unregister(&clocksource_mmio_dt_driver);
 }
 module_exit(clocksource_mmio_dt_exit);
 
