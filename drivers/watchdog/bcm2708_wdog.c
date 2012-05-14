@@ -73,8 +73,8 @@ MODULE_PARM_DESC(nowayout,
 	"Watchdog cannot be stopped once started (default="
 				__MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
 
-LIST_HEAD(wdogs);
-DEFINE_MUTEX(lock);
+static LIST_HEAD(wdogs);
+static DEFINE_MUTEX(lock);
 
 static void bcm2708_wdog_lock(struct bcm2708_wdog *wdog)
 {
