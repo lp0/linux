@@ -417,8 +417,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->irqaction.dev_id = mbox;
 	mbox->irqaction.handler = bcm_mbox_irqhandler;
 
-	spin_lock_irq(&mbox->lock);
-	mbox->running = true;
+	mbox->running = false;
 	mbox->waiting = false;
 
 	ret = setup_irq(mbox->irq, &mbox->irqaction);
@@ -429,8 +428,9 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	}
 
 	/* enable the interrupt on data reception */
+	spin_lock_irq(&mbox->lock);
 	writel(MBOX_STA_IRQ_DATA, mbox->config);
-
+	mbox->running = true;
 	spin_unlock_irq(&mbox->lock);
 
 	/* register the mailbox and channels */
