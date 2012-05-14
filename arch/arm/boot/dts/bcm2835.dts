@@ -13,13 +13,18 @@
 		};
 	};
 
+	display {
+		compatible = "broadcom,bcm2708-fb";
+		#address-cells = <0>;
+		#size-cells = <0>;
+	};
+
 	axi@0x20000000 {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
 		reg = <0x20000000 0x01000000>;
 		ranges = <0 0x20000000 0x01000000>;
-
 
 		st@0x3000 {
 			compatible = "simple-bus";

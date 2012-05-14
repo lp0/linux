@@ -51,22 +51,6 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-#include <linux/platform_device.h>
-#include <linux/dma-mapping.h>
-
-static u64 fb_dmamask = DMA_BIT_MASK(32);
-
-static struct platform_device bcm2708_fb_device = {
-   .name = "bcm2708_fb",
-   .id = -1,               /* only one bcm2708_fb */
-   .resource = NULL,
-   .num_resources = 0,
-   .dev = {
-      .dma_mask = &fb_dmamask,
-      .coherent_dma_mask = DMA_BIT_MASK(32),
-      },
-};
-
 void __init bcm2708_init(void)
 {
 	int ret;
@@ -78,8 +62,6 @@ void __init bcm2708_init(void)
 		printk(KERN_ERR "BCM2708 devicetree: %d\n", ret);
 		BUG();
 	}
-
-	platform_device_register(&bcm2708_fb_device);
 }
 
 static struct of_device_id sp804_match[] __initconst = {
