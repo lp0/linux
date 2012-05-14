@@ -2,15 +2,21 @@
 /include/ "skeleton.dtsi"
 
 / {
-	model = "BCM2708";
+	model = "BCM2835";
 	#address-cells = <1>;
 	#size-cells = <1>;
-	compatible = "broadcom,bcm2708";
+	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
 	cpus {
 		cpu@0 {
 			compatible = "arm,1176jz-f";
 		};
+	};
+
+	display {
+		compatible = "broadcom,bcm2708-fb";
+		#address-cells = <0>;
+		#size-cells = <0>;
 	};
 
 	axi@0x20000000 {
@@ -19,7 +25,6 @@
 		#size-cells = <1>;
 		reg = <0x20000000 0x01000000>;
 		ranges = <0 0x20000000 0x01000000>;
-
 
 		st@0x3000 {
 			compatible = "simple-bus";
