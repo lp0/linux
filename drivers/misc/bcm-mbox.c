@@ -32,12 +32,14 @@
  */
 
 #include <linux/device.h>
+#include <linux/err.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/rwsem.h>
 #include <linux/semaphore.h>
@@ -57,11 +59,12 @@
 #define MBOX_OFF0	0x00	/* mailbox 0 */
 #define MBOX_OFF1	0x20	/* mailbox 1 */
 #define MBOX_REGSZ	0x40	/* total size for two mailboxes */
-#define MAX_CHANS	0x0f
+#define MAX_CHANS	0x0f	/* max channel index and mask for channel in message */
+#define OF_CHANS_MASK	0x7fff	/* MAX_CHANS bits for device tree mask */
 
-#define MBOX_MSG(chan, data28)	(((data28) & ~0xf) | ((chan) & 0xf))
-#define MBOX_CHAN(msg)		((msg) & 0xf)
-#define MBOX_DATA28(msg)	((msg) & ~0xf)
+#define MBOX_MSG(chan, data28)	(((data28) & ~MAX_CHANS) | ((chan) & MAX_CHANS))
+#define MBOX_CHAN(msg)		((msg) & MAX_CHANS)
+#define MBOX_DATA28(msg)	((msg) & ~MAX_CHANS)
 
 #define MBOX_STA_FULL		0x80000000
 #define MBOX_STA_EMPTY		0x40000000
@@ -119,12 +122,11 @@ struct bcm_mbox_msg {
 };
 
 struct bcm_mbox_chan {
-	struct list_head list;
-
-	char *name;
 	struct bcm_mbox *mbox;
-	u32 index;
+	int index;
+};
 
+struct bcm_mbox_store {
 	/* used to lock inbox */
 	spinlock_t lock;
 	struct semaphore recv;
@@ -132,8 +134,6 @@ struct bcm_mbox_chan {
 };
 
 struct bcm_mbox {
-	struct list_head list;
-
 	struct device *dev;
 	struct resource res;
 	void __iomem *status;
@@ -141,8 +141,8 @@ struct bcm_mbox {
 	void __iomem *read;
 	void __iomem *write;
 
-	/* use chan.name to check if the chan is valid */
-	struct bcm_mbox_chan chan[MAX_CHANS+1];
+	u32 channels;
+	struct bcm_mbox_store store[MAX_CHANS+1];
 
 	/* used to lock running, waiting, outbox
 	 * and synchronise access to config
@@ -151,18 +151,15 @@ struct bcm_mbox {
 	bool running;
 	bool waiting;
 	struct list_head outbox;
-	
+
 	u32 irq;
 	struct irqaction irqaction;
 };
 
-/* Assume unique mailbox names across all devices,
- * if there's a conflict only the first name will
- * be used.
- */
-static DECLARE_RWSEM(devices);
-static LIST_HEAD(mboxes);
-static LIST_HEAD(chans);
+static inline struct bcm_mbox_store *to_mbox_store(struct bcm_mbox_chan *chan)
+{
+	return &chan->mbox->store[chan->index];
+}
 
 static void bcm_mbox_free(struct bcm_mbox *mbox)
 {
@@ -170,12 +167,9 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	struct bcm_mbox_msg *tmp;
 	int i;
 
-	for (i = 0; i < MAX_CHANS; i++) {
-		kfree(mbox->chan[i].name);
-
-		list_for_each_entry_safe(msg, tmp, &mbox->chan[i].inbox, list)
+	for (i = 0; i < MAX_CHANS; i++)
+		list_for_each_entry_safe(msg, tmp, &mbox->store[i].inbox, list)
 			list_del(&msg->list);
-	}
 
 	list_for_each_entry_safe(msg, tmp, &mbox->outbox, list)
 		list_del(&msg->list);
@@ -224,9 +218,9 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 			/* we have data to read */
 			u32 val = readl(mbox->read);
 			int index = MBOX_CHAN(val);
-			struct bcm_mbox_chan *chan = &mbox->chan[index];
 
-			if (chan->name) {
+			if (mbox->channels & BIT(index)) {
+				struct bcm_mbox_store *store = &mbox->store[index];
 				struct bcm_mbox_msg *msg = kzalloc(sizeof(*msg), GFP_ATOMIC);
 
 				if (msg == NULL) {
@@ -237,10 +231,10 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 				msg->val = val | 0xf;
 				dev_dbg(mbox->dev, "received message %08x\n", val);
 
-				spin_lock_irqsave(&chan->lock, flags);
-				list_add_tail(&msg->list, &chan->inbox);
-				spin_unlock_irqrestore(&chan->lock, flags);
-				up(&chan->recv);
+				spin_lock_irqsave(&store->lock, flags);
+				list_add_tail(&msg->list, &store->inbox);
+				spin_unlock_irqrestore(&store->lock, flags);
+				up(&store->recv);
 			} else {
 				dev_warn(mbox->dev, "message received for unknown channel: %08x\n", val);
 			}
@@ -297,9 +291,6 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	const char *access;
 	void __iomem *r_off;
 	void __iomem *w_off;
-	const u32 *channels;
-	int nr_chans;
-	bool found_chan;
 	int ret, i;
 
 	if (mbox == NULL)
@@ -308,6 +299,12 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->dev = &of_dev->dev;
 	spin_lock_init(&mbox->lock);
 	INIT_LIST_HEAD(&mbox->outbox);
+
+	for (i = 0; i < MAX_CHANS; i++) {
+		sema_init(&mbox->store[i].recv, 0);
+		spin_lock_init(&mbox->store[i].lock);
+		INIT_LIST_HEAD(&mbox->store[i].inbox);
+	}
 
 	if (of_address_to_resource(node, 0, &mbox->res)) {
 		ret = -EINVAL;
@@ -363,59 +360,11 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->read = r_off + MBOX_RW;
 	mbox->write = w_off + MBOX_RW;
 
-	channels = of_get_property(node, "channels", &nr_chans);
-	if (!channels) {
-		nr_chans = 0;
-	} else {
-		nr_chans /= 4;
-	}
+	mbox->channels = 0;
+	of_property_read_u32(node, "channels", &mbox->channels);
+	mbox->channels &= OF_CHANS_MASK;
 
-	if (nr_chans > MAX_CHANS) {
-		dev_warn(mbox->dev, "mailbox has too many channels (%d)\n",
-			nr_chans);
-		nr_chans = MAX_CHANS;
-	}
-
-	found_chan = false;
-	for (i = 0; i < nr_chans; i++) {
-		u32 chan = be32_to_cpup(&channels[i]);
-		const char *name;
-
-		if (chan > MAX_CHANS) {
-			dev_warn(mbox->dev, "mailbox has invalid channel %d\n",
-				chan);
-			continue;
-		}
-
-		if (mbox->chan[chan].name) {
-			dev_warn(mbox->dev, "mailbox has duplicate channel %d\n",
-				chan);
-			continue;
-		}
-
-		ret = of_property_read_string_index(node, "channel-names",
-			i, &name);
-		if (ret) {
-			dev_warn(mbox->dev, "mailbox %d has no name\n", chan);
-			continue;
-		}
-
-		mbox->chan[chan].name = kstrdup(name, GFP_KERNEL);
-		if (!mbox->chan[chan].name) {
-			ret = -ENOMEM;
-			goto err;
-		}
-
-		mbox->chan[chan].mbox = mbox;
-		mbox->chan[chan].index = chan;
-		sema_init(&mbox->chan[chan].recv, 0);
-		spin_lock_init(&mbox->chan[chan].lock);
-		INIT_LIST_HEAD(&mbox->chan[chan].inbox);
-
-		found_chan = true;
-	}
-
-	if (!found_chan) {
+	if (!mbox->channels) {
 		dev_err(mbox->dev, "mailbox has no channels\n");
 		ret = -EINVAL;
 		goto err;
@@ -449,22 +398,10 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->running = true;
 	spin_unlock_irq(&mbox->lock);
 
-	/* register the mailbox and channels */
-	down_write(&devices);
-	list_add_tail(&mbox->list, &mboxes);
-	for (i = 0; i < MAX_CHANS; i++)
-		if (mbox->chan[i].name)
-			list_add_tail(&mbox->chan[i].list, &chans);
+	dev_info(mbox->dev, "mailbox at MMIO %#lx (irq = %d, channels = 0x%04x)\n",
+		(unsigned long)mbox->res.start, mbox->irq, mbox->channels);
 
-	dev_info(mbox->dev, "mailbox at MMIO %#lx (irq = %d)\n",
-		(unsigned long)mbox->res.start, mbox->irq);
-	for (i = 0; i < MAX_CHANS; i++)
-		if (mbox->chan[i].name)
-			dev_info(mbox->dev, "channel %d: %s\n", i,
-				mbox->chan[i].name);
 	platform_set_drvdata(of_dev, mbox);
-
-	up_write(&devices);
 	return 0;
 
 err:
@@ -475,15 +412,6 @@ err:
 static int bcm_mbox_remove(struct platform_device *of_dev)
 {
 	struct bcm_mbox *mbox = platform_get_drvdata(of_dev);
-	int i;
-
-	/* unregister the mailbox and channels */
-	down_write(&devices);
-	list_del(&mbox->list);
-	for (i = 0; i < MAX_CHANS; i++)
-		if (mbox->chan[i].name)
-			list_del(&mbox->chan[i].list);
-	up_write(&devices);
 
 	/* stop the interrupt handler */
 	spin_lock_irq(&mbox->lock);
@@ -508,36 +436,95 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 	return 0;
 }
 
-static struct bcm_mbox_chan *bcm_mbox_find_channel(const char *name)
+struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
+	const char *pmbox, const char *pchan)
 {
+	struct device_node *mbox_node;
+	struct platform_device *dev;
+	struct bcm_mbox *mbox;
 	struct bcm_mbox_chan *chan;
+	u32 index;
+	int ret;
 
-	list_for_each_entry(chan, &chans, list)
-		if (!strcmp(chan->name, name))
-			return chan;
+	if (node == NULL || pmbox == NULL || pchan == NULL)
+		return ERR_PTR(-EFAULT);
 
-	return NULL;
+	index = ~0;
+	of_property_read_u32(node, pchan, &index);
+	if (index > MAX_CHANS)
+		return ERR_PTR(-EOVERFLOW);
+
+	mbox_node = of_parse_phandle(node, pmbox, 0);
+	if (mbox_node == NULL)
+		return ERR_PTR(-ENOENT);
+
+	dev = of_find_device_by_node(mbox_node);
+	if (dev == NULL) {
+		ret = -ENODEV;
+		goto put_node;
+	}
+
+	mbox = platform_get_drvdata(dev);
+	if (mbox == NULL) {
+		ret = -EINVAL;
+		goto put_node;
+	}
+
+	/* swap our node ref for a device ref */
+	get_device(mbox->dev);
+	of_node_put(mbox_node);
+
+	/* check the channel is valid for the mailbox */
+	if (!(mbox->channels & BIT(index))) {
+		ret = -ECHRNG;
+		goto put_dev;
+	}
+
+	/* create a reference */
+	chan = kmalloc(sizeof(*chan), GFP_KERNEL);
+	if (chan == NULL) {
+		ret = -ENOMEM;
+		goto put_dev;
+	}
+
+	chan->mbox = mbox;
+	chan->index = index;
+	return chan;
+
+put_node:
+	of_node_put(mbox_node);
+	return ERR_PTR(ret);
+
+put_dev:
+	put_device(mbox->dev);
+	return ERR_PTR(ret);
 }
 
-int bcm_mbox_write(const char *name, u32 data28)
+void bcm_mbox_put(struct bcm_mbox_chan *chan)
 {
-	struct bcm_mbox_chan *chan;
+	put_device(chan->mbox->dev);
+	kfree(chan);
+}
+
+static bool bcm_mbox_chan_valid(struct bcm_mbox_chan *chan)
+{
+	return chan != NULL && chan->mbox != NULL && chan->index <= MAX_CHANS;
+}
+
+int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
+{
 	struct bcm_mbox *mbox;
+	struct bcm_mbox_store *store;
 	struct bcm_mbox_msg *msg;
 
-	down_read(&devices);
-	chan = bcm_mbox_find_channel(name);
-	if (name == NULL) {
-		up_read(&devices);
+	if (!bcm_mbox_chan_valid(chan))
 		return -EINVAL;
-	}
 	mbox = chan->mbox;
+	store = to_mbox_store(chan);
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
-	if (msg == NULL) {
-		up_read(&devices);
+	if (msg == NULL)
 		return -ENOMEM;
-	}
 
 	msg->val = MBOX_MSG(chan->index, data28);
 	dev_dbg(mbox->dev, "writing message %08x\n", msg->val);
@@ -554,81 +541,64 @@ int bcm_mbox_write(const char *name, u32 data28)
 		dev_dbg(mbox->dev, "send interrupt already enabled\n");
 	}
 	spin_unlock_irq(&mbox->lock);
-
-	up_read(&devices);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_write);
 
-int bcm_mbox_read(const char *name, u32 *data28)
+int bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 {
-	struct bcm_mbox_chan *chan;
 	struct bcm_mbox *mbox;
+	struct bcm_mbox_store *store;
 	struct bcm_mbox_msg *msg;
-	int ret;
 
-	down_read(&devices);
-	chan = bcm_mbox_find_channel(name);
-	if (name == NULL) {
-		up_read(&devices);
+	if (!bcm_mbox_chan_valid(chan))
 		return -EINVAL;
-	}
 	mbox = chan->mbox;
+	store = to_mbox_store(chan);
 
 	dev_dbg(mbox->dev, "waiting for message from channel %d\n",
 		chan->index);
-	if (down_interruptible(&chan->recv)) {
+	if (down_interruptible(&store->recv)) {
 		/* The wait was interrupted */
-		ret = -EINTR;
-		goto failed;
+		return -EINTR;
 	}
 	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
 
-	spin_lock_irq(&chan->lock);
-	if (list_empty(&chan->inbox)) {
+	spin_lock_irq(&store->lock);
+	if (list_empty(&store->inbox)) {
 		msg = NULL;
 	} else {
-		msg = list_first_entry(&chan->inbox, struct bcm_mbox_msg, list);
+		msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
 		list_del(&msg->list);
 	}
-	spin_unlock_irq(&chan->lock);
+	spin_unlock_irq(&store->lock);
 	WARN_ON(msg == NULL);
 
 	if (msg != NULL) {
 		dev_dbg(mbox->dev, "read message %08x\n", msg->val);
 		*data28 = MBOX_DATA28(msg->val);
 		kfree(msg);
-		ret = 0;
+		return 0;
 	} else {
-		ret = -EIO;
+		return -EIO;
 	}
-
-failed:
-	up_read(&devices);
-	return ret;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_read);
 
-int bcm_mbox_call(const char *name, u32 out_data28, u32 *in_data28)
+int bcm_mbox_call(struct bcm_mbox_chan *chan, u32 out_data28, u32 *in_data28)
 {
-	struct bcm_mbox_chan *chan;
 	struct bcm_mbox *mbox;
+	struct bcm_mbox_store *store;
 	struct bcm_mbox_msg *msg;
-	int ret;
 
-	down_read(&devices);
-	chan = bcm_mbox_find_channel(name);
-	if (name == NULL) {
-		up_read(&devices);
+	if (!bcm_mbox_chan_valid(chan))
 		return -EINVAL;
-	}
 	mbox = chan->mbox;
+	store = to_mbox_store(chan);
 
 	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
-	if (msg == NULL) {
-		up_read(&devices);
+	if (msg == NULL)
 		return -ENOMEM;
-	}
 
 	msg->val = MBOX_MSG(chan->index, out_data28);
 	dev_dbg(mbox->dev, "writing message %08x\n", msg->val);
@@ -648,35 +618,30 @@ int bcm_mbox_call(const char *name, u32 out_data28, u32 *in_data28)
 
 	dev_dbg(mbox->dev, "waiting for message from channel %d\n",
 		chan->index);
-	if (down_interruptible(&chan->recv)) {
+	if (down_interruptible(&store->recv)) {
 		/* The wait was interrupted */
-		ret = -EINTR;
-		goto failed;
+		return -EINTR;
 	}
 	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
 
-	spin_lock_irq(&chan->lock);
-	if (list_empty(&chan->inbox)) {
+	spin_lock_irq(&store->lock);
+	if (list_empty(&store->inbox)) {
 		msg = NULL;
 	} else {
-		msg = list_first_entry(&chan->inbox, struct bcm_mbox_msg, list);
+		msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
 		list_del(&msg->list);
 	}
-	spin_unlock_irq(&chan->lock);
+	spin_unlock_irq(&store->lock);
 	WARN_ON(msg == NULL);
 
 	if (msg != NULL) {
 		dev_dbg(mbox->dev, "read message %08x\n", msg->val);
 		*in_data28 = MBOX_DATA28(msg->val);
 		kfree(msg);
-		ret = 0;
+		return 0;
 	} else {
-		ret = -EIO;
+		return -EIO;
 	}
-
-failed:
-	up_read(&devices);
-	return ret;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_call);
 
