@@ -93,6 +93,7 @@ obj-$(CONFIG_FB_HP300)            += hpfb.o
 obj-$(CONFIG_FB_G364)             += g364fb.o
 obj-$(CONFIG_FB_EP93XX)		  += ep93xx-fb.o
 obj-$(CONFIG_FB_SA1100)           += sa1100fb.o
+obj-$(CONFIG_FB_BCM2708)          += bcm2708_fb.o
 obj-$(CONFIG_FB_HIT)              += hitfb.o
 obj-$(CONFIG_FB_EPSON1355)	  += epson1355fb.o
 obj-$(CONFIG_FB_ATMEL)		  += atmel_lcdfb.o

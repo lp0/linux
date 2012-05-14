@@ -363,6 +363,21 @@ config FB_SA1100
 	  If you plan to use the LCD display with your SA-1100 system, say
 	  Y here.
 
+config FB_BCM2708
+	tristate "BCM2708 framebuffer support"
+	depends on FB && ARM && BCM_VC_MBOX
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	default y if MACH_BCM2708
+	help
+	  This framebuffer device driver is for the BCM2708 framebuffer.
+
+	  If you want to compile this as a module (=code which can be
+	  inserted into and removed from the running kernel), say M
+	  here and read <file:Documentation/kbuild/modules.txt>.  The module
+	  will be called bcm2708_fb.
+
 config FB_IMX
 	tristate "Freescale i.MX LCD support"
 	depends on FB && IMX_HAVE_PLATFORM_IMX_FB
