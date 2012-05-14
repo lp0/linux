@@ -12,5 +12,6 @@
 
 extern int bcm_mbox_read(const char *name, u32 *data28);
 extern int bcm_mbox_write(const char *name, u32 data28);
+extern int bcm_mbox_call(const char *name, u32 out_data28, u32 *in_data28);
 
 #endif
