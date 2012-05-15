@@ -84,36 +84,6 @@
 #define MBOX_ERR_UNDERFLOW	0x00000400	/* error: read from empty mailbox */
 #define MBOX_ERR_MASK		0x00000700
 
-/* Mailboxes are used to configure the frame buffer on bcm2708 while the
- * console is locked, so this is the only way to debug it if it doesn't
- * work.
- *
- * Warning: if we cause a bug/oops/panic then nothing will show up on the
- * console unless you also disable the console lock.
- */
-//#define MBOX_USE_EARLY_PRINTK
-#ifdef MBOX_USE_EARLY_PRINTK
-# undef dev_emerg
-# undef dev_alert
-# undef dev_crit
-# undef dev_err
-# undef dev_warn
-# undef dev_notice
-# undef dev_info
-# undef dev_dbg
-# undef dev_vdbg
-
-# define dev_emerg(x, fmt, args...)  early_printk("%s: EMERG  " fmt, dev_name(x), ##args)
-# define dev_alert(x, fmt, args...)  early_printk("%s: ALERT  " fmt, dev_name(x), ##args)
-# define dev_crit(x, fmt, args...)   early_printk("%s: CRIT   " fmt, dev_name(x), ##args)
-# define dev_err(x, fmt, args...)    early_printk("%s: ERROR  " fmt, dev_name(x), ##args)
-# define dev_warn(x, fmt, args...)   early_printk("%s: WARN   " fmt, dev_name(x), ##args)
-# define dev_notice(x, fmt, args...) early_printk("%s: NOTICE " fmt, dev_name(x), ##args)
-# define dev_info(x, fmt, args...)   early_printk("%s: INFO   " fmt, dev_name(x), ##args)
-# define dev_dbg(x, fmt, args...)    early_printk("%s: DEBUG  " fmt, dev_name(x), ##args)
-# define dev_vdbg(x, fmt, args...)   early_printk("%s: TRACE  " fmt, dev_name(x), ##args)
-#endif
-
 struct bcm_mbox;
 
 struct bcm_mbox_msg {
@@ -167,12 +137,17 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	struct bcm_mbox_msg *tmp;
 	int i;
 
-	for (i = 0; i < MAX_CHANS; i++)
-		list_for_each_entry_safe(msg, tmp, &mbox->store[i].inbox, list)
+	for (i = 0; i < MAX_CHANS; i++) {
+		list_for_each_entry_safe(msg, tmp, &mbox->store[i].inbox, list) {
 			list_del(&msg->list);
+			kfree(msg);
+		}
+	}
 
-	list_for_each_entry_safe(msg, tmp, &mbox->outbox, list)
+	list_for_each_entry_safe(msg, tmp, &mbox->outbox, list) {
 		list_del(&msg->list);
+		kfree(msg);
+	}
 
 	kfree(mbox);
 }
@@ -259,7 +234,6 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 			}
 			if (mbox->running && mbox->waiting && empty) {
 				/* we don't want to send data, disable the interrupt */
-				dev_dbg(mbox->dev, "disable send interrupt\n");
 				writel(MBOX_STA_IRQ_DATA, mbox->config);
 
 				mbox->waiting = false;
@@ -416,14 +390,11 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 	/* stop the interrupt handler */
 	spin_lock_irq(&mbox->lock);
 	mbox->running = false;
-	dev_dbg(mbox->dev, "disable interrupts\n");
 	writel(0, mbox->config);
 	spin_unlock_irq(&mbox->lock);
 
 	/* remove the interrupt handler */
-	dev_dbg(mbox->dev, "waiting for irq handler\n");
 	synchronize_irq(mbox->irq);
-	dev_dbg(mbox->dev, "removing irq handler\n");
 	remove_irq(mbox->irq, &mbox->irqaction);
 
 	/* clear the mailbox */
@@ -527,42 +498,24 @@ int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
 		return -ENOMEM;
 
 	msg->val = MBOX_MSG(chan->index, data28);
-	dev_dbg(mbox->dev, "writing message %08x\n", msg->val);
 
 	spin_lock_irq(&mbox->lock);
 	list_add_tail(&msg->list, &mbox->outbox);
 	if (!mbox->waiting) {
 		/* enable the interrupt on write space available */
-		dev_dbg(mbox->dev, "enable send interrupt\n");
 		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
 
 		mbox->waiting = true;
-	} else {
-		dev_dbg(mbox->dev, "send interrupt already enabled\n");
 	}
 	spin_unlock_irq(&mbox->lock);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_write);
 
-int bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
+static int __bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 {
-	struct bcm_mbox *mbox;
-	struct bcm_mbox_store *store;
+	struct bcm_mbox_store *store = to_mbox_store(chan);
 	struct bcm_mbox_msg *msg;
-
-	if (!bcm_mbox_chan_valid(chan))
-		return -EINVAL;
-	mbox = chan->mbox;
-	store = to_mbox_store(chan);
-
-	dev_dbg(mbox->dev, "waiting for message from channel %d\n",
-		chan->index);
-	if (down_interruptible(&store->recv)) {
-		/* The wait was interrupted */
-		return -EINTR;
-	}
-	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
 
 	spin_lock_irq(&store->lock);
 	if (list_empty(&store->inbox)) {
@@ -575,7 +528,6 @@ int bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 	WARN_ON(msg == NULL);
 
 	if (msg != NULL) {
-		dev_dbg(mbox->dev, "read message %08x\n", msg->val);
 		*data28 = MBOX_DATA28(msg->val);
 		kfree(msg);
 		return 0;
@@ -583,67 +535,100 @@ int bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 		return -EIO;
 	}
 }
-EXPORT_SYMBOL_GPL(bcm_mbox_read);
 
-int bcm_mbox_call(struct bcm_mbox_chan *chan, u32 out_data28, u32 *in_data28)
+int bcm_mbox_poll(struct bcm_mbox_chan *chan, u32 *data28)
 {
-	struct bcm_mbox *mbox;
-	struct bcm_mbox_store *store;
-	struct bcm_mbox_msg *msg;
+	if (!bcm_mbox_chan_valid(chan))
+		return -EINVAL;
+
+	if (down_trylock(&to_mbox_store(chan)->recv))
+		return -ENOENT;
+
+	return __bcm_mbox_read(chan, data28);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_poll);
+
+int bcm_mbox_read_interruptible(struct bcm_mbox_chan *chan, u32 *data28)
+{
+	int ret;
 
 	if (!bcm_mbox_chan_valid(chan))
 		return -EINVAL;
-	mbox = chan->mbox;
+
+	if ((ret = down_interruptible(&to_mbox_store(chan)->recv))) {
+		/* The wait was interrupted */
+		return ret;
+	}
+
+	return __bcm_mbox_read(chan, data28);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_read_interruptible);
+
+int bcm_mbox_read_timeout(struct bcm_mbox_chan *chan, u32 *data28, long jiffies)
+{
+	int ret;
+
+	if (!bcm_mbox_chan_valid(chan))
+		return -EINVAL;
+
+	if ((ret = down_timeout(&to_mbox_store(chan)->recv, jiffies))) {
+		/* The wait was interrupted or timed out */
+		return ret;
+	}
+
+	return __bcm_mbox_read(chan, data28);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_read_timeout);
+
+int bcm_mbox_call_interruptible(struct bcm_mbox_chan *chan, u32 out_data28,
+	u32 *in_data28)
+{
+	int ret = bcm_mbox_write(chan, out_data28);
+	if (ret)
+		return ret;
+	return bcm_mbox_read_interruptible(chan, in_data28);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_call_interruptible);
+
+int bcm_mbox_call_timeout(struct bcm_mbox_chan *chan, u32 out_data28,
+	u32 *in_data28, long jiffies)
+{
+	int ret = bcm_mbox_write(chan, out_data28);
+	if (ret)
+		return ret;
+	return bcm_mbox_read_timeout(chan, in_data28, jiffies);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_call_timeout);
+
+int bcm_mbox_clear(struct bcm_mbox_chan *chan)
+{
+	struct bcm_mbox_store *store;
+
+	if (!bcm_mbox_chan_valid(chan))
+		return -EINVAL;
+
 	store = to_mbox_store(chan);
 
-	msg = kmalloc(sizeof(*msg), GFP_KERNEL);
-	if (msg == NULL)
-		return -ENOMEM;
+	while (!down_trylock(&store->recv)) {
+		struct bcm_mbox_msg *msg;
 
-	msg->val = MBOX_MSG(chan->index, out_data28);
-	dev_dbg(mbox->dev, "writing message %08x\n", msg->val);
+		spin_lock_irq(&store->lock);
+		if (list_empty(&store->inbox)) {
+			msg = NULL;
+		} else {
+			msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
+			list_del(&msg->list);
+		}
+		spin_unlock_irq(&store->lock);
+		WARN_ON(msg == NULL);
 
-	spin_lock_irq(&mbox->lock);
-	list_add_tail(&msg->list, &mbox->outbox);
-	if (!mbox->waiting) {
-		/* enable the interrupt on write space available */
-		dev_dbg(mbox->dev, "enable send interrupt\n");
-		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
-
-		mbox->waiting = true;
-	} else {
-		dev_dbg(mbox->dev, "send interrupt already enabled\n");
+		if (msg != NULL)
+			kfree(msg);
 	}
-	spin_unlock_irq(&mbox->lock);
 
-	dev_dbg(mbox->dev, "waiting for message from channel %d\n",
-		chan->index);
-	if (down_interruptible(&store->recv)) {
-		/* The wait was interrupted */
-		return -EINTR;
-	}
-	dev_dbg(mbox->dev, "message available for channel %d\n", chan->index);
-
-	spin_lock_irq(&store->lock);
-	if (list_empty(&store->inbox)) {
-		msg = NULL;
-	} else {
-		msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
-		list_del(&msg->list);
-	}
-	spin_unlock_irq(&store->lock);
-	WARN_ON(msg == NULL);
-
-	if (msg != NULL) {
-		dev_dbg(mbox->dev, "read message %08x\n", msg->val);
-		*in_data28 = MBOX_DATA28(msg->val);
-		kfree(msg);
-		return 0;
-	} else {
-		return -EIO;
-	}
+	return 0;
 }
-EXPORT_SYMBOL_GPL(bcm_mbox_call);
+EXPORT_SYMBOL_GPL(bcm_mbox_clear);
 
 static struct of_device_id bcm_mbox_dt_match[] __devinitconst = {
 	{ .compatible = "broadcom,bcm2708-mbox" },
