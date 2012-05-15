@@ -511,6 +511,8 @@ int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
 	if (msg == NULL)
 		return -ENOMEM;
 
+	/* data shouldn't contain anything in the lower 4 bits */
+	WARN_ON(data28 & MAX_CHANS);
 	msg->val = MBOX_MSG(chan->index, data28);
 
 	spin_lock_irq(&mbox->lock);
