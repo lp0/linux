@@ -97,6 +97,8 @@ struct bcm_mbox_chan {
 };
 
 struct bcm_mbox_store {
+	bool open;
+
 	/* used to lock inbox */
 	spinlock_t lock;
 	struct semaphore recv;
@@ -451,6 +453,11 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 		goto put_dev;
 	}
 
+	if (mbox->store[index].open) {
+		ret = -EBUSY;
+		goto put_dev;
+	}
+
 	/* create a reference */
 	chan = kmalloc(sizeof(*chan), GFP_KERNEL);
 	if (chan == NULL) {
@@ -460,6 +467,7 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 
 	chan->mbox = mbox;
 	chan->index = index;
+	mbox->store[index].open = true;
 	return chan;
 
 put_node:
@@ -471,15 +479,21 @@ put_dev:
 	return ERR_PTR(ret);
 }
 
-void bcm_mbox_put(struct bcm_mbox_chan *chan)
-{
-	put_device(chan->mbox->dev);
-	kfree(chan);
-}
-
 static bool bcm_mbox_chan_valid(struct bcm_mbox_chan *chan)
 {
 	return chan != NULL && chan->mbox != NULL && chan->index <= MAX_CHANS;
+}
+
+void bcm_mbox_put(struct bcm_mbox_chan *chan)
+{
+	if (bcm_mbox_chan_valid(chan)) {
+		WARN_ON(!to_mbox_store(chan)->open);
+		to_mbox_store(chan)->open = false;
+		put_device(chan->mbox->dev);
+		kfree(chan);
+	} else {
+		WARN_ON(1);
+	}
 }
 
 int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
