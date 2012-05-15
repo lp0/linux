@@ -517,6 +517,35 @@ void bcm_mbox_put(struct bcm_mbox_chan *chan)
 	}
 }
 
+static void __bcm_mbox_write(struct bcm_mbox *mbox, struct bcm_mbox_msg *msg)
+{
+	int status;
+
+	spin_lock_irq(&mbox->lock);
+	if (mbox->waiting) {
+		list_add_tail(&msg->list, &mbox->outbox);
+		spin_unlock_irq(&mbox->lock);
+		return;
+	}
+
+	/* not waiting so the interrupt handler can't be sending */
+	status = readl(mbox->status);
+
+	if (!(status & MBOX_STA_FULL)) {
+		/* we can send data */
+		dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
+		writel(msg->val, mbox->write);
+	} else {
+		list_add_tail(&msg->list, &mbox->outbox);
+
+		/* enable the interrupt on write space available */
+		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
+
+		mbox->waiting = true;
+	}
+	spin_unlock_irq(&mbox->lock);
+}
+
 int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
 {
 	struct bcm_mbox *mbox;
@@ -536,15 +565,7 @@ int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
 	WARN_ON(data28 & MAX_CHANS);
 	msg->val = MBOX_MSG(chan->index, data28);
 
-	spin_lock_irq(&mbox->lock);
-	list_add_tail(&msg->list, &mbox->outbox);
-	if (!mbox->waiting) {
-		/* enable the interrupt on write space available */
-		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
-
-		mbox->waiting = true;
-	}
-	spin_unlock_irq(&mbox->lock);
+	__bcm_mbox_write(mbox, msg);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_write);
