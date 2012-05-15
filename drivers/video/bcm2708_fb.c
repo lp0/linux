@@ -214,7 +214,10 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	wmb();
 
 	/* inform vc about new framebuffer and get response */
-	ret = bcm_mbox_call(fb->mbox, fb->dma, &val);
+	bcm_mbox_clear(fb->mbox);
+	ret = bcm_mbox_call_timeout(fb->mbox, fb->dma, &val, 2 * HZ);
+	if (ret)
+		dev_err(fb->dev, "error communicating with VideoCore (%d)", ret);
 
 	/* ensure GPU writes are visible to us */
 	rmb();
@@ -356,6 +359,8 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 	fb->mbox = bcm_mbox_get(node, "vc_mailbox", "vc_channel");
 
 	if (IS_ERR(fb->mbox)) {
+		dev_err(fb->dev, "unable to find VideoCore mailbox (%ld)",
+			PTR_ERR(fb->mbox));
 		kfree(fb);
 		return PTR_ERR(fb->mbox);
 	}
