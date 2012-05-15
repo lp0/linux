@@ -228,6 +228,15 @@
 
 				fiq@0x00c {
 					compatible = "broadcom,bcm2708-armctrl-ic-fiq";
+					/* Bits 0-6: IRQ (index in order of banks below)
+					 * Bit    7: Enable FIQ generation
+					 * Bits  8+: Unused
+					 *
+					 * An interrupt must be disabled before
+					 * configuring it for FIQ generation
+					 * otherwise both handlers will fire at
+					 * the same time!
+					 */
 					reg = <0x00c 0x4>;
 					reg-names = "control";
 					interrupt-parent = <&vic0>;
