@@ -154,7 +154,95 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	kfree(mbox);
 }
 
-static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
+static void bcm_mbox_irq_error(struct bcm_mbox *mbox, int error)
+{
+	unsigned long flags;
+
+	dev_err(mbox->dev, "mailbox error %08x\n", error);
+
+	/* clear it */
+	spin_lock_irqsave(&mbox->lock, flags);
+	if (mbox->running) {
+		if (mbox->waiting) {
+			writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE,
+				mbox->config);
+		} else {
+			writel(MBOX_STA_IRQ_DATA, mbox->config);
+		}
+	} else {
+		writel(0, mbox->config);
+	}
+	spin_unlock_irqrestore(&mbox->lock, flags);
+}
+
+static void bcm_mbox_irq_read(struct bcm_mbox *mbox)
+{
+	struct bcm_mbox_store *store;
+	struct bcm_mbox_msg *msg;
+	unsigned long flags;
+	u32 val = readl(mbox->read);
+	int index = MBOX_CHAN(val);
+
+	if (!(mbox->channels & BIT(index))) {
+		dev_warn(mbox->dev, "message received for unknown channel: %08x\n", val);
+		return;
+	}
+
+	store = &mbox->store[index];
+	msg = kzalloc(sizeof(*msg), GFP_ATOMIC);
+
+	if (msg == NULL) {
+		dev_warn(mbox->dev, "out of memory: dropped message %08x\n", val);
+		return;
+	}
+
+	msg->val = val | 0xf;
+	dev_dbg(mbox->dev, "received message %08x\n", val);
+
+	spin_lock_irqsave(&store->lock, flags);
+	list_add_tail(&msg->list, &store->inbox);
+	spin_unlock_irqrestore(&store->lock, flags);
+	up(&store->recv);
+}
+
+static bool bcm_mbox_irq_write(struct bcm_mbox *mbox)
+{
+	struct bcm_mbox_msg *msg;
+	unsigned long flags;
+	bool active = false;
+	bool empty;
+
+	spin_lock_irqsave(&mbox->lock, flags);
+	if (list_empty(&mbox->outbox)) {
+		msg = NULL;
+		empty = true;
+	} else {
+		msg = list_first_entry(&mbox->outbox, struct bcm_mbox_msg, list);
+		list_del(&msg->list);
+		empty = list_empty(&mbox->outbox);
+	}
+	if (mbox->running && mbox->waiting && empty) {
+		/* we don't want to send data, disable the interrupt */
+		writel(MBOX_STA_IRQ_DATA, mbox->config);
+
+		mbox->waiting = false;
+	}
+	spin_unlock_irqrestore(&mbox->lock, flags);
+
+	if (msg != NULL) {
+		dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
+		writel(msg->val, mbox->write);
+		kfree(msg);
+
+		active = true;
+	} else {
+		dev_dbg(mbox->dev, "no message to send\n");
+	}
+
+	return active;
+}
+
+static irqreturn_t bcm_mbox_irq_handler(int irq, void *dev_id)
 {
 	unsigned long flags;
 	struct bcm_mbox *mbox = dev_id;
@@ -171,50 +259,12 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 		status = readl(mbox->status);
 		active = false;
 
-		if (status & MBOX_ERR_MASK) {
-			dev_err(mbox->dev, "mailbox error %08x\n",
-				status & MBOX_ERR_MASK);
-
-			/* clear it */
-			spin_lock_irqsave(&mbox->lock, flags);
-			if (mbox->running) {
-				if (mbox->waiting) {
-					writel(MBOX_STA_IRQ_DATA
-						| MBOX_STA_IRQ_WSPACE,
-						mbox->config);
-				} else {
-					writel(MBOX_STA_IRQ_DATA, mbox->config);
-				}
-			} else {
-				writel(0, mbox->config);
-			}
-			spin_unlock_irqrestore(&mbox->lock, flags);
-		}
+		if (status & MBOX_ERR_MASK)
+			bcm_mbox_irq_error(mbox, status & MBOX_ERR_MASK);
 
 		if (!(status & MBOX_STA_EMPTY)) {
 			/* we have data to read */
-			u32 val = readl(mbox->read);
-			int index = MBOX_CHAN(val);
-
-			if (mbox->channels & BIT(index)) {
-				struct bcm_mbox_store *store = &mbox->store[index];
-				struct bcm_mbox_msg *msg = kzalloc(sizeof(*msg), GFP_ATOMIC);
-
-				if (msg == NULL) {
-					dev_warn(mbox->dev, "out of memory: dropped message %08x\n", val);
-					continue;
-				}
-
-				msg->val = val | 0xf;
-				dev_dbg(mbox->dev, "received message %08x\n", val);
-
-				spin_lock_irqsave(&store->lock, flags);
-				list_add_tail(&msg->list, &store->inbox);
-				spin_unlock_irqrestore(&store->lock, flags);
-				up(&store->recv);
-			} else {
-				dev_warn(mbox->dev, "message received for unknown channel: %08x\n", val);
-			}
+			bcm_mbox_irq_read(mbox);
 
 			active = true;
 			ret = IRQ_HANDLED;
@@ -222,37 +272,8 @@ static irqreturn_t bcm_mbox_irqhandler(int irq, void *dev_id)
 
 		if (!(status & MBOX_STA_FULL)) {
 			/* we can send data */
-			struct bcm_mbox_msg *msg;
-			bool empty;
-
-			spin_lock_irqsave(&mbox->lock, flags);
-			if (list_empty(&mbox->outbox)) {
-				msg = NULL;
-				empty = true;
-			} else {
-				msg = list_first_entry(&mbox->outbox, struct bcm_mbox_msg, list);
-				list_del(&msg->list);
-				empty = list_empty(&mbox->outbox);
-			}
-			if (mbox->running && mbox->waiting && empty) {
-				/* we don't want to send data, disable the interrupt */
-				writel(MBOX_STA_IRQ_DATA, mbox->config);
-
-				mbox->waiting = false;
-				ret = IRQ_HANDLED;
-			}
-			spin_unlock_irqrestore(&mbox->lock, flags);
-
-			if (msg != NULL) {
-				dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
-				writel(msg->val, mbox->write);
-				kfree(msg);
-
-				active = true;
-				ret = IRQ_HANDLED;
-			} else {
-				dev_dbg(mbox->dev, "no message to send\n");
-			}
+			active = bcm_mbox_irq_write(mbox);
+			ret = IRQ_HANDLED;
 		}
 	}
 
@@ -356,7 +377,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->irqaction.name = dev_name(mbox->dev);
 	mbox->irqaction.flags = IRQF_SHARED | IRQF_IRQPOLL;
 	mbox->irqaction.dev_id = mbox;
-	mbox->irqaction.handler = bcm_mbox_irqhandler;
+	mbox->irqaction.handler = bcm_mbox_irq_handler;
 
 	mbox->running = false;
 	mbox->waiting = false;
