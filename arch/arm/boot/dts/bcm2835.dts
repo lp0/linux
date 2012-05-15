@@ -41,6 +41,7 @@
 				#address-cells = <1>;
 				#size-cells = <1>;
 				reg = <0x004 0x4 0x000 0x4>;
+				reg-names = "counter", "control";
 				ranges;
 
 				clock-outputs = "sys";
@@ -51,6 +52,7 @@
 				timer0@0x00c {
 					compatible = "mmio-timer";
 					reg = <0x00c 0x4>;
+					reg-names = "compare";
 					interrupt-parent = <&vic1>;
 					interrupts = <0>;
 
@@ -63,6 +65,7 @@
 				timer1@0x010 {
 					compatible = "mmio-timer";
 					reg = <0x010 0x4>;
+					reg-names = "compare";
 					interrupt-parent = <&vic1>;
 					interrupts = <1>;
 
@@ -75,6 +78,7 @@
 				timer2@0x014 {
 					compatible = "mmio-timer";
 					reg = <0x014 0x4>;
+					reg-names = "compare";
 					interrupt-parent = <&vic1>;
 					interrupts = <2>;
 
@@ -87,6 +91,7 @@
 				timer3@0x018 {
 					compatible = "mmio-timer";
 					reg = <0x018 0x4>;
+					reg-names = "compare";
 					interrupt-parent = <&vic1>;
 					interrupts = <3>;
 
@@ -114,6 +119,7 @@
 				vic0: bank0@0x000 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x000 0x4 0x018 0x4 0x024 0x4>;
+					reg-names = "pending", "enable", "disable";
 					interrupt-controller;
 					#interrupt-cells = <1>;
 
@@ -156,7 +162,8 @@
 
 				vic1: bank1@0x004 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
-					reg = <0x004 0x4 0x010 0x4 0x01C 0x4>;
+					reg = <0x004 0x4 0x010 0x4 0x01c 0x4>;
+					reg-names = "pending", "enable", "disable";
 					interrupt-parent = <&vic0>;
 					interrupt-controller;
 					#interrupt-cells = <1>;
@@ -189,6 +196,7 @@
 				vic2: bank2@0x008 {
 					compatible = "broadcom,bcm2708-armctrl-ic";
 					reg = <0x008 0x4 0x014 0x4 0x020 0x4>;
+					reg-names = "pending", "enable", "disable";
 					interrupt-parent = <&vic0>;
 					interrupt-controller;
 					#interrupt-cells = <1>;
@@ -221,6 +229,7 @@
 				fiq@0x00c {
 					compatible = "broadcom,bcm2708-armctrl-ic-fiq";
 					reg = <0x00c 0x4>;
+					reg-names = "control";
 					interrupt-parent = <&vic0>;
 					interrupt-controller;
 					#interrupt-cells = <0>;
