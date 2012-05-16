@@ -506,7 +506,7 @@ config BCM_VC_MBOX
 	  Support for VideoCore Mailbox access on Broadcom devices.
 
 config BCM_VC_BELL
-	bool "Broadcom VideoCore Doorbell Support"
+	tristate "Broadcom VideoCore Doorbell Support"
 	depends on OF
 	default y if MACH_BCM2708
 	help
