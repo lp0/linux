@@ -505,6 +505,13 @@ config BCM_VC_MBOX
 	help
 	  Support for VideoCore Mailbox access on Broadcom devices.
 
+config BCM_VC_BELL
+	bool "Broadcom VideoCore Doorbell Support"
+	depends on OF
+	default y if MACH_BCM2708
+	help
+	  Support for VideoCore Doorbell access on Broadcom devices.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
