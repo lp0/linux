@@ -375,7 +375,7 @@ void __init clockevent_mmio_dt_init(void)
 		timer_irq = kzalloc(sizeof(*timer_irq), GFP_KERNEL);
 		BUG_ON(timer_irq == NULL);
 		timer_irq->name = data->name;
-		timer_irq->flags = IRQF_TIMER;
+		timer_irq->flags = IRQF_TIMER | IRQF_SHARED;
 		timer_irq->dev_id = data;
 		timer_irq->handler = mmio_dt_timer_interrupt;
 
