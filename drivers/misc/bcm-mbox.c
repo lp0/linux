@@ -31,6 +31,7 @@
  * messages).
  */
 
+#include <linux/bitops.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/io.h>
@@ -58,12 +59,12 @@
 #define MBOX_OFF0	0x00	/* mailbox 0 */
 #define MBOX_OFF1	0x20	/* mailbox 1 */
 #define MBOX_REGSZ	0x40	/* total size for two mailboxes */
-#define MAX_CHANS	0x0f	/* max channel index and mask for channel in message */
-#define OF_CHANS_MASK	0x7fff	/* MAX_CHANS bits for device tree mask */
+#define MAX_CHAN	0x0f	/* max channel index and mask for channel in message */
+#define OF_CHANS_MASK	0x7fff	/* MAX_CHAN bits for device tree mask */
 
-#define MBOX_MSG(chan, data28)	(((data28) & ~MAX_CHANS) | ((chan) & MAX_CHANS))
-#define MBOX_CHAN(msg)		((msg) & MAX_CHANS)
-#define MBOX_DATA28(msg)	((msg) & ~MAX_CHANS)
+#define MBOX_MSG(chan, data28)	(((data28) & ~MAX_CHAN) | ((chan) & MAX_CHAN))
+#define MBOX_CHAN(msg)		((msg) & MAX_CHAN)
+#define MBOX_DATA28(msg)	((msg) & ~MAX_CHAN)
 
 #define MBOX_STA_FULL		0x80000000
 #define MBOX_STA_EMPTY		0x40000000
@@ -112,7 +113,7 @@ struct bcm_mbox {
 	void __iomem *write;
 
 	u32 channels;
-	struct bcm_mbox_store store[MAX_CHANS+1];
+	struct bcm_mbox_store store[MAX_CHAN+1];
 
 	/* used to lock running, waiting, outbox
 	 * and synchronise access to config
@@ -137,7 +138,7 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	struct bcm_mbox_msg *tmp;
 	int i;
 
-	for (i = 0; i < MAX_CHANS; i++) {
+	for (i = 0; i <= MAX_CHAN; i++) {
 		list_for_each_entry_safe(msg, tmp, &mbox->store[i].inbox, list) {
 			list_del(&msg->list);
 			kfree(msg);
@@ -295,7 +296,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	spin_lock_init(&mbox->lock);
 	INIT_LIST_HEAD(&mbox->outbox);
 
-	for (i = 0; i < MAX_CHANS; i++) {
+	for (i = 0; i <= MAX_CHAN; i++) {
 		sema_init(&mbox->store[i].recv, 0);
 		spin_lock_init(&mbox->store[i].lock);
 		INIT_LIST_HEAD(&mbox->store[i].inbox);
@@ -444,7 +445,7 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 
 	index = ~0;
 	of_property_read_u32(node, pchan, &index);
-	if (index > MAX_CHANS)
+	if (index > MAX_CHAN)
 		return ERR_PTR(-EOVERFLOW);
 
 	mbox_node = of_parse_phandle(node, pmbox, 0);
@@ -507,7 +508,7 @@ put_dev:
 
 static bool bcm_mbox_chan_valid(struct bcm_mbox_chan *chan)
 {
-	return chan != NULL && chan->mbox != NULL && chan->index <= MAX_CHANS;
+	return chan != NULL && chan->mbox != NULL && chan->index <= MAX_CHAN;
 }
 
 void bcm_mbox_put(struct bcm_mbox_chan *chan)
@@ -572,7 +573,7 @@ int bcm_mbox_write(struct bcm_mbox_chan *chan, u32 data28)
 		return -ENOMEM;
 
 	/* data shouldn't contain anything in the lower 4 bits */
-	WARN_ON(data28 & MAX_CHANS);
+	WARN_ON(data28 & MAX_CHAN);
 	msg->val = MBOX_MSG(chan->index, data28);
 
 	__bcm_mbox_write(mbox, msg);
