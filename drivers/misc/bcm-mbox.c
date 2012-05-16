@@ -96,10 +96,9 @@ struct bcm_mbox_chan {
 };
 
 struct bcm_mbox_store {
-	bool open;
-
-	/* used to lock inbox */
+	/* used to lock open and inbox */
 	spinlock_t lock;
+	bool open;
 	struct semaphore recv;
 	struct list_head inbox;
 };
@@ -436,6 +435,7 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	struct platform_device *dev;
 	struct bcm_mbox *mbox;
 	struct bcm_mbox_chan *chan;
+	struct bcm_mbox_store *store;
 	u32 index;
 	int ret;
 
@@ -473,11 +473,6 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 		goto put_dev;
 	}
 
-	if (mbox->store[index].open) {
-		ret = -EBUSY;
-		goto put_dev;
-	}
-
 	/* create a reference */
 	chan = kmalloc(sizeof(*chan), GFP_KERNEL);
 	if (chan == NULL) {
@@ -487,13 +482,24 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 
 	chan->mbox = mbox;
 	chan->index = index;
-	mbox->store[index].open = true;
+	store = to_mbox_store(chan);
+
+	spin_lock_irq(&store->lock);
+	if (store->open) {
+		ret = -EBUSY;
+		goto free_ref;
+	} else {
+		store->open = true;
+	}
+	spin_unlock_irq(&store->lock);
 	return chan;
 
 put_node:
 	of_node_put(mbox_node);
 	return ERR_PTR(ret);
 
+free_ref:
+	kfree(chan);
 put_dev:
 	put_device(mbox->dev);
 	return ERR_PTR(ret);
@@ -507,8 +513,13 @@ static bool bcm_mbox_chan_valid(struct bcm_mbox_chan *chan)
 void bcm_mbox_put(struct bcm_mbox_chan *chan)
 {
 	if (bcm_mbox_chan_valid(chan)) {
-		WARN_ON(!to_mbox_store(chan)->open);
-		to_mbox_store(chan)->open = false;
+		struct bcm_mbox_store *store = to_mbox_store(chan);
+
+		spin_lock_irq(&store->lock);
+		WARN_ON(!store->open);
+		store->open = false;
+		spin_unlock_irq(&store->lock);
+
 		put_device(chan->mbox->dev);
 		kfree(chan);
 	} else {
