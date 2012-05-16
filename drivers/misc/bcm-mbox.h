@@ -22,6 +22,7 @@ struct bcm_mbox_chan;
  */
 extern struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	const char *pmbox, const char *pchan);
+extern char *bcm_mbox_name(struct bcm_mbox_chan *mbox);
 extern void bcm_mbox_put(struct bcm_mbox_chan *mbox);
 
 extern int bcm_mbox_poll(struct bcm_mbox_chan *mbox, u32 *data28);

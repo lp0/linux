@@ -36,6 +36,7 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
@@ -510,6 +511,15 @@ static bool bcm_mbox_chan_valid(struct bcm_mbox_chan *chan)
 {
 	return chan != NULL && chan->mbox != NULL && chan->index <= MAX_CHAN;
 }
+
+char *bcm_mbox_name(struct bcm_mbox_chan *chan)
+{
+	if (!bcm_mbox_chan_valid(chan))
+		return NULL;
+	return kasprintf(GFP_KERNEL, "%s[%d]", dev_name(chan->mbox->dev),
+		chan->index);
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_name);
 
 void bcm_mbox_put(struct bcm_mbox_chan *chan)
 {
