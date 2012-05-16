@@ -341,5 +341,14 @@
 			interrupts = <29>;
 		};
 		*/
+
+		usb {
+			compatible = "broadcom,bcm2835-usb", "broadcom,bcm2708-usb", "synopsys,designware-hs-otg";
+			reg = <0x980000 0x20000>;
+			interrupt-parent = <&vic1>;
+			interrupts = <9>;
+
+			dwc-otg,lpm_enable = <0>;
+		};
 	};
 };
