@@ -971,6 +971,7 @@ config ARCH_BCM2708
 	select MULTI_IRQ_HANDLER
 	select WATCHDOG
 	select BCM2708_WDOG
+	select REGULATOR
 	select MACH_BCM2708
 	help
 	  This enables support for Broadcom BCM2708 boards.
