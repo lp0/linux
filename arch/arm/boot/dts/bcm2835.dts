@@ -256,6 +256,38 @@
 				interrupts = <0>;
 			};
 
+			vc_bell0: bell0@0x840 {
+				compatible = "broadcom,bcm2708-bell";
+				reg = <0x840 0x4>;
+				interrupt-parent = <&vic0>;
+				interrupts = <2>;
+
+				access = "r-";
+			};
+
+			vc_bell1: bell1@0x844 {
+				compatible = "broadcom,bcm2708-bell";
+				reg = <0x844 0x4>;
+				interrupt-parent = <&vic0>;
+				interrupts = <3>;
+
+				access = "r-";
+			};
+
+			vc_bell2: bell2@0x848 {
+				compatible = "broadcom,bcm2708-bell";
+				reg = <0x848 0x4>;
+
+				access = "-w";
+			};
+
+			vc_bell3: bell3@0x84c {
+				compatible = "broadcom,bcm2708-bell";
+				reg = <0x84c 0x4>;
+
+				access = "-w";
+			};
+
 			vc_mbox: mbox0@0x880 {
 				compatible = "broadcom,bcm2708-mbox";
 				reg = <0x880 0x40>;
