@@ -499,7 +499,7 @@ config MAX8997_MUIC
 	  The MAX8997 MUIC is a USB port accessory detector and switch.
 
 config BCM_VC_MBOX
-	bool "Broadcom VideoCore Mailbox Support"
+	tristate "Broadcom VideoCore Mailbox Support"
 	depends on OF
 	default y if MACH_BCM2708
 	help
