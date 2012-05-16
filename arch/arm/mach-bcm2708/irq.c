@@ -86,7 +86,7 @@ struct of_armctrl_ic {
 	struct armctrl_ic *ic;
 };
 
-static struct armctrl_ic *intc = NULL;
+static struct armctrl_ic *intc __read_mostly = NULL;
 
 static void armctrl_mask_irq(struct irq_data *d)
 {
@@ -289,7 +289,7 @@ void __init bcm2708_init_irq(void)
  * status register before handling each interrupt, which is necessary given that
  * handle_IRQ may briefly re-enable interrupts for soft IRQ handling.
  */
-void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
+static void handle_one_irq(struct pt_regs *regs, struct armctrl_ic *dev)
 {
 	u32 stat, irq;
 
@@ -303,7 +303,7 @@ void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 				dev->shortcuts[irq].irq), regs);
 		} else if (stat & dev->bank_mask) {
 			irq = ffs(stat & dev->bank_mask) - 1;
-			handle_one_irq(dev->banks[irq], regs);
+			handle_one_irq(regs, dev->banks[irq]);
 		} else {
 			BUG();
 		}
@@ -312,5 +312,5 @@ void handle_one_irq(struct armctrl_ic *dev, struct pt_regs *regs)
 
 asmlinkage void __exception_irq_entry armctrl_handle_irq(struct pt_regs *regs)
 {
-	handle_one_irq(intc, regs);
+	handle_one_irq(regs, intc);
 }
