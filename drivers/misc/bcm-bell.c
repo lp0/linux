@@ -22,7 +22,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <linux/workqueue.h>
 
 #include "bcm-bell.h"
 
@@ -39,27 +38,12 @@ struct bcm_bell {
 	/* used to lock open, handler and data */
 	spinlock_t lock;
 	bool open;
-	void (*handler)(void *);
+	void (*handler)(struct bcm_bell *, void *);
 	void *data;
 
 	u32 irq;
 	struct irqaction irqaction;
-	struct workqueue_struct *queue;
 };
-
-struct bcm_bell_ring {
-	struct work_struct work;
-	void (*handler)(void *);
-	void *data;
-};
-
-static void bcm_bell_work_handler(struct work_struct *work)
-{
-	struct bcm_bell_ring *ring = container_of(work,
-		struct bcm_bell_ring, work);
-	ring->handler(ring->data);
-	kfree(ring);
-}
 
 static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
 {
@@ -68,20 +52,16 @@ static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
 	int status = readl(bell->base);
 
 	if (status & BELL_RING) {
-		struct bcm_bell_ring *ring = kmalloc(sizeof(*ring), GFP_ATOMIC);
+		void (*handler)(struct bcm_bell *, void *);
+		void *data;
 
-		if (ring == NULL) {
-			dev_warn(bell->dev, "out of memory: ignored ring\n");
-		} else {
-			INIT_WORK(&ring->work, bcm_bell_work_handler);
+		spin_lock_irqsave(&bell->lock, flags);
+		handler = bell->handler;
+		data = bell->data;
+		spin_unlock_irqrestore(&bell->lock, flags);
 
-			spin_lock_irqsave(&bell->lock, flags);
-			ring->handler = bell->handler;
-			ring->data = bell->data;
-			spin_unlock_irqrestore(&bell->lock, flags);
-
-			queue_work(bell->queue, &ring->work);
-		}
+		if (handler)
+			handler(bell, data);
 		return IRQ_HANDLED;
 	} else {
 		return IRQ_NONE;
@@ -162,17 +142,11 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		bell->irqaction.handler = bcm_bell_irq_handler;
 		bell->handler = NULL;
 
-		bell->queue = alloc_ordered_workqueue(dev_name(bell->dev), 0);
-		if (bell->queue == NULL) {
-			ret = -ENOMEM;
-			goto err;
-		}
-
 		ret = setup_irq(bell->irq, &bell->irqaction);
 		if (ret) {
 			dev_err(bell->dev, "unable to setup irq %d", bell->irq);
 			spin_unlock_irq(&bell->lock);
-			goto err_wq;
+			goto err;
 		}
 
 		dev_info(bell->dev, "doorbell at MMIO %#lx (irq = %d, %s)\n",
@@ -186,8 +160,6 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	platform_set_drvdata(of_dev, bell);
 	return 0;
 
-err_wq:
-	destroy_workqueue(bell->queue);
 err:
 	kfree(bell);
 	return ret;
@@ -197,10 +169,8 @@ static int bcm_bell_remove(struct platform_device *of_dev)
 {
 	struct bcm_bell *bell = platform_get_drvdata(of_dev);
 
-	if (bell->read) {
+	if (bell->read)
 		remove_irq(bell->irq, &bell->irqaction);
-		destroy_workqueue(bell->queue);
-	}
 	release_region(bell->res.start, resource_size(&bell->res));
 	kfree(bell);
 	platform_set_drvdata(of_dev, NULL);
@@ -259,7 +229,7 @@ put_dev:
 EXPORT_SYMBOL_GPL(bcm_bell_get);
 
 int bcm_bell_read(struct bcm_bell *bell,
-	void (*handler)(void *), void *data)
+	void (*handler)(struct bcm_bell *bell, void *data), void *data)
 {
 	if (bell == NULL || handler == NULL)
 		return -EINVAL;
@@ -273,7 +243,7 @@ int bcm_bell_read(struct bcm_bell *bell,
 	spin_unlock_irq(&bell->lock);
 
 	if (handler == NULL)
-		drain_workqueue(bell->queue);
+		synchronize_irq(bell->irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(bcm_bell_read);
@@ -288,7 +258,7 @@ void bcm_bell_put(struct bcm_bell *bell)
 		spin_unlock_irq(&bell->lock);
 
 		if (bell->read)
-			drain_workqueue(bell->queue);
+			synchronize_irq(bell->irq);
 		put_device(bell->dev);
 	} else {
 		WARN_ON(1);

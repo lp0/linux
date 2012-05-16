@@ -23,8 +23,8 @@ extern struct bcm_bell *bcm_bell_get(struct device_node *node,
 	const char *pbell);
 extern void bcm_bell_put(struct bcm_bell *bell);
 
-extern int bcm_bell_read(struct bcm_bell *bell, void (*handler)(void *),
-	void *data);
+extern int bcm_bell_read(struct bcm_bell *bell,
+	void (*handler)(struct bcm_bell *bell, void *data), void *data);
 extern int bcm_bell_write(struct bcm_bell *bell);
 
 #endif
