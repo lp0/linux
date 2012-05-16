@@ -22,6 +22,15 @@
 		vc_channel = <1>;
 	};
 
+	power {
+		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr";
+		#address-cells = <0>;
+		#size-cells = <0>;
+
+		vc_mailbox = <&vc_mbox>;
+		vc_channel = <0>;
+	};
+
 	axi {
 		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
 		#address-cells = <1>;
