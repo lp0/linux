@@ -41,7 +41,6 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <linux/rwsem.h>
 #include <linux/semaphore.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
