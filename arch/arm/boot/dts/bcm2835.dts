@@ -7,6 +7,11 @@
 	#size-cells = <1>;
 	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
+	system-rev = <0>;
+	system-serial-low = <0>;
+	system-serial-high = <0>;
+	mac-address = [00 00 00 00 00 00];
+
 	cpus {
 		cpu@0 {
 			compatible = "broadcom,bcm2835-cpu", "broadcom,bcm2708-cpu", "arm,1176jz-f";
@@ -20,6 +25,10 @@
 
 		vc_mailbox = <&vc_mbox>;
 		vc_channel = <1>;
+
+		width = <0>;
+		height = <0>;
+		depth = <0>;
 	};
 
 	power: power {
