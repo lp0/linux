@@ -20,6 +20,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
+#include <linux/of_net.h>
 #include <linux/of_platform.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
@@ -51,10 +52,38 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
+static void __init bcm2708_of_system_prop(struct device_node *root, char *name,
+	unsigned int *value)
+{
+	u32 tmp;
+	if (!of_property_read_u32(root, name, &tmp))
+		*value = tmp;
+}
+
+static void __init bcm2708_of_system(void)
+{
+	struct device_node *root = of_find_node_by_path("/");
+
+	if (root) {
+		u8 *mac;
+
+		bcm2708_of_system_prop(root, "system-rev", &system_rev);
+		bcm2708_of_system_prop(root, "system-serial-low", &system_serial_low);
+		bcm2708_of_system_prop(root, "system-serial-high", &system_serial_high);
+
+		mac = (u8*)of_get_mac_address(root);
+		if (mac)
+			printk(KERN_INFO
+				"BCM2708 MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+	}
+}
+
 void __init bcm2708_init(void)
 {
 	int ret;
 
+	bcm2708_of_system();
 	bcm2708_init_clocks();
 
 	ret = of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
