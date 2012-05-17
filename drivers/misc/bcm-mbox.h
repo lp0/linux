@@ -26,11 +26,14 @@ extern char *bcm_mbox_name(struct bcm_mbox_chan *mbox);
 extern void bcm_mbox_put(struct bcm_mbox_chan *mbox);
 
 extern int bcm_mbox_poll(struct bcm_mbox_chan *mbox, u32 *data28);
+extern int bcm_mbox_read(struct bcm_mbox_chan *mbox, u32 *data28);
 extern int bcm_mbox_read_interruptible(struct bcm_mbox_chan *mbox, u32 *data28);
 extern int bcm_mbox_read_timeout(struct bcm_mbox_chan *mbox, u32 *data28,
 	long jiffies);
 
 extern int bcm_mbox_write(struct bcm_mbox_chan *mbox, u32 data28);
+extern int bcm_mbox_call(struct bcm_mbox_chan *mbox,
+	u32 out_data28, u32 *in_data28);
 extern int bcm_mbox_call_interruptible(struct bcm_mbox_chan *mbox,
 	u32 out_data28, u32 *in_data28);
 extern int bcm_mbox_call_timeout(struct bcm_mbox_chan *mbox, u32 out_data28,
