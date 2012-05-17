@@ -22,21 +22,21 @@
 		vc_channel = <1>;
 	};
 
-	axi@0x20000000 {
+	axi {
 		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
 		reg = <0x20000000 0x01000000>;
 		ranges = <0 0x20000000 0x01000000>;
 
-		st@0x3000 {
+		st {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			reg = <0x3000 0x1000>;
 			ranges = <0 0x3000 0x1000>;
 
-			stc@0x004 {
+			stc {
 				compatible = "broadcom,bcm2835-clock", "broadcom,bcm2708-clock", "mmio-clock", "simple-bus";
 				#address-cells = <1>;
 				#size-cells = <1>;
@@ -49,7 +49,7 @@
 				rating = <300>;
 
 				/* DO NOT USE (it doesn't work) */
-				timer0@0x00c {
+				timer0 {
 					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
 					reg = <0x00c 0x4>;
 					reg-names = "compare";
@@ -62,7 +62,7 @@
 				};
 
 				/* Usable system timer */
-				timer1@0x010 {
+				timer1 {
 					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
 					reg = <0x010 0x4>;
 					reg-names = "compare";
@@ -75,7 +75,7 @@
 				};
 
 				/* DO NOT USE (generates extra interrupts) */
-				timer2@0x014 {
+				timer2 {
 					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
 					reg = <0x014 0x4>;
 					reg-names = "compare";
@@ -88,7 +88,7 @@
 				};
 
 				/* Usable system timer */
-				timer3@0x018 {
+				timer3 {
 					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
 					reg = <0x018 0x4>;
 					reg-names = "compare";
@@ -102,21 +102,28 @@
 			};
 		};
 
-		armctrl@0xB000 {
+		dma {
+			compatible = "broadcom,bcm2835-dma", "broadcom,bcm2708-dma";
+			reg = <0x7000 0x1000>;
+
+			channels = <0>;
+		};
+
+		armctrl {
 			compatible = "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			reg = <0xB000 0x1000>;
 			ranges = <0 0xB000 0x1000>;
 
-			intc@0x200 {
+			intc {
 				compatible = "simple-bus";
 				#address-cells = <1>;
 				#size-cells = <1>;
 				reg = <0x200 0x200>;
 				ranges = <0 0x200 0x200>;
 
-				vic0: bank0@0x000 {
+				vic0: bank0 {
 					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
 					reg = <0x000 0x4 0x018 0x4 0x024 0x4>;
 					reg-names = "pending", "enable", "disable";
@@ -160,7 +167,7 @@
 					>;
 				};
 
-				vic1: bank1@0x004 {
+				vic1: bank1 {
 					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
 					reg = <0x004 0x4 0x010 0x4 0x01c 0x4>;
 					reg-names = "pending", "enable", "disable";
@@ -193,7 +200,7 @@
 					source-mask = <0xffffffff>;
 				};
 
-				vic2: bank2@0x008 {
+				vic2: bank2 {
 					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
 					reg = <0x008 0x4 0x014 0x4 0x020 0x4>;
 					reg-names = "pending", "enable", "disable";
@@ -226,7 +233,7 @@
 					source-mask = <0xffffffff>;
 				};
 
-				fiq@0x00c {
+				fiq {
 					compatible = "broadcom,bcm2708-armctrl-ic-fiq", "broadcom,bcm2835-armctrl-ic-fiq";
 					/* Bits 0-6: IRQ (index in order of banks below)
 					 * Bit    7: Enable FIQ generation
@@ -247,7 +254,7 @@
 				};
 			};
 
-			armtimer@0x400 {
+			armtimer {
 				/* Not AMBA compatible */
 				compatible = "broadcom,bcm2835-sp804", "arm,sp804";
 				reg = <0x400 0x24>;
@@ -256,7 +263,7 @@
 				interrupts = <0>;
 			};
 
-			vc_bell0: bell0@0x840 {
+			vc_bell0: bell0 {
 				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 				reg = <0x840 0x4>;
 				interrupt-parent = <&vic0>;
@@ -265,7 +272,7 @@
 				access = "r-";
 			};
 
-			vc_bell1: bell1@0x844 {
+			vc_bell1: bell1 {
 				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 				reg = <0x844 0x4>;
 				interrupt-parent = <&vic0>;
@@ -274,21 +281,21 @@
 				access = "r-";
 			};
 
-			vc_bell2: bell2@0x848 {
+			vc_bell2: bell2 {
 				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 				reg = <0x848 0x4>;
 
 				access = "-w";
 			};
 
-			vc_bell3: bell3@0x84c {
+			vc_bell3: bell3 {
 				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 				reg = <0x84c 0x4>;
 
 				access = "-w";
 			};
 
-			vc_mbox: mbox0@0x880 {
+			vc_mbox: mbox0 {
 				compatible = "broadcom,bcm2835-mbox", "broadcom,bcm2708-mbox";
 				reg = <0x880 0x40>;
 				interrupt-parent = <&vic0>;
@@ -306,7 +313,7 @@
 			};
 		};
 
-		watchdog@0x100000 {
+		watchdog {
 			compatible = "broadcom,bcm2835-pm-wdog", "broadcom,bcm2708-pm-wdog";
 			reg = <0x100000 0x1000>;
 		};
@@ -317,7 +324,7 @@
 			#size-cells = <1>;
 			ranges;
 
-			uart0@0x201000 {
+			uart0 {
 				compatible = "broadcom,bcm2835-uart", "broadcom,bcm2708-uart", "arm,pl011", "arm,primecell";
 				reg = <0x201000 0x1000>;
 				interrupt-parent = <&vic2>;
@@ -327,7 +334,7 @@
 
 		/* Auxiliary device disabled by default */
 		/*
-		uart1@0x215000 {
+		uart1 {
 			compatible = "broadcom,bcm2835-miniuart", "broadcom,bcm2708-miniuart", "ns16550";
 			reg = <0x215040 0x38>;
 			interrupt-parent = <&vic1>;
