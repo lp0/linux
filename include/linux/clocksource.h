@@ -353,8 +353,6 @@ extern struct clocksource_mmio *clocksource_mmio_init(void __iomem *,
 	cycle_t (*)(struct clocksource *));
 extern void clocksource_mmio_remove(struct clocksource_mmio *);
 
-extern void clockevent_mmio_dt_init(void);
-
 extern int clocksource_i8253_init(void);
 
 #endif /* _LINUX_CLOCKSOURCE_H */

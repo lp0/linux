@@ -16,7 +16,6 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#include <linux/clocksource.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
@@ -31,6 +30,7 @@
 #include <mach/hardware.h>
 #include <asm/hardware/timer-sp.h>
 
+#include "../../../drivers/clocksource/mmio_of.h"
 #include "../../../drivers/watchdog/bcm2708_wdog.h"
 #include "clock.h"
 #include "irq.h"
@@ -107,7 +107,8 @@ static void __init bcm2708_timer_init(void)
 		sp804_disable(of_iomap(node, 0));
 	}
 
-	clockevent_mmio_dt_init();
+	clocksource_mmio_of_init();
+	clockevent_mmio_of_init();
 }
 
 struct sys_timer bcm2708_timer = {
