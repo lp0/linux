@@ -705,6 +705,7 @@ int bcm_mbox_clear(struct bcm_mbox_chan *chan)
 	if (!bcm_mbox_chan_valid(chan))
 		return -EINVAL;
 
+	synchronize_irq(chan->mbox->irq);
 	store = to_mbox_store(chan);
 
 	while (!down_trylock(&store->recv)) {
