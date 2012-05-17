@@ -84,6 +84,7 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	dev_dbg(mgr->dev, "devices = %08x\n", mgr->valid);
 
 	/* find out what is powered on */
+	bcm_mbox_clear(mgr->mbox);
 	ret = bcm_mbox_call_interruptible(mgr->mbox, PQUERY, &mgr->state);
 	mgr->state = MBOX_TO_PWR(mgr->state) & PMASK;
 	if (ret)
