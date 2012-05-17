@@ -350,7 +350,7 @@ static void bcm2708_fb_of_prop(struct device_node *node, char *name,
 	unsigned int *value)
 {
 	u32 tmp;
-	if (!of_property_read_u32(node, name, &tmp))
+	if (!of_property_read_u32(node, name, &tmp) && tmp != 0)
 		*value = tmp;
 }
 
