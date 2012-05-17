@@ -328,7 +328,7 @@
 		/* Auxiliary device disabled by default */
 		/*
 		uart1@0x215000 {
-			compatible = "broadcom,bcm2835-miniuart", "broadcom,bcm2708-uart", "ns16550";
+			compatible = "broadcom,bcm2835-miniuart", "broadcom,bcm2708-miniuart", "ns16550";
 			reg = <0x215040 0x38>;
 			interrupt-parent = <&vic1>;
 			interrupts = <29>;
