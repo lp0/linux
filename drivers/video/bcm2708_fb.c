@@ -346,6 +346,14 @@ static int bcm2708_fb_register(struct bcm2708_fb *fb)
 	return ret;
 }
 
+static void bcm2708_fb_of_prop(struct device_node *node, char *name,
+	unsigned int *value)
+{
+	u32 tmp;
+	if (!of_property_read_u32(node, name, &tmp))
+		*value = tmp;
+}
+
 static int bcm2708_fb_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
@@ -364,6 +372,10 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 		kfree(fb);
 		return PTR_ERR(fb->mbox);
 	}
+
+	bcm2708_fb_of_prop(node, "width", &fbwidth);
+	bcm2708_fb_of_prop(node, "height", &fbheight);
+	bcm2708_fb_of_prop(node, "depth", &fbdepth);
 
 	ret = bcm2708_fb_register(fb);
 	if (ret) {
@@ -410,4 +422,3 @@ module_platform_driver(bcm2708_fb_driver);
 
 MODULE_DESCRIPTION("BCM2708 framebuffer driver");
 MODULE_LICENSE("GPL");
-
