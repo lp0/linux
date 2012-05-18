@@ -151,7 +151,8 @@ void __init clocksource_mmio_of_init(void)
 			break;
 	}
 
-	BUG_ON(!found);
+	if (!found)
+		panic("can't find scheduler clocksource");
 }
 #endif
 

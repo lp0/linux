@@ -267,5 +267,6 @@ void __init clockevent_mmio_of_init(void)
 			found = true;
 	}
 
-	BUG_ON(!found);
+	if (!found)
+		panic("can't find clockevent timer");
 }
