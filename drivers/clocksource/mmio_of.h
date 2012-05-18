@@ -25,34 +25,30 @@
 #include <linux/clockchips.h>
 
 struct mmio_of_clock {
-	char *name;
 	bool system;
 	u32 rating;
 	u32 freq;
 	u32 size;
 	u32 invert;
 
-	unsigned long base;
+	struct resource rvalue;
 	void __iomem *value;
-	int value_sz;
+	struct resource rcontrol;
 	void __iomem *control;
-	int control_sz;
 
 	cycle_t (*read)(struct clocksource *);
 	struct clocksource_mmio *cs;
 };
 
 struct mmio_of_timer {
-	char *name;
 	u32 rating;
 	u32 cpu;
 	u32 index;
 	u32 min_delta;
 	u32 max_delta;
 
-	unsigned long base;
+	struct resource rcompare;
 	void __iomem *compare;
-	int compare_sz;
 
 	struct mmio_of_clock *clock;
 	int irq;

@@ -35,7 +35,6 @@
 
 void mmio_of_clock_free(struct mmio_of_clock *data)
 {
-	kfree(data->name);
 	kfree(data);
 }
 
@@ -53,8 +52,6 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 	struct device_node *node)
 {
 	struct mmio_of_clock *data;
-	struct resource value;
-	struct resource control;
 	int ret;
 
 	if (node == NULL)
@@ -64,22 +61,16 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 	if (data == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	data->name = kstrdup(node->name, GFP_KERNEL);
-
-	if (of_address_to_resource(node, 0, &value)) {
+	if (of_address_to_resource(node, 0, &data->rvalue)) {
 		ret = -ENXIO;
 		goto err;
 	}
 
-	data->base = (unsigned long)value.start;
-	data->value = ioremap(value.start, resource_size(&value));
-	data->value_sz = resource_size(&value) * 8;
-	if (of_address_to_resource(node, 1, &control)) {
-		data->control = NULL;
-		data->control_sz = 0;
-	} else {
-		data->control = ioremap(control.start, resource_size(&control));
-		data->control_sz = resource_size(&control) * 8;
+	data->value = ioremap(data->rvalue.start, resource_size(&data->rvalue));
+	data->size = resource_size(&data->rvalue) * 8;
+	if (!of_address_to_resource(node, 1, &data->rcontrol)) {
+		data->control = ioremap(data->rcontrol.start,
+			resource_size(&data->rcontrol));
 	}
 
 	data->system = false;
@@ -87,12 +78,11 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 		data->system = true;
 
 	data->freq = data->invert = data->rating = 0;
-	data->size = data->value_sz;
 	of_property_read_u32(node, "clock-frequency", &data->freq);
 	of_property_read_u32(node, "clock-invert", &data->invert);
 	of_property_read_u32(node, "rating", &data->rating);
 
-	if (!data->base || !data->freq || data->invert & ~1) {
+	if (!data->value || !data->freq || data->invert & ~1) {
 		ret = -EINVAL;
 		goto err;
 	}
@@ -102,7 +92,7 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 		goto err;
 	}
 
-	if (data->value_sz <= 16) {
+	if (data->size <= 16) {
 		data->read = read_16[data->invert];
 	} else {
 		data->read = read_32[data->invert];
@@ -167,26 +157,41 @@ void __init clocksource_mmio_of_init(void)
 
 static int __devinit mmio_of_clock_probe(struct platform_device *of_dev)
 {
-	struct mmio_of_clock *data = mmio_of_clock_read(of_dev->dev.of_node);
+	struct device_node *node = of_dev->dev.of_node;
+	struct mmio_of_clock *data = mmio_of_clock_read(node);
 	int ret;
 	if (IS_ERR(data)) {
 		ret = PTR_ERR(data);
 		goto err;
 	}
 
-	data->cs = clocksource_mmio_init(data->value, data->name,
-		data->freq, data->rating, data->value_sz, data->read);
+	if (!request_region(data->rvalue.start, resource_size(&data->rvalue),
+			node->full_name)) {
+		ret = -EBUSY;
+		goto err_free;
+	}
+
+	if (data->control && !request_region(data->rcontrol.start,
+			resource_size(&data->rcontrol), node->full_name)) {
+		ret = -EBUSY;
+		goto err_release;
+	}
+
+	data->cs = clocksource_mmio_init(data->value, node->name,
+		data->freq, data->rating, data->size, data->read);
 	if (IS_ERR(data->cs)) {
 		ret = PTR_ERR(data->cs);
 		goto err_free;
 	}
 
-	printk(KERN_INFO "%s: %d-bit clock at MMIO %#lx, %u Hz\n",
-		data->name, data->value_sz, data->base, data->freq);
+	dev_info(&of_dev->dev, "%d-bit clock at MMIO %#lx, %u Hz\n",
+		data->size, (unsigned long)data->rvalue.start, data->freq);
 
 	platform_set_drvdata(of_dev, data);
 	return 0;
 
+err_release:
+	release_region(data->rvalue.start, resource_size(&data->rvalue));
 err_free:
 	mmio_of_clock_free(data);
 err:
@@ -198,6 +203,10 @@ static int __devexit mmio_of_clock_remove(struct platform_device *of_dev)
 	struct mmio_of_clock *data = platform_get_drvdata(of_dev);
 
 	clocksource_mmio_remove(data->cs);
+	if (data->control)
+		release_region(data->rcontrol.start,
+			resource_size(&data->rcontrol));
+	release_region(data->rvalue.start, resource_size(&data->rvalue));
 	mmio_of_clock_free(data);
 	platform_set_drvdata(of_dev, NULL);
 	return 0;
@@ -217,7 +226,7 @@ static int __init mmio_of_clock_init(void)
 {
 	return platform_driver_register(&mmio_of_clock_driver);
 }
-module_init(mmio_of_clock_init);
+arch_initcall(mmio_of_clock_init);
 
 static void __exit mmio_of_clock_exit(void)
 {

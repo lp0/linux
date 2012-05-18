@@ -24,6 +24,7 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/irqreturn.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -41,7 +42,6 @@ static void mmio_of_timer_free(struct mmio_of_timer *data)
 {
 	if (data->clock)
 		mmio_of_clock_free(data->clock);
-	kfree(data->name);
 	kfree(data);
 }
 
@@ -62,8 +62,7 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 	struct device_node *node)
 {
 	struct mmio_of_timer *data;
-	struct resource compare;
-	int ret;
+	int compare_sz, control_sz, ret;
 
 	if (node == NULL)
 		return ERR_PTR(-EINVAL);
@@ -72,9 +71,7 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 	if (data == NULL)
 		return ERR_PTR(-ENOMEM);
 
-	data->name = kstrdup(node->name, GFP_KERNEL);
-
-	if (of_address_to_resource(node, 0, &compare)) {
+	if (of_address_to_resource(node, 0, &data->rcompare)) {
 		ret = -ENXIO;
 		goto err;
 	}
@@ -88,11 +85,15 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 	}
 	data->cs.reg = data->clock->value;
 
-	data->base = (unsigned long)compare.start;
-	data->compare = ioremap(compare.start, resource_size(&compare));
-	data->compare_sz = resource_size(&compare) * 8;
+	data->compare = ioremap(data->rcompare.start,
+		resource_size(&data->rcompare));
+	compare_sz = resource_size(&data->rcompare) * 8;
+	if (data->clock->control == NULL)
+		control_sz = 0;
+	else
+		control_sz = resource_size(&data->clock->rcontrol) * 8;
 
-	if (data->clock->control_sz != 16 && data->clock->control_sz != 32) {
+	if (control_sz != 16 && control_sz != 32) {
 		ret = -EINVAL;
 		goto err;
 	}
@@ -104,13 +105,13 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 	of_property_read_u32(node, "index", &data->index);
 	of_property_read_u32(node, "rating", &data->rating);
 
-	if (data->index >= data->clock->control_sz) {
+	if (data->index >= control_sz) {
 		ret = -EINVAL;
 		goto err;
 	}
 
 	data->min_delta = 1;
-	if (data->compare_sz == 16) {
+	if (compare_sz == 16) {
 		data->max_delta = 0xffff;
 	} else {
 		data->max_delta = 0xffffffff;
@@ -118,7 +119,7 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 	of_property_read_u32(node, "min-delta", &data->min_delta);
 	of_property_read_u32(node, "max-delta", &data->max_delta);
 
-	if (data->clock->control_sz == 16) {
+	if (control_sz == 16) {
 		data->get = mmio_of_timer_getw;
 		data->set = mmio_of_timer_setw;
 		data->clear = mmio_of_timer_clearw;
@@ -128,7 +129,7 @@ static struct mmio_of_timer __devinit *mmio_of_timer_read(
 		data->clear = mmio_of_timer_clearl;
 	}
 
-	data->ce.name = data->name;
+	data->ce.name = node->name;
 	data->ce.rating = data->rating;
 	data->ce.features = CLOCK_EVT_FEAT_ONESHOT;
 	data->ce.set_mode = clockevent_mmio_of_set_mode;
@@ -235,9 +236,16 @@ void __init clockevent_mmio_of_init(void)
 			continue;
 		}
 
+		if (!request_region(data->rcompare.start,
+				resource_size(&data->rcompare),
+				node->full_name)) {
+			mmio_of_timer_free(data);
+			continue;
+		}
+
 		timer_irq = kzalloc(sizeof(*timer_irq), GFP_KERNEL);
 		BUG_ON(timer_irq == NULL);
-		timer_irq->name = data->name;
+		timer_irq->name = node->name;
 		timer_irq->flags = IRQF_TIMER | IRQF_SHARED;
 		timer_irq->dev_id = data;
 		timer_irq->handler = clockevent_mmio_of_interrupt;
@@ -252,7 +260,8 @@ void __init clockevent_mmio_of_init(void)
 		}
 
 		printk(KERN_INFO "%s: timer at MMIO %#lx (irq = %d)\n",
-			data->name, data->base, data->irq);
+			node->name, (unsigned long)data->rcompare.start,
+			data->irq);
 
 		if (!found)
 			found = true;
