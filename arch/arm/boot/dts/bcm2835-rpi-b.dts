@@ -1,0 +1,12 @@
+/dts-v1/;
+/memreserve/ 0x08000000 0x08000000;	/* Set by VideoCore */
+/include/ "bcm2835.dtsi"
+
+/ {
+	model = "Raspberry Pi Model B (BCM2835)";
+	compatible = "raspberrypi,model-b", "broadcom,bcm2835", "broadcom,bcm2708";
+
+	memory {
+		reg = <0 0x10000000>; /* 256MB */
+	};
+};
