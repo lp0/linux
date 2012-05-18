@@ -171,7 +171,7 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 	}
 
 	if (!request_region(wdog->res.start, resource_size(&wdog->res),
-			dev_name(wdog->dev))) {
+			node->full_name)) {
 		dev_err(wdog->dev, "resource %#lx unavailable\n",
 			(unsigned long)wdog->res.start);
 		ret = -EBUSY;
