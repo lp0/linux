@@ -169,6 +169,15 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 		panic("%s: unable to map all vic cpu registers\n",
 			node->full_name);
 
+	if (!request_region(res[0].start,
+				resource_size(&res[0]), node->full_name)
+			|| !request_region(res[1].start,
+				resource_size(&res[1]), node->full_name)
+			|| !request_region(res[2].start,
+				resource_size(&res[2]), node->full_name))
+		panic("%s: unable to request resources for all vic cpu registers\n",
+			node->full_name);
+
 	of_property_read_u32(node, "interrupt-base", &data->base_irq);
 	of_property_read_u32(node, "bank-interrupt", &data->bank_id);
 
