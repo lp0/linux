@@ -1,0 +1,73 @@
+/dts-v1/;
+/memreserve/ 0x08000000 0x08000000;	/* Set by VideoCore */
+/include/ "bcm2835.dtsi"
+
+/ {
+	model = "Raspberry Pi Model B (BCM2835)";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "raspberrypi,model-b", "broadcom,bcm2835", "broadcom,bcm2708";
+
+	memory {
+		device_type = "memory";
+		reg = <0 0x10000000>; /* 256MB */
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		ok {
+			label = "ok";
+			gpios = <&gpio 16 1>;
+
+			/* Don't change this - it configures
+			 * how the led driver determines if
+			 * the led is on or off when it loads.
+			 */
+			default-state = "keep";
+
+			/* This is the real default state. */
+			linux,default-trigger = "default-on";
+		};
+	};
+
+	axi {
+		uart0 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_uart0_a>;
+		};
+
+		spi {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_spi0_a>;
+		};
+
+		bsc0 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_bsc0_a>;
+		};
+
+		uart1 {
+			status = "disable";
+		};
+
+		bsc1 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_bsc1_a>;
+		};
+
+		usb {
+			hub {
+				compatible = "usb,hub", "usb,device";
+				port = <1>;
+
+				ethernet {
+					compatible = "net,ethernet", "usb,device";
+					port = <1>;
+
+					mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
+				};
+			};
+		};
+	};
+};
