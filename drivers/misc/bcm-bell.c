@@ -95,7 +95,7 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	}
 
 	if (!request_region(bell->res.start, resource_size(&bell->res),
-			dev_name(bell->dev))) {
+			node->full_name)) {
 		dev_err(bell->dev, "resource %#lx unavailable\n",
 			(unsigned long)bell->res.start);
 		ret = -EBUSY;
