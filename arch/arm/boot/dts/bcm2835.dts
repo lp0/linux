@@ -1,0 +1,612 @@
+/dts-v1/;
+/include/ "skeleton.dtsi"
+
+/ {
+	model = "BCM2835";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
+
+	system-rev = <0>;			/* Set by VideoCore */
+	system-serial = <0 0>;			/* Set by VideoCore */
+	mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
+
+	chosen {
+		bootargs = "";			/* Set by VideoCore */
+	};
+
+	cpus {
+		cpu@0 {
+			compatible = "broadcom,bcm2835-cpu", "broadcom,bcm2708-cpu", "arm,1176jz-f";
+		};
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0 0>;			/* Set by VideoCore */
+	};
+
+	display {
+		compatible = "broadcom,bcm2835-fb", "broadcom,bcm2708-fb";
+		#address-cells = <0>;
+		#size-cells = <0>;
+
+		vc_mailbox = <&vc_mbox>;
+		vc_channel = <1>;
+
+		width = <0>;			/* Set by VideoCore */
+		height = <0>;			/* Set by VideoCore */
+		depth = <0>;			/* Set by VideoCore */
+	};
+
+	power: power {
+		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr";
+		#address-cells = <0>;
+		#size-cells = <0>;
+
+		vc_mailbox = <&vc_mbox>;
+		vc_channel = <0>;
+
+		/* Devices
+		 * 0: SD Card
+		 * 3: USB
+		 */
+		valid = <0x9>;
+
+		default-on = <0x9>;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		ok {
+			label = "ok";
+			gpios = <&gpio 16 1>;
+
+			/* Don't change this - it configures
+			 * how the led driver determines if
+			 * the led is on or off when it loads.
+			 */
+			default-state = "keep";
+
+			/* This is the real default state. */
+			linux,default-trigger = "default-on";
+		};
+	};
+
+	axi {
+		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		reg = <0x20000000 0x01000000>;
+		ranges = <0 0x20000000 0x01000000>;
+
+		st {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x3000 0x1000>;
+			ranges = <0 0x3000 0x1000>;
+
+			stc {
+				compatible = "broadcom,bcm2835-clock", "broadcom,bcm2708-clock", "mmio-clock", "simple-bus";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x004 0x4 0x000 0x4>;
+				reg-names = "counter", "control";
+				ranges;
+
+				clock-outputs = "sys";
+				clock-frequency = <1000000>;
+				rating = <300>;
+
+				/* DO NOT USE (it doesn't work) */
+				timer0 {
+					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+					reg = <0x00c 0x4>;
+					reg-names = "compare";
+					interrupt-parent = <&vic1>;
+					interrupts = <0>;
+
+					index = <0>;
+					rating = <0>;
+					min-delta = <0xf>;
+				};
+
+				/* Usable system timer */
+				timer1 {
+					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+					reg = <0x010 0x4>;
+					reg-names = "compare";
+					interrupt-parent = <&vic1>;
+					interrupts = <1>;
+
+					index = <1>;
+					rating = <200>;
+					min-delta = <0xf>;
+				};
+
+				/* DO NOT USE (generates extra interrupts) */
+				timer2 {
+					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+					reg = <0x014 0x4>;
+					reg-names = "compare";
+					interrupt-parent = <&vic1>;
+					interrupts = <2>;
+
+					index = <2>;
+					rating = <0>;
+					min-delta = <0xf>;
+				};
+
+				/* Usable system timer */
+				timer3 {
+					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+					reg = <0x018 0x4>;
+					reg-names = "compare";
+					interrupt-parent = <&vic1>;
+					interrupts = <3>;
+
+					index = <3>;
+					rating = <300>;
+					min-delta = <0xf>;
+				};
+			};
+		};
+
+		dma {
+			compatible = "broadcom,bcm2835-dma", "broadcom,bcm2708-dma";
+			reg = <0x7000 0x1000>;
+
+			channels = <0x10>;	/* Set by VideoCore */
+		};
+
+		armctrl {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xB000 0x1000>;
+			ranges = <0 0xB000 0x1000>;
+
+			intc {
+				compatible = "simple-bus";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x200 0x200>;
+				ranges = <0 0x200 0x200>;
+
+				vic0: bank0 {
+					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
+					reg = <0x000 0x4 0x018 0x4 0x024 0x4>;
+					reg-names = "pending", "enable", "disable";
+					interrupt-controller;
+					#interrupt-cells = <1>;
+
+					interrupt-base = <64>;
+
+					/* IRQs
+					 * 0: ARM_TIMER
+					 * 1: ARM_MAILBOX
+					 * 2: ARM_DOORBELL_0
+					 * 3: ARM_DOORBELL_1
+					 * 4: VPU0_HALTED
+					 * 5: VPU1_HALTED
+					 * 6: ILLEGAL_TYPE0
+					 * 7: ILLEGAL_TYPE1
+					 */
+					source-mask = <0x000000ff>;
+
+					/* Banks
+					 * 8: PENDING1
+					 * 9: PENDING2
+					 */
+					bank-mask = <0x00000300>;
+
+					/* Shortcuts */
+					shortcut-mask = <0x001ffc00>;
+					shortcut-map = <
+						8  7	/* 10: VC_JPEG */
+						8  9	/* 11: VC_USB */
+						8 10	/* 12: VC_3D */
+						8 18	/* 13: VC_DMA2 */
+						8 19	/* 14: VC_DMA3 */
+						9 21	/* 15: VC_I2C */
+						9 22	/* 16: VC_SPI */
+						9 23	/* 17: VC_I2SPCM */
+						9 24	/* 18: VC_SDIO */
+						9 25	/* 19: VC_UART */
+						9 30	/* 20: VC_ARASANSDIO */
+					>;
+				};
+
+				vic1: bank1 {
+					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
+					reg = <0x004 0x4 0x010 0x4 0x01c 0x4>;
+					reg-names = "pending", "enable", "disable";
+					interrupt-parent = <&vic0>;
+					interrupt-controller;
+					#interrupt-cells = <1>;
+					#address-cells = <0>;
+
+					bank-interrupt = <8>;
+					interrupt-base = <0>;
+
+					/* IRQs
+					 * 0: TIMER0		16: DMA0
+					 * 1: TIMER1		17: DMA1
+					 * 2: TIMER2		18: VC_DMA2
+					 * 3: TIMER3		19: VC_DMA3
+					 * 4: CODEC0		20: DMA4
+					 * 5: CODEC1		21: DMA5
+					 * 6: CODEC2		22: DMA6
+					 * 7: VC_JPEG		23: DMA7
+					 * 8: ISP		24: DMA8
+					 * 9: VC_USB		25: DMA9
+					 * 10: VC_3D		26: DMA10
+					 * 11: TRANSPOSER	27: DMA11
+					 * 12: MULTICORESYNC0	28: DMA12
+					 * 13: MULTICORESYNC1	29: AUX
+					 * 14: MULTICORESYNC2	30: ARM
+					 * 15: MULTICORESYNC3	31: VPUDMA
+					 */
+					source-mask = <0xffffffff>;
+				};
+
+				vic2: bank2 {
+					compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
+					reg = <0x008 0x4 0x014 0x4 0x020 0x4>;
+					reg-names = "pending", "enable", "disable";
+					interrupt-parent = <&vic0>;
+					interrupt-controller;
+					#interrupt-cells = <1>;
+					#address-cells = <0>;
+
+					bank-interrupt = <9>;
+					interrupt-base = <32>;
+
+					/* IRQs
+					 * 0: HOSTPORT		16: SMI
+					 * 1: VIDEOSCALER	17: GPIO0
+					 * 2: CCP2TX		18: GPIO1
+					 * 3: SDC		19: GPIO2
+					 * 4: DSI0		20: GPIO3
+					 * 5: AVE		21: VC_I2C
+					 * 6: CAM0		22: VC_SPI
+					 * 7: CAM1		23: VC_I2SPCM
+					 * 8: HDMI0		24: VC_SDIO
+					 * 9: HDMI1		25: VC_UART
+					 * 10: PIXELVALVE1	26: SLIMBUS
+					 * 11: I2CSPISLV	27: VEC
+					 * 12: DSI1		28: CPG
+					 * 13: PWA0		29: RNG
+					 * 14: PWA1		30: VC_ARASANSDIO
+					 * 15: CPR		31: AVSPMON
+					 */
+					source-mask = <0xffffffff>;
+				};
+
+				fiq {
+					compatible = "broadcom,bcm2708-armctrl-ic-fiq", "broadcom,bcm2835-armctrl-ic-fiq";
+					/* Bits 0-6: IRQ (index in order of banks below)
+					 * Bit    7: Enable FIQ generation
+					 * Bits  8+: Unused
+					 *
+					 * An interrupt must be disabled before
+					 * configuring it for FIQ generation
+					 * otherwise both handlers will fire at
+					 * the same time!
+					 */
+					reg = <0x00c 0x4>;
+					reg-names = "control";
+					interrupt-parent = <&vic0>;
+					interrupt-controller;
+					#interrupt-cells = <0>;
+
+					banks = <8 9 0>;
+				};
+			};
+
+			armtimer {
+				/* Not AMBA compatible */
+				compatible = "broadcom,bcm2835-sp804", "arm,sp804";
+				reg = <0x400 0x24>;
+
+				interrupt-parent = <&vic0>;
+				interrupts = <0>;
+			};
+
+			vc_bell0: bell0 {
+				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+				reg = <0x840 0x4>;
+				interrupt-parent = <&vic0>;
+				interrupts = <2>;
+
+				access = "r-";
+			};
+
+			vc_bell1: bell1 {
+				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+				reg = <0x844 0x4>;
+				interrupt-parent = <&vic0>;
+				interrupts = <3>;
+
+				access = "r-";
+			};
+
+			vc_bell2: bell2 {
+				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+				reg = <0x848 0x4>;
+
+				access = "-w";
+			};
+
+			vc_bell3: bell3 {
+				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+				reg = <0x84c 0x4>;
+
+				access = "-w";
+			};
+
+			vc_mbox: mbox0 {
+				compatible = "broadcom,bcm2835-mbox", "broadcom,bcm2708-mbox";
+				reg = <0x880 0x40>;
+				interrupt-parent = <&vic0>;
+				interrupts = <1>;
+
+				/* Read from 0x00..0x1f, Write to 0x20..3f */
+				access = "rw";
+
+				/* Channels
+				 * 0: power
+				 * 1: fb
+				 * 3: vchiq
+				 */
+				channels = <0x000b>;
+			};
+		};
+
+		watchdog {
+			compatible = "broadcom,bcm2835-pm-wdog", "broadcom,bcm2708-pm-wdog";
+			reg = <0x100000 0x1000>;
+		};
+
+		pins: pinctrl {
+			compatible = "broadcom,bcm2835-pinctrl", "broadcom,bcm2708-pinctrl";
+			reg = <0x200000 0x1c 0x200094 0x1c>;
+			reg-names = "fsel", "pull";
+
+			alts = <6>;
+			count = <54>;
+			base = <0>;
+
+			gpio = /*	ALT0		ALT1		ALT2		ALT3			ALT4		ALT5	*/
+			/*  0 */	"SDA0",		"SA5",		"",		"",			"",		"",
+			/*  1 */	"SCL0",		"SA4",		"",		"",			"",		"",
+			/*  2 */	"SDA1",		"SA3",		"",		"",			"",		"",
+			/*  3 */	"SCL1",		"SA2",		"",		"",			"",		"",
+
+			/*  4 */	"GPCLK0",	"SA1",		"",		"",			"",		"ARM_TDI",
+			/*  5 */	"GPCLK1",	"SA0",		"",		"",			"",		"ARM_TDO",
+			/*  6 */	"GPCLK2",	"SOE_N|SE",	"",		"",			"",		"ARM_RTCK",
+			/*  7 */	"SPI0_CE1_N",	"SWE_N|SRW_N",	"",		"",			"",		"",
+
+			/*  8 */	"SPI0_CE0_N",	"SD0",		"",		"",			"",		"",
+			/*  9 */	"SPI0_MISO",	"SD1",		"",		"",			"",		"",
+			/* 10 */	"SPI0_MOSI",	"SD2",		"",		"",			"",		"",
+			/* 11 */	"SPI0_SCLK",	"SD3",		"",		"",			"",		"",
+
+			/* 12 */	"PWM0",		"SD4",		"",		"",			"",		"ARM_TMS",
+			/* 13 */	"PWM1",		"SD5",		"",		"",			"",		"ARM_TCK",
+			/* 14 */	"UART0_TXD",	"SD6",		"",		"",			"",		"UART1_TXD",
+			/* 15 */	"UART0_RXD",	"SD7",		"",		"",			"",		"UART1_RXD",
+
+			/* 16 */	"",		"SD8",		"",		"UART0_CTS",		"SPI1_CE2_N",	"UART1_CTS",
+			/* 17 */	"",		"SD9",		"",		"UART0_RTS",		"SPI1_CE1_N",	"UART1_RTS",
+			/* 18 */	"PCM_CLK",	"SD10",		"",		"BSCSL_SDA|SPISL_MOSI",	"SPI1_CE0_N",	"PWM0",
+			/* 19 */	"PCM_FS",	"SD11",		"",		"BSCSL_SCL|SPISL_SCLK",	"SPI1_MISO",	"PWM1",
+
+			/* 20 */	"PCM_DIN",	"SD12",		"",		"SPISL_MISO",		"SPI1_MOSI",	"GPCLK0",
+			/* 21 */	"PCM_DOUT",	"SD13",		"",		"SPISL_CE_N",		"SPI1_SCLK",	"GPCLK1",
+			/* 22 */	"",		"SD14",		"",		"SD1_CLK",		"ARM_TRST",	"",
+			/* 23 */	"",		"SD15",		"",		"SD1_CMD",		"ARM_RTCK",	"",
+
+			/* 24 */	"",		"SD16",		"",		"SD1_DAT0",		"ARM_TDO",	"",
+			/* 25 */	"",		"SD17",		"",		"SD1_DAT1",		"ARM_TCK",	"",
+			/* 26 */	"",		"",		"",		"SD1_DAT2",		"ARM_TDI",	"",
+			/* 27 */	"",		"",		"",		"SD1_DAT3",		"ARM_TMS",	"",
+
+			/* 28 */	"SDA0",		"SA5",		"PCM_CLK",	"",			"",		"",
+			/* 29 */	"SCL0",		"SA4",		"PCM_FS",	"",			"",		"",
+			/* 30 */	"",		"SA3",		"PCM_DIN",	"UART0_CTS",		"",		"UART1_CTS",
+			/* 31 */	"",		"SA2",		"PCM_DOUT",	"UART0_RTS",		"",		"UART1_RTS",
+
+			/* 32 */	"GPCLK0",	"SA1",		"",		"UART0_TXD",		"",		"UART1_TXD",
+			/* 33 */	"",		"SA0",		"",		"UART0_RXD",		"",		"UART1_RXD",
+			/* 34 */	"GPCLK0",	"SOE_N|SE",	"",		"",			"",		"",
+			/* 35 */	"SPI0_CE1_N",	"SWE_N|SRW_N",	"",		"",			"",		"",
+
+			/* 36 */	"SPI0_CE0_N",	"SD0",		"UART0_TXD",	"",			"",		"",
+			/* 37 */	"SPI0_MISO",	"SD1",		"UART0_RXD",	"",			"",		"",
+			/* 38 */	"SPI0_MOSI",	"SD2",		"UART0_RTS",	"",			"",		"",
+			/* 39 */	"SPI0_SCLK",	"SD3",		"UART0_CTS",	"",			"",		"",
+
+			/* 40 */	"PWM0",		"SD4",		"",		"",			"SPI2_MISO",	"UART1_TXD",
+			/* 41 */	"PWM1",		"SD5",		"",		"",			"SPI2_MOSI",	"UART1_RXD",
+			/* 42 */	"GPCLK1",	"SD6",		"",		"",			"SPI2_SCLK",	"UART1_RTS",
+			/* 43 */	"GPCLK2",	"SD7",		"",		"",			"SPI2_CE0_N",	"UART1_CTS",
+
+			/* 44 */	"GPCLK1",	"SDA0",		"SDA1",		"",			"SPI2_CE1_N",	"",
+			/* 45 */	"PWM1",		"SCL0",		"SCL1",		"",			"SPI2_CE2_N",	"",
+			/* 46 */	"",		"",		"",		"HDMI_HPD_P",		"",		"",
+			/* 47 */	"",		"",		"",		"SD_CARD_DET",		"",		"",
+
+			/* 48 */	"",		"",		"",		"SD_CLK_R",		"",		"",
+			/* 49 */	"",		"",		"",		"SD_CMD_R",		"",		"",
+			/* 50 */	"",		"",		"",		"SD_DATA0_R",		"",		"",
+			/* 51 */	"",		"",		"",		"SD_DATA1_R",		"",		"",
+
+			/* 52 */	"",		"",		"",		"SD_DATA2_R",		"",		"",
+			/* 53 */	"",		"",		"",		"SD_DATA3_R",		"",		"";
+
+			pins =
+			/*  0 */	"P1-03",	/*  1 */	"P1-05",	/*  2 */	"S5-14",	/*  3 */	"S5-13",
+			/*  4 */	"P1-07",	/*  5 */	"S5-12",	/*  6 */	"IC3-12",	/*  7 */	"P1-26",
+			/*  8 */	"P1-24",	/*  9 */	"P1-21",	/* 10 */	"P1-19",	/* 11 */	"P1-23",
+			/* 12 */	"",		/* 13 */	"",		/* 14 */	"P1-08",	/* 15 */	"P1-10",
+			/* 16 */	"D5",		/* 17 */	"P1-11",	/* 18 */	"P1-12",	/* 19 */	"",
+			/* 20 */	"",		/* 21 */	"P1-13",	/* 22 */	"P1-15",	/* 23 */	"P1-16",
+			/* 24 */	"P1-18",	/* 25 */	"P1-22",	/* 26 */	"",		/* 27 */	"S5-11",
+			/* 28 */	"R8+R10",	/* 29 */	"R7+R9",	/* 30 */	"R4+R6",	/* 31 */	"R3+R5",
+			/* 32 */	"",		/* 33 */	"",		/* 34 */	"",		/* 35 */	"",
+			/* 36 */	"",		/* 37 */	"",		/* 38 */	"",		/* 39 */	"",
+			/* 40 */	"R21",		/* 41 */	"",		/* 42 */	"",		/* 43 */	"",
+			/* 44 */	"",		/* 45 */	"R27",		/* 46 */	"IC1-6",	/* 47 */	"S8-10",
+			/* 48 */	"R48",		/* 49 */	"R47",		/* 50 */	"R49",		/* 51 */	"R50",
+			/* 52 */	"R45",		/* 53 */	"R46";
+
+			groups = /*	GPIO_I		GPIO_O	ALT0			ALT1		ALT2		ALT3		ALT4		ALT5	*/
+			/*  0 */	"P1",		"",	"BSC0",			"",		"",		"",		"",		"",
+			/*  1 */	"P1",		"",	"BSC0",			"",		"",		"",		"",		"",
+			/*  2 */	"S5",		"",	"BSC1|CAM",		"",		"",		"",		"",		"",
+			/*  3 */	"S5",		"",	"BSC1|CAM",		"",		"",		"",		"",		"",
+
+			/*  4 */	"P1",		"",	"GPCLK0|CAM",		"",		"",		"",		"",		"ARM_JTAG",
+			/*  5 */	"S5",		"",	"CAM",			"",		"",		"",		"",		"ARM_JTAG",
+			/*  6 */	"",		"",	"GPCLK2",		"",		"",		"",		"",		"",
+			/*  7 */	"P1",		"",	"SPI0",			"",		"",		"",		"",		"",
+
+			/*  8 */	"P1",		"",	"SPI0",			"",		"",		"",		"",		"",
+			/*  9 */	"P1",		"",	"SPI0",			"",		"",		"",		"",		"",
+			/* 10 */	"P1",		"",	"SPI0",			"",		"",		"",		"",		"",
+			/* 11 */	"P1",		"",	"SPI0",			"",		"",		"",		"",		"",
+
+			/* 12 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 13 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 14 */	"P1",		"",	"UART0|UART0_FC",	"",		"",		"",		"",		"UART1|UART1_FC",
+			/* 15 */	"P1",		"",	"UART0|UART0_FC",	"",		"",		"",		"",		"UART1|UART1_FC",
+
+			/* 16 */	"",		"",	"",			"",		"",		"UART0_FC",	"",		"UART1_FC",
+			/* 17 */	"P1",		"",	"",			"",		"",		"UART0_FC",	"",		"UART1_FC",
+			/* 18 */	"P1",		"",	"PCM",			"",		"",		"BSCSL|SPISL",	"",		"PWM0",
+			/* 19 */	"",		"",	"PCM",			"",		"",		"BSCSL|SPISL",	"",		"",
+
+			/* 20 */	"",		"",	"PCM",			"",		"",		"SPISL",	"",		"",
+			/* 21 */	"P1",		"",	"PCM",			"",		"",		"SPISL",	"",		"GPCLK1",
+			/* 22 */	"P1",		"",	"",			"",		"",		"",		"ARM_JTAG",	"",
+			/* 23 */	"P1",		"",	"",			"",		"",		"",		"ARM_JTAG",	"",
+
+			/* 24 */	"P1",		"",	"",			"",		"",		"",		"ARM_JTAG",	"",
+			/* 25 */	"P1",		"",	"",			"",		"",		"",		"ARM_JTAG",	"",
+			/* 26 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 27 */	"CAM|S5",	"",	"",			"",		"",		"",		"",		"",
+
+			/* 28 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 29 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 30 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 31 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 32 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 33 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 34 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 35 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 36 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 37 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 38 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 39 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 40 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 41 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 42 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 43 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 44 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 45 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 46 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 47 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 48 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 49 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 50 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 51 */	"",		"",	"",			"",		"",		"",		"",		"",
+
+			/* 52 */	"",		"",	"",			"",		"",		"",		"",		"",
+			/* 53 */	"",		"",	"",			"",		"",		"",		"",		"";
+
+			/* 0: N/A
+			 * 1: Low (default)
+			 * 2: High (default)
+			 */
+			pull = <
+			/*  0 */	2	/*  1 */	2	/*  2 */	2	/*  3 */	2
+			/*  4 */	2	/*  5 */	2	/*  6 */	2	/*  7 */	2
+			/*  8 */	2	/*  9 */	1	/* 10 */	1	/* 11 */	1
+			/* 12 */	1	/* 13 */	1	/* 14 */	1	/* 15 */	1
+			/* 16 */	2	/* 17 */	1	/* 18 */	1	/* 19 */	1
+			/* 20 */	1	/* 21 */	1	/* 22 */	1	/* 23 */	1
+			/* 24 */	1	/* 25 */	1	/* 26 */	1	/* 27 */	1
+			/* 28 */	0	/* 29 */	0	/* 30 */	1	/* 31 */	1
+			/* 32 */	1	/* 33 */	1	/* 34 */	2	/* 35 */	2
+			/* 36 */	2	/* 37 */	1	/* 38 */	1	/* 39 */	1
+			/* 40 */	1	/* 41 */	1	/* 42 */	1	/* 43 */	1
+			/* 44 */	0	/* 45 */	0	/* 46 */	2	/* 47 */	2
+			/* 48 */	2	/* 49 */	2	/* 50 */	2	/* 51 */	2
+			/* 52 */	2	/* 53 */	2
+			>;
+		};
+
+		gpio: gpio {
+			compatible = "broadcom,bcm2835-gpio", "broadcom,bcm2708-gpio";
+			reg = <0x20001c 0x78>;
+
+			interrupt-parent = <&vic2>;
+			interrupts = <17 18 19 20>;
+
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			pinctrl = <&pins>;
+		};
+
+		amba {
+			compatible = "arm,amba-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+
+			uart0 {
+				compatible = "broadcom,bcm2835-uart", "broadcom,bcm2708-uart", "arm,pl011", "arm,primecell", "broadcom,bcm2835-pinctrl-device", "broadcom,bcm2708-pinctrl-device";
+				reg = <0x201000 0x1000>;
+				interrupt-parent = <&vic2>;
+				interrupts = <25>;
+
+				pinctrl = <&pins>;
+				pinmap = "UART0";
+			};
+		};
+
+		/* Auxiliary device disabled by default */
+		/*
+		uart1 {
+			compatible = "broadcom,bcm2835-miniuart", "broadcom,bcm2708-miniuart", "ns16550", "broadcom,bcm2835-pinctrl-device", "broadcom,bcm2708-pinctrl-device";
+			reg = <0x215040 0x38>;
+			interrupt-parent = <&vic1>;
+			interrupts = <29>;
+
+			pinctrl = <&pins>;
+			pinmap = "UART1";
+		};
+		*/
+
+		usb {
+			compatible = "broadcom,bcm2835-usb", "broadcom,bcm2708-usb", "synopsys,designware-hs-otg";
+			reg = <0x980000 0x20000>;
+			interrupt-parent = <&vic1>;
+			interrupts = <9>;
+
+			vc_power = <&power>;
+			vc_index = <3>;
+			dwc-otg,lpm_enable = <0>;
+		};
+	};
+};
