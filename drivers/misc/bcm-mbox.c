@@ -316,7 +316,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	}
 
 	if (!request_region(mbox->res.start, resource_size(&mbox->res),
-			dev_name(mbox->dev))) {
+			node->full_name)) {
 		dev_err(mbox->dev, "resource %#lx unavailable\n",
 			(unsigned long)mbox->res.start);
 		ret = -EBUSY;
