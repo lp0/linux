@@ -52,24 +52,22 @@ void __init bcm2708_map_io(void)
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
 
-static void __init bcm2708_of_system_prop(struct device_node *root, char *name,
-	unsigned int *value)
-{
-	u32 tmp;
-	if (!of_property_read_u32(root, name, &tmp))
-		*value = tmp;
-}
-
 static void __init bcm2708_of_system(void)
 {
 	struct device_node *root = of_find_node_by_path("/");
 
 	if (root) {
+		u32 rev;
+		u64 serial;
 		u8 *mac;
 
-		bcm2708_of_system_prop(root, "system-rev", &system_rev);
-		bcm2708_of_system_prop(root, "system-serial-low", &system_serial_low);
-		bcm2708_of_system_prop(root, "system-serial-high", &system_serial_high);
+		if (!of_property_read_u32(root, "system-rev", &rev))
+			system_rev = rev;
+
+		if (!of_property_read_u64(root, "system-serial", &serial)) {
+			system_serial_low = (u32)serial;
+			system_serial_high = (u32)(serial >> 32);
+		}
 
 		mac = (u8*)of_get_mac_address(root);
 		if (mac)

@@ -8,8 +8,7 @@
 	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
 	system-rev = <0>;
-	system-serial-low = <0>;
-	system-serial-high = <0>;
+	system-serial = <0 0>;
 	mac-address = [00 00 00 00 00 00];
 
 	cpus {
