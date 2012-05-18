@@ -1,0 +1,117 @@
+/dts-v1/;
+/memreserve/ 0x08000000 0x08000000;	/* Set by VideoCore */
+/include/ "bcm2835.dtsi"
+
+/ {
+	model = "Raspberry Pi Model B (BCM2835)";
+	compatible = "raspberrypi,model-b", "broadcom,bcm2835", "broadcom,bcm2708";
+
+	memory {
+		reg = <0 0x10000000>; /* 256MB */
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		ok {
+			label = "ok";
+			gpios = <&gpio 16 1>;
+
+			/* Don't change this - it configures
+			 * how the led driver determines if
+			 * the led is on or off when it loads.
+			 */
+			default-state = "keep";
+
+			/* This is the real default state. */
+			linux,default-trigger = "default-on";
+		};
+	};
+
+	display {
+		compatible = "broadcom,bcm2835-fb", "broadcom,bcm2708-fb";
+
+		broadcom,vc-mailbox = <&vc_mbox 1>;
+
+		broadcom,width = <0>;		/* Set by VideoCore */
+		broadcom,height = <0>;		/* Set by VideoCore */
+		broadcom,depth = <0>;		/* Set by VideoCore */
+	};
+
+	power {
+		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr", "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		broadcom,vc-mailbox = <&vc_mbox 0>;
+
+		sd_card_power: regulator@0 {
+			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
+			reg = <0>;
+
+			regulator-name = "SD Card";
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3300000>;
+		};
+
+		/* This is for the controller itself, not the root port */
+		usb_hcd_power: regulator@3 {
+			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
+			reg = <3>;
+
+			regulator-name = "USB HCD";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+		};
+	};
+
+	axi {
+		uart0 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_uart0_a>;
+		};
+
+		spi {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_spi0_a>;
+		};
+
+		bsc0 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_bsc0_a>;
+		};
+
+		uart1 {
+			status = "disable";
+		};
+
+		bsc1 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&pins_bsc1_a>;
+		};
+
+
+		sdhci {
+			vmmc-supply = <&sd_card_power>;
+		};
+
+		usb {
+			hcd-supply = <&usb_hcd_power>;
+			dr_mode = "host";
+
+			hub {
+				compatible = "usb,hub", "usb,device";
+				reg = <1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				ethernet {
+					compatible = "net,ethernet", "usb,device";
+					reg = <1>;
+
+					mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
+				};
+			};
+		};
+	};
+};
