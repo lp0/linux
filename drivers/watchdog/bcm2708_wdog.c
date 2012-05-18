@@ -17,11 +17,11 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/mutex.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/watchdog.h>
 #include "bcm2708_wdog.h"
@@ -32,7 +32,7 @@ struct bcm2708_wdog {
 	struct device *dev;
 	struct resource res;
 	void __iomem *pm;
-	struct mutex lock;
+	struct spinlock lock;
 	bool started;
 	bool blocked;
 
@@ -79,9 +79,9 @@ static int bcm2708_wdog_start(struct watchdog_device *dev)
 	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 	u32 cur;
 
-	mutex_lock(&wdog->lock);
+	spin_lock(&wdog->lock);
 	if (wdog->blocked) {
-		mutex_unlock(&wdog->lock);
+		spin_unlock(&wdog->lock);
 		return -EBUSY;
 	}
 
@@ -96,7 +96,7 @@ static int bcm2708_wdog_start(struct watchdog_device *dev)
 		wdog->started = true;
 	}
 
-	mutex_unlock(&wdog->lock);
+	spin_unlock(&wdog->lock);
 	return 0;
 }
 
@@ -104,9 +104,9 @@ static int bcm2708_wdog_stop(struct watchdog_device *dev)
 {
 	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 
-	mutex_lock(&wdog->lock);
+	spin_lock(&wdog->lock);
 	if (wdog->blocked) {
-		mutex_unlock(&wdog->lock);
+		spin_unlock(&wdog->lock);
 		return -EBUSY;
 	}
 
@@ -117,7 +117,7 @@ static int bcm2708_wdog_stop(struct watchdog_device *dev)
 		wdog->started = false;
 	}
 
-	mutex_unlock(&wdog->lock);
+	spin_unlock(&wdog->lock);
 	return 0;
 }
 
@@ -126,15 +126,15 @@ static unsigned int bcm2708_wdog_get_timeleft(struct watchdog_device *dev)
 	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 	unsigned int remaining;
 
-	mutex_lock(&wdog->lock);
+	spin_lock(&wdog->lock);
 	if (wdog->blocked) {
-		mutex_unlock(&wdog->lock);
+		spin_unlock(&wdog->lock);
 		return -EBUSY;
 	}
 
 	remaining = WDOG_TICKS_TO_SECS(readl_relaxed(wdog->pm + PM_WDOG) & PM_WDOG_TIME_SET);
 
-	mutex_unlock(&wdog->lock);
+	spin_unlock(&wdog->lock);
 	return remaining;
 }
 
@@ -186,7 +186,7 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 		goto err;
 	}
 
-	mutex_init(&wdog->lock);
+	spin_lock_init(&wdog->lock);
 	wdog->started = false;
 	wdog->blocked = false;
 	dev->info = &wdog->info;
@@ -249,36 +249,45 @@ void bcm2708_wdog_restart(char str, const char *cmd)
 	struct platform_device *pdev;
 	struct watchdog_device *dev;
 	struct bcm2708_wdog *wdog;
+	void __iomem *pm;
+	bool found = false;
 	u32 cur;
 
 	for_each_matching_node(node, bcm2708_wdog_dt_match) {
 		pdev = of_find_device_by_node(node);
-		if (pdev == NULL)
-			continue;
+		dev = pdev != NULL ? platform_get_drvdata(pdev) : NULL;
+		wdog = dev != NULL ? watchdog_get_drvdata(dev) : NULL;
 
-		dev = platform_get_drvdata(pdev);
-		if (dev == NULL)
-			goto put_node;
+		if (wdog != NULL) {
+			spin_lock(&wdog->lock);
+			pm = wdog->pm;
+			dev_info(wdog->dev, "firing watchdog\n");
+		} else {
+			pm = of_iomap(node, 0);
+			printk(KERN_INFO "%s: firing watchdog\n",
+				node->full_name);
+		}
 
-		wdog = watchdog_get_drvdata(dev);
-		if (wdog == NULL)
-			goto put_node;
+		if (pm != NULL) {
+			/* use a timeout of 10 ticks (~150us) */
+			writel_relaxed(10 | PM_PASSWORD, pm + PM_WDOG);
+			cur = readl_relaxed(pm + PM_RSTC);
+			writel_relaxed(PM_PASSWORD | (cur & PM_RSTC_WRCFG_CLR)
+				| PM_RSTC_WRCFG_FULL_RESET, pm + PM_RSTC);
 
-		mutex_lock(&wdog->lock);
-		dev_info(wdog->dev, "firing watchdog\n");
+			found = true;
+		}
 
-		/* use a timeout of 10 ticks (~150us) */
-		writel_relaxed(10 | PM_PASSWORD, wdog->pm + PM_WDOG);
-		cur = readl_relaxed(wdog->pm + PM_RSTC);
-		writel_relaxed(PM_PASSWORD | (cur & PM_RSTC_WRCFG_CLR)
-			| PM_RSTC_WRCFG_FULL_RESET, wdog->pm + PM_RSTC);
+		if (wdog != NULL) {
+			wdog->blocked = true;
+			spin_unlock(&wdog->lock);
+		}
 
-		wdog->blocked = true;
-		mutex_unlock(&wdog->lock);
-
-put_node:
 		of_node_put(node);
 	}
+
+	if (!found)
+		panic("unable to fire watchdog");
 }
 
 static struct platform_driver bcm2708_wdog_driver = {
