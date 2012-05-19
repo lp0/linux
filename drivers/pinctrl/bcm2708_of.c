@@ -44,7 +44,8 @@ static int bcm2708_pinmux_of_group_init_one(struct list_head *groups, int p,
 	}
 
 	if (group == NULL) {
-		group = kzalloc(sizeof(*group)+sizeof(group->pins[0]), GFP_KERNEL);
+		group = kzalloc(sizeof(*group)
+			+ sizeof(group->pins[0]), GFP_KERNEL);
 		if (group == NULL)
 			return -ENOMEM;
 
