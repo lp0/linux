@@ -24,8 +24,6 @@
 
 #define MODULE_NAME "pinctrl-bcm2708"
 
-#define TEST_REPROBE
-
 static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 {
 	struct bcm2708_pinctrl *pc = bcm2708_pinctrl_of_init(pdev);
@@ -51,11 +49,7 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef TEST_REPROBE
-static int bcm2708_pinctrl_remove(struct platform_device *pdev)
-#else
 static int __devexit bcm2708_pinctrl_remove(struct platform_device *pdev)
-#endif
 {
 	struct bcm2708_pinctrl *pc = platform_get_drvdata(pdev);
 
@@ -70,47 +64,6 @@ static int __devexit bcm2708_pinctrl_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef TEST_REPROBE
-static int __devinit bcm2708_pinctrl_reprobe(struct platform_device *pdev)
-{
-	int ret;
-
-	dev_info(&pdev->dev, "probe 1");
-	BUG_ON(platform_get_drvdata(pdev) != NULL);
-	ret = bcm2708_pinctrl_probe(pdev);
-	WARN_ON(ret);
-	if (ret)
-		return ret;
-
-	dev_info(&pdev->dev, "remove 1");
-	BUG_ON(platform_get_drvdata(pdev) == NULL);
-	ret = bcm2708_pinctrl_remove(pdev);
-	WARN_ON(ret);
-	if (ret)
-		return ret;
-
-	dev_info(&pdev->dev, "probe 2");
-	BUG_ON(platform_get_drvdata(pdev) != NULL);
-	ret = bcm2708_pinctrl_probe(pdev);
-	WARN_ON(ret);
-	if (ret)
-		return ret;
-
-	dev_info(&pdev->dev, "remove 2");
-	BUG_ON(platform_get_drvdata(pdev) == NULL);
-	ret = bcm2708_pinctrl_remove(pdev);
-	WARN_ON(ret);
-	if (ret)
-		return ret;
-
-	dev_info(&pdev->dev, "probe 3");
-	BUG_ON(platform_get_drvdata(pdev) != NULL);
-	ret = bcm2708_pinctrl_probe(pdev);
-	WARN_ON(ret);
-	return ret;
-}
-#endif
-
 static struct of_device_id bcm2708_pinctrl_match[] __devinitconst = {
 	{ .compatible = "broadcom,bcm2708-pinctrl" },
 	{}
@@ -118,11 +71,7 @@ static struct of_device_id bcm2708_pinctrl_match[] __devinitconst = {
 MODULE_DEVICE_TABLE(of, bcm2708_pinctrl_match);
 
 static struct platform_driver bcm2708_pinctrl_driver = {
-#ifdef TEST_REPROBE
-	.probe = bcm2708_pinctrl_reprobe,
-#else
 	.probe = bcm2708_pinctrl_probe,
-#endif
 	.remove = bcm2708_pinctrl_remove,
 	.driver = {
 		.name = MODULE_NAME,
