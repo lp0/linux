@@ -271,6 +271,34 @@ static int really_probe(struct device *dev, struct device_driver *drv)
 		ret = drv->probe(dev);
 		if (ret)
 			goto probe_failed;
+
+#ifdef CONFIG_DEBUG_DEVICE_REPROBE
+		if (drv->remove && strcmp("20201000.uart0", dev_name(dev)) && strcmp("display.0", dev_name(dev)) && strcmp("20200000.pinctrl", dev_name(dev))) {
+			ret = drv->remove(dev);
+			WARN(ret, "%s: reprobe debug remove failed: %d",
+				dev_name(dev), ret);
+			if (ret)
+				goto probe_failed;
+
+			ret = drv->probe(dev);
+			WARN(ret, "%s: reprobe debug probe 2 failed: %d",
+				dev_name(dev), ret);
+			if (ret)
+				goto probe_failed;
+
+			ret = drv->remove(dev);
+			WARN(ret, "%s: reprobe debug remove 2 failed: %d",
+				dev_name(dev), ret);
+			if (ret)
+				goto probe_failed;
+
+			ret = drv->probe(dev);
+			WARN(ret, "%s: reprobe debug probe 3 failed: %d",
+				dev_name(dev), ret);
+			if (ret)
+				goto probe_failed;
+		}
+#endif
 	}
 
 	driver_bound(dev);

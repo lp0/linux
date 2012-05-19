@@ -1289,6 +1289,18 @@ config ASYNC_RAID6_TEST
 
 	  If unsure, say N.
 
+config DEBUG_DEVICE_REPROBE
+	bool "Enable debugging of device probe/remove functions"
+	help
+	  Enable this option to probe and remove all devices multiple
+	  times on load to check for errors in driver remove functions.
+
+	  This will break any device where an external reset is required
+	  between removal before it can be probed again, or any driver
+	  which doesn't allow the device to be removed.
+
+	  If unsure, say N.
+
 source "samples/Kconfig"
 
 source "lib/Kconfig.kgdb"
