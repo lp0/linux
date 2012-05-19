@@ -24,6 +24,13 @@
 #include <linux/spinlock.h>
 #include <linux/sysfs.h>
 
+#ifndef DEBUG
+# define DEBUG
+#endif
+
+#define ALTS 6
+#define PINS 54
+
 enum pin_fsel {
 	FSEL_NONE = -1,
 	FSEL_GPIO_IN,	/* 000 */
@@ -34,12 +41,9 @@ enum pin_fsel {
 	FSEL_ALT0,	/* 100 */
 	FSEL_ALT1,	/* 101 */
 	FSEL_ALT2,	/* 110 */
-	FSEL_ALT3	/* 111 */
+	FSEL_ALT3,	/* 111 */
+	FSELS
 };
-
-#define ALTS 6
-#define PINS 54
-#define FSELS (FSEL_ALT_BASE+6) /* +2 for GPIO */
 
 #define NAME_LEN 64
 #define NAME_SPLIT "|"
@@ -59,10 +63,20 @@ struct bcm2708_pinpair {
 	enum pin_fsel fsel;
 };
 
+struct bcm2708_pinmux;
+
+struct bcm2708_pinmux_attr {
+	struct bcm2708_pinctrl *pc;
+	struct bcm2708_pinmux *pm;
+	struct device_attribute dev;
+};
+
 struct bcm2708_pinmux {
 	struct list_head list;
 	char *name;
+	struct bcm2708_pinmux_attr attr;
 	int count;
+	/* must be last */
 	struct bcm2708_pinpair pins[0];
 };
 

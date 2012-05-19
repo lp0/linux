@@ -15,6 +15,7 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
+#include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/string.h>
@@ -24,6 +25,10 @@
 
 #define GPIO_IN_STR "GPIO_IN"
 #define GPIO_OUT_STR "GPIO_OUT"
+
+#define LOCKED_STR "+"
+#define UNLOCKED_STR "-"
+#define INCOMPLETE_STR " "
 
 /* split the name up by NAME_SPLIT as some gpios have more than one name */
 static void bcm2708_pinctrl_sysfs_show_gpio_split(char *out, int *len,
@@ -103,8 +108,11 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 		if (len < 0)
 			goto err;
 	}
-	strcat(buf, "\n");
-	len++;
+
+	ret = snprintf(buf + len, PAGE_SIZE - len, "\n");
+	if (ret < 0)
+		goto err;
+	len += ret;
 
 	spin_unlock_irq(&pc->lock);
 	return len;
@@ -168,12 +176,12 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 		}
 	}
 
-	if (value == FSEL_NONE) {
-		spin_unlock_irq(&pc->lock);
-		return -EINVAL;
+	if (value != FSEL_NONE) {
+		bcm2708_pinctrl_fsel_set(pc, p, value);
+	} else {
+		len = -EINVAL;
 	}
 
-	bcm2708_pinctrl_fsel_set(pc, p, value);
 	spin_unlock_irq(&pc->lock);
 	return len;
 }
@@ -280,8 +288,157 @@ static void bcm2708_pinctrl_sysfs_unregister_pin(struct bcm2708_pinctrl *pc,
 	kfree(pc->attr_pins[p].dev.attr.name);
 }
 
+static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
+	struct device_attribute *dattr, char *buf)
+{
+	struct bcm2708_pinmux_attr *attr = container_of(dattr,
+		struct bcm2708_pinmux_attr, dev);
+	struct bcm2708_pinmux *pm;
+	struct bcm2708_pinctrl *pc;
+	bool selected[PINS];
+	int count = 0;
+	bool locked = false; /* TODO */
+	int p, f, i;
+	int len = 0;
+	int ret = 0;
+
+	if (attr == NULL)
+		return -ENODEV;
+
+	pm = attr->pm;
+	if (pm == NULL)
+		return -ENODEV;
+
+	pc = attr->pc;
+	if (pc == NULL)
+		return -ENODEV;
+
+	spin_lock_irq(&pc->lock);
+	if (!pc->active) {
+		spin_unlock_irq(&pc->lock);
+		return -ENODEV;
+	}
+
+	for (i = 0; i < pm->count; i++) {
+		p = pm->pins[i].pin;
+		f = pm->pins[i].fsel;
+		selected[p] = bcm2708_pinctrl_fsel_get(pc, p) == f;
+		if (selected[p])
+			count++;
+	}
+
+	ret = snprintf(buf + len, PAGE_SIZE - len, "%02x/%02d(%s):",
+		count, pm->count, count != pm->count ? INCOMPLETE_STR
+			: locked ? LOCKED_STR : UNLOCKED_STR);
+	if (ret < 0)
+		goto err;
+	len += ret;
+
+	for (i = 0; i < pm->count; i++) {
+		p = pm->pins[i].pin;
+		if (!strcmp("", pc->pins[p])) {
+			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
+				? " [GPIO_%02d]" : " GPIO_%02d", p);
+		} else {
+			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
+				? " [GPIO_%02d/PIN_%s]" : " GPIO_%02d/PIN_%s",
+			p, pc->pins[p]);
+		}
+		if (ret < 0)
+			goto err;
+		len += ret;
+	}
+
+	ret = snprintf(buf + len, PAGE_SIZE - len, "\n");
+	if (ret < 0)
+		goto err;
+	len += ret;
+
+	spin_unlock_irq(&pc->lock);
+	return len;
+
+err:
+	return -EIO;
+}
+
+static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
+	struct device_attribute *dattr, const char *buf, size_t count)
+{
+	struct bcm2708_pinmux_attr *attr = container_of(dattr,
+		struct bcm2708_pinmux_attr, dev);
+	struct bcm2708_pinmux *pm;
+	struct bcm2708_pinctrl *pc;
+	int len = strlen(buf);
+	int i;
+
+	if (attr == NULL)
+		return -ENODEV;
+
+	pm = attr->pm;
+	if (pm == NULL)
+		return -ENODEV;
+
+	pc = attr->pc;
+	if (pc == NULL)
+		return -ENODEV;
+
+	spin_lock_irq(&pc->lock);
+	if (!pc->active) {
+		spin_unlock_irq(&pc->lock);
+		return -ENODEV;
+	}
+
+	if (sysfs_streq(buf, "select")) {
+		for (i = 0; i < pm->count; i++)
+			bcm2708_pinctrl_fsel_set(pc,
+				pm->pins[i].pin, pm->pins[i].fsel);
+	} else {
+		len = -EINVAL;
+	}
+
+	spin_unlock_irq(&pc->lock);
+	return len;
+}
+
+static int bcm2708_pinmux_sysfs_register_group(struct bcm2708_pinctrl *pc,
+	struct bcm2708_pinmux *pm)
+{
+	int ret;
+
+	pm->attr.pm = pm;
+	pm->attr.pc = pc;
+	pm->attr.dev.attr.name = kasprintf(GFP_KERNEL, "group_%s", pm->name);
+	pm->attr.dev.attr.mode = S_IWUSR | S_IRUGO;
+	pm->attr.dev.show = bcm2708_pinmux_sysfs_show_group;
+	pm->attr.dev.store = bcm2708_pinmux_sysfs_store_group;
+
+	if (pm->attr.dev.attr.name == NULL) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	ret = device_create_file(pc->dev, &pm->attr.dev);
+	if (ret)
+		goto err_free;
+
+	return 0;
+
+err_free:
+	kfree(pm->attr.dev.attr.name);
+err:
+	return ret;
+}
+
+static void bcm2708_pinmux_sysfs_unregister_group(struct bcm2708_pinctrl *pc,
+	struct bcm2708_pinmux *pm)
+{
+	device_remove_file(pc->dev, &pm->attr.dev);
+	kfree(pm->attr.dev.attr.name);
+}
+
 int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc)
 {
+	struct bcm2708_pinmux *group;
 	int ret, p;
 
 	for (p = 0; p < PINS; p++) {
@@ -296,13 +453,34 @@ int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc)
 		}
 	}
 
+	list_for_each_entry(group, &pc->groups, list) {
+		ret = bcm2708_pinmux_sysfs_register_group(pc, group);
+		if (!ret)
+			continue;
+
+		dev_err(pc->dev, "sysfs register failure for group %s (%d)\n",
+			group->name, ret);
+		list_for_each_entry_continue_reverse(group, &pc->groups, list)
+			bcm2708_pinmux_sysfs_unregister_group(pc, group);
+		goto err_group;
+	}
+
 	return 0;
+
+err_group:
+	for (p = 0; p < PINS; p++)
+		bcm2708_pinctrl_sysfs_unregister_pin(pc, p);
+	return ret;
 }
 
 void bcm2708_pinctrl_sysfs_unregister(struct bcm2708_pinctrl *pc)
 {
+	struct bcm2708_pinmux *group;
 	int p;
 
 	for (p = 0; p < PINS; p++)
 		bcm2708_pinctrl_sysfs_unregister_pin(pc, p);
+
+	list_for_each_entry(group, &pc->groups, list)
+		bcm2708_pinmux_sysfs_unregister_group(pc, group);
 }

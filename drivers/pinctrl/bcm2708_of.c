@@ -44,7 +44,7 @@ static int bcm2708_pinmux_of_group_init_one(struct list_head *groups, int p,
 	}
 
 	if (group == NULL) {
-		group = kmalloc(sizeof(*group)+sizeof(group->pins[0]), GFP_KERNEL);
+		group = kzalloc(sizeof(*group)+sizeof(group->pins[0]), GFP_KERNEL);
 		if (group == NULL)
 			return -ENOMEM;
 
@@ -62,8 +62,14 @@ static int bcm2708_pinmux_of_group_init_one(struct list_head *groups, int p,
 		group = tmp;
 	}
 
+	/* need to map the alt index to fsel
+	 * (GPIO_IN and GPIO_OUT are already 0 and 1)
+	 */
+	if (f >= FSEL_ALT_BASE)
+		f = to_fsel_value(f - FSEL_ALT_BASE);
+
 	group->pins[group->count].pin = p;
-	group->pins[group->count].fsel = p;
+	group->pins[group->count].fsel = f;
 	group->count++;
 	list_add_tail(&group->list, groups);
 	return 0;
@@ -120,12 +126,6 @@ static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
 					p, f, ret);
 				goto err;
 			}
-
-			/* need to map the alt to an fsel
-			 * (gpio_i and gpio_o are already 0 and 1)
-			 */
-			if (f >= FSEL_ALT_BASE)
-				f = to_fsel_value(f - FSEL_ALT_BASE);
 
 			bcm2708_pinmux_of_group_init(&pc->groups, p, f, name);
 		}
