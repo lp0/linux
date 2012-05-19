@@ -183,7 +183,7 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 		dev_err(wdog->dev, "error mapping io at %#lx\n",
 			(unsigned long)wdog->res.start);
 		ret = -EIO;
-		goto err;
+		goto err_release;
 	}
 
 	spin_lock_init(&wdog->lock);
@@ -210,7 +210,7 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 	if (ret) {
 		dev_err(wdog->dev,
 			"cannot register watchdog (err=%d)\n", ret);
-		goto err;
+		goto err_unmap;
 	}
 
 	dev_info(wdog->dev, "at MMIO %#lx\n",
@@ -218,6 +218,10 @@ static int __devinit bcm2708_wdog_probe(struct platform_device *of_dev)
 	platform_set_drvdata(of_dev, dev);
 	return 0;
 
+err_unmap:
+	iounmap(wdog->pm);
+err_release:
+	release_region(wdog->res.start, resource_size(&wdog->res));
 err:
 	kfree(wdog);
 	kfree(dev);
@@ -230,6 +234,7 @@ static int __devexit bcm2708_wdog_remove(struct platform_device *of_dev)
 	struct bcm2708_wdog *wdog = watchdog_get_drvdata(dev);
 
 	watchdog_unregister_device(dev);
+	iounmap(wdog->pm);
 	release_region(wdog->res.start, resource_size(&wdog->res));
 	kfree(wdog);
 	kfree(dev);
