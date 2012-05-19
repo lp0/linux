@@ -108,6 +108,7 @@ struct bcm_mbox_store {
 struct bcm_mbox {
 	struct device *dev;
 	struct resource res;
+	void __iomem *base;
 	void __iomem *status;
 	void __iomem *config;
 	void __iomem *read;
@@ -284,7 +285,6 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_mbox *mbox = kzalloc(sizeof(*mbox), GFP_KERNEL);
-	void __iomem *base;
 	const char *access;
 	void __iomem *r_off;
 	void __iomem *w_off;
@@ -323,33 +323,33 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 		goto err;
 	}
 
-	base = ioremap(mbox->res.start, resource_size(&mbox->res));
-	if (!base) {
+	mbox->base = ioremap(mbox->res.start, resource_size(&mbox->res));
+	if (!mbox->base) {
 		dev_err(mbox->dev, "error mapping io at %#lx\n",
 			(unsigned long)mbox->res.start);
 		ret = -EIO;
-		goto err;
+		goto err_release;
 	}
 
 	if (of_property_read_string(node, "access", &access)) {
 		dev_err(mbox->dev, "unable to read access configuration\n");
 		ret = -EINVAL;
-		goto err;
+		goto err_unmap;
 	}
 
 	/* read this carefully so that the device tree format
 	 * can be exended in the future
 	 */
 	if (access[0] == 'r' && access[1] == 'w') {
-		r_off = base + MBOX_OFF0;
-		w_off = base + MBOX_OFF1;
+		r_off = mbox->base + MBOX_OFF0;
+		w_off = mbox->base + MBOX_OFF1;
 	} else if (access[0] == 'w' && access[1] == 'r') {
-		w_off = base + MBOX_OFF0;
-		r_off = base + MBOX_OFF1;
+		w_off = mbox->base + MBOX_OFF0;
+		r_off = mbox->base + MBOX_OFF1;
 	} else {
 		dev_err(mbox->dev, "invalid access configuration: %s\n", access);
 		ret = -EINVAL;
-		goto err;
+		goto err_unmap;
 	}
 
 	mbox->status = r_off + MBOX_STA;
@@ -364,7 +364,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	if (!mbox->channels) {
 		dev_err(mbox->dev, "mailbox has no channels\n");
 		ret = -EINVAL;
-		goto err;
+		goto err_unmap;
 	}
 
 	/* disable interrupts and clear the mailbox */
@@ -386,7 +386,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	if (ret) {
 		dev_err(mbox->dev, "unable to setup irq %d", mbox->irq);
 		spin_unlock_irq(&mbox->lock);
-		goto err;
+		goto err_unmap;
 	}
 
 	/* enable the interrupt on data reception */
@@ -401,6 +401,10 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	platform_set_drvdata(of_dev, mbox);
 	return 0;
 
+err_unmap:
+	iounmap(mbox->base);
+err_release:
+	release_region(mbox->res.start, resource_size(&mbox->res));
 err:
 	bcm_mbox_free(mbox);
 	return ret;
@@ -424,6 +428,7 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 	writel(MBOX_STA_CLEAR_MSGS, mbox->config);
 	writel(0, mbox->config);
 
+	iounmap(mbox->base);
 	release_region(mbox->res.start, resource_size(&mbox->res));
 	bcm_mbox_free(mbox);
 	platform_set_drvdata(of_dev, NULL);
