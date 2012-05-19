@@ -239,6 +239,7 @@ static int bcm2708_pinctrl_sysfs_register_pin(struct bcm2708_pinctrl *pc,
 		goto err;
 	}
 
+	sysfs_attr_init(&pc->attr_gpio[p].dev.attr);
 	ret = device_create_file(pc->dev, &pc->attr_gpio[p].dev);
 	if (ret)
 		goto err_free_gpio;
@@ -259,6 +260,7 @@ static int bcm2708_pinctrl_sysfs_register_pin(struct bcm2708_pinctrl *pc,
 		goto err_remove_gpio;
 	}
 
+	sysfs_attr_init(&pc->attr_pins[p].dev.attr);
 	ret = device_create_file(pc->dev, &pc->attr_pins[p].dev);
 	if (ret)
 		goto err_free_pins;
@@ -417,6 +419,7 @@ static int bcm2708_pinmux_sysfs_register_group(struct bcm2708_pinctrl *pc,
 		goto err;
 	}
 
+	sysfs_attr_init(&pm->attr.dev.attr);
 	ret = device_create_file(pc->dev, &pm->attr.dev);
 	if (ret)
 		goto err_free;
