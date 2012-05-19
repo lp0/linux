@@ -1,0 +1,129 @@
+/*
+ * Copyright 2012 Simon Arlott
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ */
+
+#ifndef _PINCTRL_BCM2708_H
+#define _PINCTRL_BCM2708_H
+
+#include <linux/device.h>
+#include <linux/list.h>
+#include <linux/platform_device.h>
+#include <linux/spinlock.h>
+#include <linux/sysfs.h>
+
+enum pin_fsel {
+	FSEL_NONE = -1,
+	FSEL_GPIO_IN,	/* 000 */
+	FSEL_GPIO_OUT,	/* 001 */
+	FSEL_ALT_BASE,
+	FSEL_ALT5 = 2,	/* 010 */
+	FSEL_ALT4,	/* 011 */
+	FSEL_ALT0,	/* 100 */
+	FSEL_ALT1,	/* 101 */
+	FSEL_ALT2,	/* 110 */
+	FSEL_ALT3	/* 111 */
+};
+
+#define ALTS 6
+#define PINS 54
+#define FSELS (FSEL_ALT_BASE+6) /* +2 for GPIO */
+
+#define NAME_LEN 64
+#define NAME_SPLIT "|"
+
+enum def_pull { PULL_NONE, PULL_LOW, PULL_HIGH };
+
+struct bcm2708_pinctrl;
+
+struct bcm2708_pinctrl_attr {
+	struct bcm2708_pinctrl *pc;
+	int pin;
+	struct device_attribute dev;
+};
+
+struct bcm2708_pinpair {
+	int pin;
+	enum pin_fsel fsel;
+};
+
+struct bcm2708_pinmux {
+	struct list_head list;
+	char *name;
+	int count;
+	struct bcm2708_pinpair pins[0];
+};
+
+struct bcm2708_pinctrl {
+	struct device *dev;
+	struct spinlock lock;
+	bool active;
+
+	struct resource res;
+	void __iomem *base;
+
+	const char *gpio[PINS][ALTS];
+	const char *pins[PINS];
+	struct list_head groups;
+	u32 pull[PINS];
+
+	struct bcm2708_pinctrl_attr attr_gpio[PINS];
+	struct bcm2708_pinctrl_attr attr_pins[PINS];
+};
+
+static inline int to_alt_index(enum pin_fsel value)
+{
+	switch (value) {
+	case FSEL_ALT0: return 0;
+	case FSEL_ALT1: return 1;
+	case FSEL_ALT2: return 2;
+	case FSEL_ALT3: return 3;
+	case FSEL_ALT4: return 4;
+	case FSEL_ALT5: return 5;
+	default:
+		WARN_ON(1);
+		break;
+	}
+	return 0;
+}
+
+static inline enum pin_fsel to_fsel_value(int index)
+{
+	switch (index) {
+	case 0: return FSEL_ALT0;
+	case 1: return FSEL_ALT1;
+	case 2: return FSEL_ALT2;
+	case 3: return FSEL_ALT3;
+	case 4: return FSEL_ALT4;
+	case 5: return FSEL_ALT5;
+	default:
+		WARN_ON(1);
+		break;
+	}
+	return FSEL_ALT0;
+}
+
+extern enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc, int p);
+extern void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, int p,
+	enum pin_fsel set);
+
+extern struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
+	struct platform_device *pdev);
+extern int bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc);
+
+extern int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc);
+extern void bcm2708_pinctrl_sysfs_unregister(struct bcm2708_pinctrl *pc);
+
+#endif
