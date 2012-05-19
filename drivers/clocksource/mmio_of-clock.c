@@ -35,6 +35,10 @@
 
 void mmio_of_clock_free(struct mmio_of_clock *data)
 {
+	if (data->value)
+		iounmap(data->value);
+	if (data->control)
+		iounmap(data->control);
 	kfree(data);
 }
 
@@ -66,7 +70,13 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 		goto err;
 	}
 
+
 	data->value = ioremap(data->rvalue.start, resource_size(&data->rvalue));
+	if (!data->value) {
+		ret = -EIO;
+		goto err;
+	}
+
 	data->size = resource_size(&data->rvalue) * 8;
 	if (!of_address_to_resource(node, 1, &data->rcontrol)) {
 		data->control = ioremap(data->rcontrol.start,

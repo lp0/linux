@@ -42,6 +42,8 @@ static void mmio_of_timer_free(struct mmio_of_timer *data)
 {
 	if (data->clock)
 		mmio_of_clock_free(data->clock);
+	if (data->compare)
+		iounmap(data->compare);
 	kfree(data);
 }
 
