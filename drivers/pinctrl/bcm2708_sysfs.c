@@ -394,6 +394,10 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 		for (i = 0; i < pm->count; i++)
 			bcm2708_pinctrl_fsel_set(pc,
 				pm->pins[i].pin, pm->pins[i].fsel);
+	} else if (sysfs_streq(buf, "deselect")) {
+		for (i = 0; i < pm->count; i++)
+			bcm2708_pinctrl_fsel_set(pc,
+				pm->pins[i].pin, FSEL_GPIO_IN);
 	} else {
 		len = -EINVAL;
 	}
