@@ -556,6 +556,7 @@ static void __bcm_mbox_write(struct bcm_mbox *mbox, struct bcm_mbox_msg *msg)
 		/* we can send data */
 		dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
 		writel(msg->val, mbox->write);
+		kfree(msg);
 	} else {
 		list_add_tail(&msg->list, &mbox->outbox);
 
