@@ -72,7 +72,6 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_bell *bell = kzalloc(sizeof(*bell), GFP_KERNEL);
-	void __iomem *base;
 	const char *access;
 	int ret;
 
@@ -102,18 +101,18 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		goto err;
 	}
 
-	base = ioremap(bell->res.start, resource_size(&bell->res));
-	if (!base) {
+	bell->base = ioremap(bell->res.start, resource_size(&bell->res));
+	if (!bell->base) {
 		dev_err(bell->dev, "error mapping io at %#lx\n",
 			(unsigned long)bell->res.start);
 		ret = -EIO;
-		goto err;
+		goto err_release;
 	}
 
 	if (of_property_read_string(node, "access", &access)) {
 		dev_err(bell->dev, "unable to read access configuration\n");
 		ret = -EINVAL;
-		goto err;
+		goto err_unmap;
 	}
 
 	/* read this carefully so that the device tree format
@@ -130,7 +129,7 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	} else {
 		dev_err(bell->dev, "invalid access configuration: %s\n", access);
 		ret = -EINVAL;
-		goto err;
+		goto err_unmap;
 	}
 
 	/* register the interrupt handler */
@@ -146,7 +145,7 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		if (ret) {
 			dev_err(bell->dev, "unable to setup irq %d", bell->irq);
 			spin_unlock_irq(&bell->lock);
-			goto err;
+			goto err_unmap;
 		}
 
 		dev_info(bell->dev, "doorbell at MMIO %#lx (irq = %d, %s)\n",
@@ -160,6 +159,10 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	platform_set_drvdata(of_dev, bell);
 	return 0;
 
+err_unmap:
+	iounmap(bell->base);
+err_release:
+	release_region(bell->res.start, resource_size(&bell->res));
 err:
 	kfree(bell);
 	return ret;
@@ -171,6 +174,7 @@ static int bcm_bell_remove(struct platform_device *of_dev)
 
 	if (bell->read)
 		remove_irq(bell->irq, &bell->irqaction);
+	iounmap(bell->base);
 	release_region(bell->res.start, resource_size(&bell->res));
 	kfree(bell);
 	platform_set_drvdata(of_dev, NULL);
