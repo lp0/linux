@@ -7,14 +7,23 @@
 	#size-cells = <1>;
 	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
-	system-rev = <0>;
-	system-serial = <0 0>;
-	mac-address = [00 00 00 00 00 00];
+	system-rev = <0>;			/* Set by VideoCore */
+	system-serial = <0 0>;			/* Set by VideoCore */
+	mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
+
+	chosen {
+		bootargs = "";			/* Set by VideoCore */
+	};
 
 	cpus {
 		cpu@0 {
 			compatible = "broadcom,bcm2835-cpu", "broadcom,bcm2708-cpu", "arm,1176jz-f";
 		};
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0 0>;			/* Set by VideoCore */
 	};
 
 	display {
@@ -25,9 +34,9 @@
 		vc_mailbox = <&vc_mbox>;
 		vc_channel = <1>;
 
-		width = <0>;
-		height = <0>;
-		depth = <0>;
+		width = <0>;			/* Set by VideoCore */
+		height = <0>;			/* Set by VideoCore */
+		depth = <0>;			/* Set by VideoCore */
 	};
 
 	power: power {
@@ -149,7 +158,7 @@
 			compatible = "broadcom,bcm2835-dma", "broadcom,bcm2708-dma";
 			reg = <0x7000 0x1000>;
 
-			channels = <0>;
+			channels = <0x10>;	/* Set by VideoCore */
 		};
 
 		armctrl {
