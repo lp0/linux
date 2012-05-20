@@ -184,7 +184,7 @@ static int bcm_bell_remove(struct platform_device *of_dev)
 struct bcm_bell *bcm_bell_get(struct device_node *node, const char *pbell)
 {
 	struct device_node *bell_node;
-	struct platform_device *dev;
+	struct platform_device *pdev;
 	struct bcm_bell *bell;
 	int ret;
 
@@ -195,21 +195,27 @@ struct bcm_bell *bcm_bell_get(struct device_node *node, const char *pbell)
 	if (bell_node == NULL)
 		return ERR_PTR(-ENOENT);
 
-	dev = of_find_device_by_node(bell_node);
-	if (dev == NULL) {
-		ret = -ENODEV;
-		goto put_node;
-	}
-
-	bell = platform_get_drvdata(dev);
-	if (bell == NULL) {
-		ret = -EINVAL;
-		goto put_node;
+	pdev = of_find_device_by_node(bell_node);
+	if (pdev == NULL) {
+		of_node_put(bell_node);
+		return ERR_PTR(-ENODEV);
 	}
 
 	/* swap our node ref for a device ref */
-	get_device(bell->dev);
+	get_device(&pdev->dev);
 	of_node_put(bell_node);
+
+	if (pdev->dev.driver == NULL
+			|| pdev->dev.driver->owner != THIS_MODULE) {
+		ret = -ENODEV;
+		goto put_dev;
+	}
+
+	bell = platform_get_drvdata(pdev);
+	if (bell == NULL || bell->dev != &pdev->dev) {
+		ret = -EINVAL;
+		goto put_dev;
+	}
 
 	spin_lock_irq(&bell->lock);
 	if (bell->open) {
@@ -222,12 +228,8 @@ struct bcm_bell *bcm_bell_get(struct device_node *node, const char *pbell)
 	spin_unlock_irq(&bell->lock);
 	return bell;
 
-put_node:
-	of_node_put(bell_node);
-	return ERR_PTR(ret);
-
 put_dev:
-	put_device(bell->dev);
+	put_device(&pdev->dev);
 	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL_GPL(bcm_bell_get);
