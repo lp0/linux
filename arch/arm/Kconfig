@@ -1003,6 +1003,7 @@ config ARCH_BCM2708
 	select WATCHDOG
 	select BCM2708_WDOG
 	select PINCTRL
+	select ARCH_REQUIRE_GPIOLIB
 	select MACH_BCM2708
 	help
 	  This enables support for Broadcom BCM2708 boards.
