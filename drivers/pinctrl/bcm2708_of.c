@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ *
+ * of_device_make_bus_id() hack copied from sound/soc/fsl/p1022_ds.c
  */
 
 #include <linux/err.h>
@@ -22,6 +24,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/pinctrl/machine.h>
 
 #include "bcm2708.h"
 
@@ -122,10 +125,16 @@ static void bcm2708_pinmux_of_free(struct bcm2708_pinctrl *pc)
 {
 	struct bcm2708_pinmux *group;
 	struct bcm2708_pinmux *tmp;
+	int i;
 
 	kfree(pc->grpidx);
 	kfree(pc->grpnam);
 	kfree(pc->pindesc);
+
+	if (pc->pinmap)
+		for (i = 0; i < pc->nr_pinmaps; i++)
+			kfree(pc->pinmap[i].dev_name);
+	kfree(pc->pinmap);
 
 	list_for_each_entry_safe(group, tmp, &pc->groups, list) {
 		list_del(&group->list);
@@ -195,6 +204,104 @@ static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
 err:
 	bcm2708_pinmux_of_free(pc);
 	return ret;
+}
+
+static struct of_device_id bcm2708_pinmap_match[] __devinitconst = {
+	{ .compatible = "broadcom,bcm2708-pinctrl-device" },
+	{}
+};
+
+static int __devinit bcm2708_pinmap_of_init_one(struct bcm2708_pinctrl *pc,
+	char *name, const char *group)
+{
+	if (pc->pinmap == NULL) {
+		pc->pinmap = kzalloc(sizeof(pc->pinmap[0]), GFP_KERNEL);
+		if (pc->pinmap == NULL)
+			return -ENOMEM;
+	} else {
+		struct pinctrl_map *tmp_pinmap;
+
+		tmp_pinmap = krealloc(pc->pinmap,
+			sizeof(pc->pinmap[0]) * (pc->nr_pinmaps + 1),
+			GFP_KERNEL);
+		if (tmp_pinmap == NULL)
+			return -ENOMEM;
+		pc->pinmap = tmp_pinmap;
+	}
+
+	pc->pinmap[pc->nr_pinmaps].dev_name = name;
+	pc->pinmap[pc->nr_pinmaps].name = PINCTRL_STATE_DEFAULT;
+	pc->pinmap[pc->nr_pinmaps].type = PIN_MAP_TYPE_MUX_GROUP;
+	pc->pinmap[pc->nr_pinmaps].ctrl_dev_name = dev_name(pc->dev);
+	pc->pinmap[pc->nr_pinmaps].data.mux.group = group;
+	pc->pinmap[pc->nr_pinmaps].data.mux.function = MUX_FUNCTION;
+	pc->nr_pinmaps++;
+
+	return 0;
+}
+
+static int __devinit bcm2708_pinmap_of_init(struct device_node *np,
+	struct bcm2708_pinctrl *pc)
+{
+	struct device_node *pctl_node;
+	struct device_node *pdev_node;
+	struct resource res;
+	char *name;
+	const char *group;
+	int ret, i;
+
+	pc->nr_pinmaps = 0;
+
+	for_each_matching_node(pdev_node, bcm2708_pinmap_match) {
+		dev_dbg(pc->dev, "pinmap pdev_node %s\n", pdev_node->full_name);
+
+		for (i = 0; ; i++) {
+			pctl_node = of_parse_phandle(pdev_node, "pinctrl", i);
+			dev_dbg(pc->dev, "pctl_node %d %s\n", i,
+				pctl_node == NULL ? NULL : pctl_node->full_name);
+			if (pctl_node == NULL)
+				break;
+
+			if (pctl_node != np)
+				goto next;
+
+			/* Determine the dev_name for the device_node.  This
+			 * code mimics the behavior of of_device_make_bus_id().
+			 * We need this because pinctrl uses the dev_name() of
+			 * the device to match the platform device with the
+			 * pin group. It's a hack but it works (for now).
+			 */
+			ret = of_address_to_resource(pdev_node, 0, &res);
+			if (ret)
+				goto next;
+			name = kasprintf(GFP_KERNEL, "%llx.%s",
+				(unsigned long long)res.start, pdev_node->name);
+			if (name == NULL)
+				goto next;
+
+			ret = of_property_read_string_index(pdev_node, "pinmap",
+				i, &group);
+			if (ret)
+				goto next_free;
+			dev_dbg(pc->dev, "name %s group %s\n", name, group);
+
+			ret = bcm2708_pinmap_of_init_one(pc, name, group);
+			if (ret) {
+				dev_warn(pc->dev,
+					"failed to map device %s group %s (%d)\n",
+					name, group, ret);
+				goto next_free;
+			}
+			goto next;
+
+next_free:
+			kfree(name);
+next:
+			of_node_put(pctl_node);
+		}
+	}
+
+	return 0;
 }
 
 struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
@@ -269,6 +376,11 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	}
 
 	ret = bcm2708_pinmux_of_init(np, pc);
+	if (ret)
+		goto err;
+
+
+	ret = bcm2708_pinmap_of_init(np, pc);
 	if (ret)
 		goto err;
 

@@ -26,12 +26,6 @@
 #define GPIO_IN_STR	"GPIO_IN"
 #define GPIO_OUT_STR	"GPIO_OUT"
 
-/* pin group strings */
-#define LOCKED_STR	"+" /* manually locked ("lock"/"unlock" commands) */
-#define BUSY_STR	"*" /* locked by another device */
-#define UNLOCKED_STR	"-" /* not locked */
-#define INCOMPLETE_STR	" " /* not all pins selected */
-
 /* split the name up by NAME_SPLIT as some gpios have more than one name */
 static void bcm2708_pinctrl_sysfs_show_gpio_split(char *out, int *len,
 	const char *name, bool selected)
@@ -300,13 +294,10 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 	struct bcm2708_pinmux *pm;
 	struct bcm2708_pinctrl *pc;
 	bool selected[PINS];
-	bool pm_locked = true;
-	bool usr_locked = true;
 	int count = 0;
-	char *lockstr;
-	int p, i;
 	int len = 0;
 	int ret = 0;
+	int p, i;
 
 	if (attr == NULL)
 		return -ENODEV;
@@ -330,24 +321,10 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 		selected[p] = bcm2708_pinctrl_fsel_get(pc, p) == pm->fsel[i];
 		if (selected[p])
 			count++;
-
-		if (!pc->pm_locked[p])
-			pm_locked = false;
-
-		if (!pc->usr_locked[p])
-			usr_locked = false;
 	}
 
-	if (count != pm->count)
-		lockstr = INCOMPLETE_STR;
-	else if (usr_locked)
-		lockstr = LOCKED_STR;
-	else if (pm_locked)
-		lockstr = BUSY_STR;
-	else
-		lockstr = UNLOCKED_STR;
-	ret = snprintf(buf + len, PAGE_SIZE - len, "%02d/%02d(%s):",
-		count, pm->count, lockstr);
+	ret = snprintf(buf + len, PAGE_SIZE - len,
+		"%02d/%02d:", count, pm->count);
 	if (ret < 0)
 		goto err;
 	len += ret;
@@ -414,21 +391,6 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 		for (i = 0; i < pm->count; i++)
 			bcm2708_pinctrl_fsel_set(pc,
 				pm->pins[i], FSEL_GPIO_IN);
-	} else if (sysfs_streq(buf, "lock")) {
-		bool busy = false;
-
-		for (i = 0; i < pm->count; i++)
-			busy |= pc->pm_locked[pm->pins[i]];
-
-		if (busy) {		
-			len = -EINVAL;
-		} else {
-			for (i = 0; i < pm->count; i++)
-				pc->usr_locked[pm->pins[i]] = true;
-		}
-	} else if (sysfs_streq(buf, "unlock")) {
-		for (i = 0; i < pm->count; i++)
-			pc->usr_locked[pm->pins[i]] = false;
 	} else {
 		len = -EINVAL;
 	}

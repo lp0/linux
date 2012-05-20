@@ -54,7 +54,8 @@ void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 	u32 val = readl(reg);
 
 	cur = (val >> FSEL_SHIFT(p)) & FSEL_MASK;
-	dev_dbg(pc->dev, "read %08x@%p (%u = %d)\n", val, reg, p, cur);
+	dev_dbg(pc->dev, "read %08x@%p (%u = %s)\n", val, reg, p,
+		fsel_names[cur]);
 
 	/* all GPIOs need to go via GPIO_IN first or it'll lock up */
 	if (cur != FSEL_GPIO_IN && set != FSEL_GPIO_IN) {

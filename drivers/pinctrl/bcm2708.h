@@ -51,6 +51,8 @@ enum pin_fsel {
 #define NAME_LEN 64
 #define NAME_SPLIT "|"
 
+#define MUX_FUNCTION "BCM2708"
+
 enum def_pull { PULL_NONE, PULL_LOW, PULL_HIGH };
 
 struct bcm2708_pinctrl;
@@ -75,8 +77,9 @@ struct bcm2708_pinmux {
 	struct bcm2708_pinmux_attr attr;
 	int count;
 
+	/* pinctrl needs an array of pins */
 	unsigned *pins;
-	unsigned *fsel;
+	enum pin_fsel *fsel;
 };
 
 struct bcm2708_pinctrl {
@@ -103,6 +106,9 @@ struct bcm2708_pinctrl {
 	struct bcm2708_pinmux **grpidx;
 	const char **grpnam;
 	struct pinctrl_pin_desc *pindesc;
+	struct pinctrl_map *pinmap;
+	int nr_pinmaps;
+
 	struct pinctrl_dev *pctl;
 	struct pinctrl_desc desc;
 	struct pinctrl_ops pctlops;
@@ -142,15 +148,45 @@ static inline enum pin_fsel to_fsel_value(int index)
 	return FSEL_ALT0;
 }
 
+/* io */
 extern enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc,
 	unsigned p);
 extern void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 	enum pin_fsel set);
 
+/* of */
 extern struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	struct platform_device *pdev);
 extern int bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc);
 
+/* pctrl */
+extern int bcm2708_pinctrl_list_groups(struct pinctrl_dev *pctl,
+	unsigned selector);
+extern const char *bcm2708_pinctrl_get_group_name(struct pinctrl_dev *pctl,
+	unsigned selector);
+extern int bcm2708_pinctrl_get_group_pins(struct pinctrl_dev *pctl,
+	unsigned selector, const unsigned **pins, unsigned *num_pins);
+extern int bcm2708_pinmux_request(struct pinctrl_dev *pctl, unsigned offset);
+extern int bcm2708_pinmux_free(struct pinctrl_dev *pctl, unsigned offset);
+extern int bcm2708_pinmux_list_functions(struct pinctrl_dev *pctl,
+	unsigned selector);
+extern const char *bcm2708_pinmux_get_function_name(struct pinctrl_dev *pctl,
+	unsigned selector);
+extern int bcm2708_pinmux_get_function_groups(struct pinctrl_dev *pctl,
+	unsigned selector, const char * const **groups,
+	unsigned * const num_groups);
+extern int bcm2708_pinmux_enable(struct pinctrl_dev *pctl,
+	unsigned func_selector, unsigned group_selector);
+extern void bcm2708_pinmux_disable(struct pinctrl_dev *pctl,
+	unsigned func_selector, unsigned group_selector);
+extern int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
+	struct pinctrl_gpio_range *range, unsigned offset);
+extern void bcm2708_pinmux_gpio_disable_free(struct pinctrl_dev *pctl,
+	struct pinctrl_gpio_range *range, unsigned offset);
+extern int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
+	struct pinctrl_gpio_range *range, unsigned offset, bool input);
+
+/* sysfs */
 extern int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc);
 extern void bcm2708_pinctrl_sysfs_unregister(struct bcm2708_pinctrl *pc);
 
