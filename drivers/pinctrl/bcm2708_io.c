@@ -34,19 +34,19 @@ static const char *fsel_names[FSELS] = {
 	"ALT3"
 };
 
-enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc, int p)
+enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc, unsigned p)
 {
 	enum pin_fsel status;
 	void __iomem *reg = pc->base + FSEL_REG(p);
 	u32 val = readl(reg);
 
 	status = (val >> FSEL_SHIFT(p)) & FSEL_MASK;
-	dev_dbg(pc->dev, "get %08x@%p (%d = %s)\n", val, reg, p,
+	dev_dbg(pc->dev, "get %08x@%p (%u = %s)\n", val, reg, p,
 		fsel_names[status]);
 	return status;
 }
 
-void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, int p,
+void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 	enum pin_fsel set)
 {
 	enum pin_fsel cur;
@@ -54,19 +54,19 @@ void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, int p,
 	u32 val = readl(reg);
 
 	cur = (val >> FSEL_SHIFT(p)) & FSEL_MASK;
-	dev_dbg(pc->dev, "read %08x@%p (%d = %d)\n", val, reg, p, cur);
+	dev_dbg(pc->dev, "read %08x@%p (%u = %d)\n", val, reg, p, cur);
 
 	/* all GPIOs need to go via GPIO_IN first or it'll lock up */
 	if (cur != FSEL_GPIO_IN && set != FSEL_GPIO_IN) {
 		val &= ~(FSEL_MASK << FSEL_SHIFT(p));
 		val |= (FSEL_GPIO_IN & FSEL_MASK) << FSEL_SHIFT(p);
-		dev_dbg(pc->dev, "write %08x@%p (%d = %s)\n", val, reg, p,
+		dev_dbg(pc->dev, "write %08x@%p (%u = %s)\n", val, reg, p,
 			fsel_names[FSEL_GPIO_IN]);
 	}
 
 	val &= ~(FSEL_MASK << FSEL_SHIFT(p));
 	val |= (set & FSEL_MASK) << FSEL_SHIFT(p);
-	dev_dbg(pc->dev, "write %08x@%p (%d = %s)\n", val, reg, p,
+	dev_dbg(pc->dev, "write %08x@%p (%u = %s)\n", val, reg, p,
 		fsel_names[set]);
 	writel(val, reg);
 }

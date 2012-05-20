@@ -23,6 +23,9 @@
 #include <linux/platform_device.h>
 #include <linux/spinlock.h>
 #include <linux/sysfs.h>
+#include <linux/pinctrl/pinctrl.h>
+#include <linux/pinctrl/pinmux.h>
+#include <linux/pinctrl/pinconf.h>
 
 #ifndef DEBUG
 # define DEBUG
@@ -58,11 +61,6 @@ struct bcm2708_pinctrl_attr {
 	struct device_attribute dev;
 };
 
-struct bcm2708_pinpair {
-	int pin;
-	enum pin_fsel fsel;
-};
-
 struct bcm2708_pinmux;
 
 struct bcm2708_pinmux_attr {
@@ -76,8 +74,9 @@ struct bcm2708_pinmux {
 	char *name;
 	struct bcm2708_pinmux_attr attr;
 	int count;
-	/* must be last */
-	struct bcm2708_pinpair pins[0];
+
+	unsigned *pins;
+	unsigned *fsel;
 };
 
 struct bcm2708_pinctrl {
@@ -91,10 +90,24 @@ struct bcm2708_pinctrl {
 	const char *gpio[PINS][ALTS];
 	const char *pins[PINS];
 	struct list_head groups;
+	int nr_groups;
 	u32 pull[PINS];
 
+	/* sysfs */
 	struct bcm2708_pinctrl_attr attr_gpio[PINS];
 	struct bcm2708_pinctrl_attr attr_pins[PINS];
+	bool pm_locked[PINS];
+	bool usr_locked[PINS];
+
+	/* pinctrl, pinmux */
+	struct bcm2708_pinmux **grpidx;
+	const char **grpnam;
+	struct pinctrl_pin_desc *pindesc;
+	struct pinctrl_dev *pctl;
+	struct pinctrl_desc desc;
+	struct pinctrl_ops pctlops;
+	struct pinmux_ops pmxops;
+	struct pinconf_ops confops;
 };
 
 static inline int to_alt_index(enum pin_fsel value)
@@ -129,8 +142,9 @@ static inline enum pin_fsel to_fsel_value(int index)
 	return FSEL_ALT0;
 }
 
-extern enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc, int p);
-extern void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, int p,
+extern enum pin_fsel bcm2708_pinctrl_fsel_get(struct bcm2708_pinctrl *pc,
+	unsigned p);
+extern void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 	enum pin_fsel set);
 
 extern struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
