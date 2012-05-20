@@ -209,10 +209,13 @@ static int clockevent_mmio_of_set_next_event(unsigned long event,
 static irqreturn_t clockevent_mmio_of_interrupt(int irq, void *dev_id)
 {
 	struct mmio_of_timer *dev = dev_id;
+	void (*event_handler)(struct clock_event_device *);
 	if (dev->get(dev)) {
 		dev->clear(dev);
-		if (dev->ce.event_handler)
-			dev->ce.event_handler(&dev->ce);
+
+		event_handler = ACCESS_ONCE(dev->ce.event_handler);
+		if (event_handler)
+			event_handler(&dev->ce);
 		return IRQ_HANDLED;
 	} else {
 		return IRQ_NONE;

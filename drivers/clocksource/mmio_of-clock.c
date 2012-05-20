@@ -70,7 +70,6 @@ struct mmio_of_clock __devinit *mmio_of_clock_read(
 		goto err;
 	}
 
-
 	data->value = ioremap(data->rvalue.start, resource_size(&data->rvalue));
 	if (!data->value) {
 		ret = -EIO;
