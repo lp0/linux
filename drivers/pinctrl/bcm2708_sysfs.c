@@ -51,6 +51,26 @@ static void bcm2708_pinctrl_sysfs_show_gpio_split(char *out, int *len,
 	}
 }
 
+static const char *to_lockstr_long(struct bcm2708_pinctrl *pc, int p)
+{
+	if (pc->pm_locked[p])
+		return "device";
+	else if (pc->usr_locked[p])
+		return "1";
+	else
+		return "0";
+}
+
+static const char *to_lockstr_short(struct bcm2708_pinctrl *pc, int p)
+{
+	if (pc->pm_locked[p])
+		return "d";
+	else if (pc->usr_locked[p])
+		return "+";
+	else
+		return "-";
+}
+
 static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 	struct device_attribute *dattr, char *buf)
 {
@@ -105,7 +125,8 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 			goto err;
 	}
 
-	ret = snprintf(buf + len, PAGE_SIZE - len, "\n");
+	ret = snprintf(buf + len, PAGE_SIZE - len, " (locked=%s)\n",
+		to_lockstr_long(pc, p));
 	if (ret < 0)
 		goto err;
 	len += ret;
@@ -162,6 +183,13 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 		value = FSEL_GPIO_IN;
 	} else if (sysfs_streq(buf, GPIO_OUT_STR)) {
 		value = FSEL_GPIO_OUT;
+	} else if (sysfs_streq(buf, "lock")) {
+		if (!pc->pm_locked[p])
+			pc->usr_locked[p] = true;
+		else
+			len = -EBUSY;
+	} else if (sysfs_streq(buf, "unlock")) {
+		pc->usr_locked[p] = false;
 	} else {
 		for (a = 0; a < ALTS; a++) {
 			if (bcm2708_pinctrl_sysfs_store_gpio_match(buf,
@@ -170,12 +198,16 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 				break;
 			}
 		}
+
+		if (value != FSEL_NONE)
+			len = -EINVAL;
 	}
 
 	if (value != FSEL_NONE) {
-		bcm2708_pinctrl_fsel_set(pc, p, value);
-	} else {
-		len = -EINVAL;
+		if (pc->pm_locked[p] || pc->usr_locked[p])
+			len = -EBUSY;
+		else
+			bcm2708_pinctrl_fsel_set(pc, p, value);
 	}
 
 	spin_unlock_irq(&pc->lock);
@@ -333,11 +365,14 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 		p = pm->pins[i];
 		if (!strcmp("", pc->pins[p])) {
 			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
-				? " [GPIO_%02d]" : " GPIO_%02d", p);
+				? " [GPIO_%02d](%s)"
+					: " GPIO_%02d(%s)",
+				p, to_lockstr_short(pc, p));
 		} else {
 			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
-				? " [GPIO_%02d/PIN_%s]" : " GPIO_%02d/PIN_%s",
-			p, pc->pins[p]);
+				? " [GPIO_%02d/PIN_%s](%s)"
+					: " GPIO_%02d/PIN_%s(%s)",
+				p, pc->pins[p], to_lockstr_short(pc, p));
 		}
 		if (ret < 0)
 			goto err;
@@ -364,7 +399,7 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 	struct bcm2708_pinmux *pm;
 	struct bcm2708_pinctrl *pc;
 	int len = strlen(buf);
-	int i;
+	int p, i;
 
 	if (attr == NULL)
 		return -ENODEV;
@@ -384,13 +419,28 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 	}
 
 	if (sysfs_streq(buf, "select")) {
-		for (i = 0; i < pm->count; i++)
-			bcm2708_pinctrl_fsel_set(pc,
-				pm->pins[i], pm->fsel[i]);
+		for (i = 0; i < pm->count; i++) {
+			p = pm->pins[i];
+			if (!(pc->pm_locked[p] || pc->usr_locked[p]))
+				bcm2708_pinctrl_fsel_set(pc, p, pm->fsel[i]);
+		}
 	} else if (sysfs_streq(buf, "deselect")) {
-		for (i = 0; i < pm->count; i++)
-			bcm2708_pinctrl_fsel_set(pc,
-				pm->pins[i], FSEL_GPIO_IN);
+		for (i = 0; i < pm->count; i++) {
+			p = pm->pins[i];
+			if (!(pc->pm_locked[p] || pc->usr_locked[p]))
+				bcm2708_pinctrl_fsel_set(pc, p, FSEL_GPIO_IN);
+		}
+	} else if (sysfs_streq(buf, "lock")) {
+		for (i = 0; i < pm->count; i++) {
+			p = pm->pins[i];
+			if (!pc->pm_locked[p])
+				pc->usr_locked[p] = true;
+		}
+	} else if (sysfs_streq(buf, "unlock")) {
+		for (i = 0; i < pm->count; i++) {
+			p = pm->pins[i];
+			pc->usr_locked[p] = false;
+		}
 	} else {
 		len = -EINVAL;
 	}

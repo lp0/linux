@@ -38,6 +38,7 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 	desc->npins = PINS;
 	desc->pctlops = &pc->pctlops;
 	desc->pmxops = &pc->pmxops;
+	/* TODO: pinconf support */
 	/* desc->confops = &pc->confops; */
 	desc->owner = THIS_MODULE;
 
