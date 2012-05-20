@@ -439,7 +439,7 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	const char *pmbox, const char *pchan)
 {
 	struct device_node *mbox_node;
-	struct platform_device *dev;
+	struct platform_device *pdev;
 	struct bcm_mbox *mbox;
 	struct bcm_mbox_chan *chan;
 	struct bcm_mbox_store *store;
@@ -458,21 +458,27 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	if (mbox_node == NULL)
 		return ERR_PTR(-ENOENT);
 
-	dev = of_find_device_by_node(mbox_node);
-	if (dev == NULL) {
-		ret = -ENODEV;
-		goto put_node;
-	}
-
-	mbox = platform_get_drvdata(dev);
-	if (mbox == NULL) {
-		ret = -EINVAL;
-		goto put_node;
+	pdev = of_find_device_by_node(mbox_node);
+	if (pdev == NULL) {
+		of_node_put(mbox_node);
+		return ERR_PTR(-ENODEV);
 	}
 
 	/* swap our node ref for a device ref */
-	get_device(mbox->dev);
+	get_device(&pdev->dev);
 	of_node_put(mbox_node);
+
+	if (pdev->dev.driver == NULL
+			|| pdev->dev.driver->owner != THIS_MODULE) {
+		ret = -ENODEV;
+		goto put_dev;
+	}
+
+	mbox = platform_get_drvdata(pdev);
+	if (mbox == NULL || mbox->dev != &pdev->dev) {
+		ret = -EINVAL;
+		goto put_dev;
+	}
 
 	/* check the channel is valid for the mailbox */
 	if (!(mbox->channels & BIT(index))) {
@@ -501,14 +507,10 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	spin_unlock_irq(&store->lock);
 	return chan;
 
-put_node:
-	of_node_put(mbox_node);
-	return ERR_PTR(ret);
-
 free_ref:
 	kfree(chan);
 put_dev:
-	put_device(mbox->dev);
+	put_device(&pdev->dev);
 	return ERR_PTR(ret);
 }
 
