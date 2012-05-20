@@ -144,7 +144,7 @@ struct bcm_vc_power_dev *bcm_vc_power_get(struct device_node *node,
 	char *pname, char *pindex)
 {
 	struct device_node *power_node;
-	struct platform_device *plat_dev;
+	struct platform_device *pdev;
 	struct bcm_vc_power_mgr *mgr;
 	struct bcm_vc_power_dev *dev;
 	u32 index;
@@ -162,21 +162,27 @@ struct bcm_vc_power_dev *bcm_vc_power_get(struct device_node *node,
 	if (power_node == NULL)
 		return ERR_PTR(-ENOENT);
 
-	plat_dev = of_find_device_by_node(power_node);
-	if (plat_dev == NULL) {
-		ret = -ENODEV;
-		goto put_node;
-	}
-
-	mgr = platform_get_drvdata(plat_dev);
-	if (mgr == NULL) {
-		ret = -EINVAL;
-		goto put_node;
+	pdev = of_find_device_by_node(power_node);
+	if (pdev == NULL) {
+		of_node_put(power_node);
+		return ERR_PTR(-ENODEV);
 	}
 
 	/* swap our node ref for a device ref */
-	get_device(mgr->dev);
+	get_device(&pdev->dev);
 	of_node_put(power_node);
+
+	if (pdev->dev.driver == NULL
+			|| pdev->dev.driver->owner != THIS_MODULE) {
+		ret = -ENODEV;
+		goto put_dev;
+	}
+
+	mgr = platform_get_drvdata(pdev);
+	if (mgr == NULL || mgr->dev != &pdev->dev) {
+		ret = -EINVAL;
+		goto put_dev;
+	}
 
 	/* check the index is valid */
 	if (!(mgr->valid & BIT(index))) {
@@ -195,12 +201,8 @@ struct bcm_vc_power_dev *bcm_vc_power_get(struct device_node *node,
 	dev->index = index;
 	return dev;
 
-put_node:
-	of_node_put(power_node);
-	return ERR_PTR(ret);
-
 put_dev:
-	put_device(mgr->dev);
+	put_device(&pdev->dev);
 	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL_GPL(bcm_vc_power_get);
