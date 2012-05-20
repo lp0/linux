@@ -531,6 +531,7 @@
 		gpio {
 			compatible = "broadcom,bcm2835-gpio", "broadcom,bcm2708-gpio";
 			reg = <0x20001c 0x78>;
+			#gpio-cells = <1>;
 
 			interrupt-parent = <&vic2>;
 			interrupts = <17 18 19 20>;
