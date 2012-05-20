@@ -47,6 +47,24 @@
 		default-on = <0x9>;
 	};
 
+	leds {
+		compatible = "gpio-leds";
+
+		ok {
+			label = "ok";
+			gpios = <&gpio 16 1>;
+
+			/* Don't change this - it configures
+			 * how the led driver determines if
+			 * the led is on or off when it loads.
+			 */
+			default-state = "keep";
+
+			/* This is the real default state. */
+			linux,default-trigger = "default-on";
+		};
+	};
+
 	axi {
 		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
 		#address-cells = <1>;
@@ -528,13 +546,15 @@
 			>;
 		};
 
-		gpio {
+		gpio: gpio {
 			compatible = "broadcom,bcm2835-gpio", "broadcom,bcm2708-gpio";
 			reg = <0x20001c 0x78>;
-			#gpio-cells = <1>;
 
 			interrupt-parent = <&vic2>;
 			interrupts = <17 18 19 20>;
+
+			gpio-controller;
+			#gpio-cells = <2>;
 
 			pinctrl = <&pins>;
 		};
