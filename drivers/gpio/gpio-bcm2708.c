@@ -223,6 +223,7 @@ static int bcm2708_gpio_probe(struct platform_device *pdev)
 	of_node_put(pctl_np);
 
 	gpio->gc.label = MODULE_NAME;
+	gpio->gc.dev = gpio->dev;
 	gpio->gc.owner = THIS_MODULE;
 	gpio->gc.base = gpio_base;
 	gpio->gc.ngpio = nr_gpios;
