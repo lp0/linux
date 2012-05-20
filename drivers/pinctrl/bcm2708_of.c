@@ -415,7 +415,7 @@ err:
 	return ERR_PTR(ret);
 }
 
-int bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc)
+void bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc)
 {
 	bcm2708_pinmux_of_free(pc);
 	if (pc->base) {
@@ -423,5 +423,4 @@ int bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc)
 		iounmap(pc->base);
 	}
 	kfree(pc);
-	return 0;
 }

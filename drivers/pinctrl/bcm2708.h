@@ -159,7 +159,7 @@ extern void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 /* of */
 extern struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	struct platform_device *pdev);
-extern int bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc);
+extern void bcm2708_pinctrl_of_free(struct bcm2708_pinctrl *pc);
 
 /* pctrl */
 extern int bcm2708_pinctrl_list_groups(struct pinctrl_dev *pctl,
