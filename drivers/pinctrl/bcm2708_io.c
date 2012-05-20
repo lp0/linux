@@ -19,9 +19,9 @@
 
 #include "bcm2708.h"
 
-#define FSEL_MASK 0x7
-#define FSEL_REG(p) ((p / 10) * 4)
-#define FSEL_SHIFT(p) ((p - 10 * (p / 10)) * 3)
+#define FSEL_MASK	0x7
+#define FSEL_REG(p)	((p / 10) * 4)
+#define FSEL_SHIFT(p)	((p - 10 * (p / 10)) * 3)
 
 static const char *fsel_names[FSELS] = {
 	"GPIO_IN",

@@ -27,6 +27,7 @@
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
 
+// FIXME remove
 #ifndef DEBUG
 # define DEBUG
 #endif
@@ -90,6 +91,7 @@ struct bcm2708_pinctrl {
 	struct resource res;
 	void __iomem *base;
 
+	u32 gpio_offset;
 	const char *gpio[PINS][ALTS];
 	const char *pins[PINS];
 	struct list_head groups;

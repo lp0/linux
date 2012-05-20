@@ -309,6 +309,7 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct bcm2708_pinctrl *pc = kzalloc(sizeof(*pc), GFP_KERNEL);
+	u32 nr_gpios, nr_alts;
 	int ret, p, a;
 
 	if (pc == NULL)
@@ -347,6 +348,29 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 		ret = -EIO;
 		goto err;
 	}
+
+	ret = of_property_read_u32(np, "count", &nr_gpios);
+	if (ret) {
+		dev_err(pc->dev, "gpio count missing (%d)\n", ret);
+		goto err;
+	}
+	if (nr_gpios != PINS) {
+		dev_err(pc->dev, "unhandled gpio count %d\n", nr_gpios);
+		goto err;
+	}
+
+	of_property_read_u32(np, "alts", &nr_alts);
+	if (ret) {
+		dev_err(pc->dev, "alts count missing (%d)\n", ret);
+		goto err;
+	}
+	if (nr_alts != ALTS) {
+		dev_err(pc->dev, "unhandled alts count %d\n", nr_alts);
+		goto err;
+	}
+
+	pc->gpio_offset = 0;
+	of_property_read_u32(np, "base", &pc->gpio_offset);
 
 	for (p = 0; p < PINS; p++) {
 		for (a = 0; a < ALTS; a++) {
