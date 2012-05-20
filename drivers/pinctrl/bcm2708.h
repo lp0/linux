@@ -91,7 +91,6 @@ struct bcm2708_pinctrl {
 	struct resource res;
 	void __iomem *base;
 
-	u32 gpio_offset;
 	const char *gpio[PINS][ALTS];
 	const char *pins[PINS];
 	struct list_head groups;
@@ -116,6 +115,7 @@ struct bcm2708_pinctrl {
 	struct pinctrl_ops pctlops;
 	struct pinmux_ops pmxops;
 	struct pinconf_ops confops;
+	struct pinctrl_gpio_range gpio_range;
 };
 
 static inline int to_alt_index(enum pin_fsel value)

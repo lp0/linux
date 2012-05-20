@@ -309,7 +309,7 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct bcm2708_pinctrl *pc = kzalloc(sizeof(*pc), GFP_KERNEL);
-	u32 nr_gpios, nr_alts;
+	u32 nr_gpios, nr_alts, gpio_base;
 	int ret, p, a;
 
 	if (pc == NULL)
@@ -369,8 +369,9 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 		goto err;
 	}
 
-	pc->gpio_offset = 0;
-	of_property_read_u32(np, "base", &pc->gpio_offset);
+	gpio_base = 0;
+	of_property_read_u32(np, "base", &gpio_base);
+	pc->gpio_range.base = gpio_base;
 
 	for (p = 0; p < PINS; p++) {
 		for (a = 0; a < ALTS; a++) {
@@ -402,7 +403,6 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	ret = bcm2708_pinmux_of_init(np, pc);
 	if (ret)
 		goto err;
-
 
 	ret = bcm2708_pinmap_of_init(np, pc);
 	if (ret)

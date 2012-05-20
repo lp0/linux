@@ -57,6 +57,11 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 	pc->pmxops.gpio_disable_free = bcm2708_pinmux_gpio_disable_free;
 	pc->pmxops.gpio_set_direction = bcm2708_pinmux_gpio_set_direction;
 
+	pc->gpio_range.name = dev_name(pc->dev);
+	pc->gpio_range.pin_base = 0;
+	pc->gpio_range.npins = PINS;
+	pc->gpio_range.gc = NULL;
+
 	pc->pctl = pinctrl_register(desc, pc->dev, pc);
 	if (IS_ERR(pc->pctl))
 		return PTR_ERR(pc->pctl);
@@ -65,6 +70,7 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 	if (ret)
 		goto err;
 
+	pinctrl_add_gpio_range(pc->pctl, &pc->gpio_range);
 	return 0;
 
 err:
@@ -74,6 +80,9 @@ err:
 
 static void __devexit bcm2708_pinctrl_unregister(struct bcm2708_pinctrl *pc)
 {
+	pinctrl_remove_gpio_range(pc->pctl, &pc->gpio_range);
+	/* can't unregister mappings! */
+	WARN_ON(1);
 	pinctrl_unregister(pc->pctl);
 }
 

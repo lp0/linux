@@ -51,20 +51,20 @@ static void bcm2708_pinctrl_sysfs_show_gpio_split(char *out, int *len,
 	}
 }
 
-static const char *to_lockstr_long(struct bcm2708_pinctrl *pc, int p)
+static int to_lockint(struct bcm2708_pinctrl *pc, int p)
 {
 	if (pc->pm_locked[p])
-		return "device";
+		return 2;
 	else if (pc->usr_locked[p])
-		return "1";
+		return 1;
 	else
-		return "0";
+		return 0;
 }
 
-static const char *to_lockstr_short(struct bcm2708_pinctrl *pc, int p)
+static const char *to_lockstr(struct bcm2708_pinctrl *pc, int p)
 {
 	if (pc->pm_locked[p])
-		return "d";
+		return "*";
 	else if (pc->usr_locked[p])
 		return "+";
 	else
@@ -125,8 +125,8 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 			goto err;
 	}
 
-	ret = snprintf(buf + len, PAGE_SIZE - len, " (locked=%s)\n",
-		to_lockstr_long(pc, p));
+	ret = snprintf(buf + len, PAGE_SIZE - len, " (locked=%d)\n",
+		to_lockint(pc, p));
 	if (ret < 0)
 		goto err;
 	len += ret;
@@ -367,12 +367,12 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
 				? " [GPIO_%02d](%s)"
 					: " GPIO_%02d(%s)",
-				p, to_lockstr_short(pc, p));
+				p, to_lockstr(pc, p));
 		} else {
 			ret = snprintf(buf + len, PAGE_SIZE - len, selected[p]
 				? " [GPIO_%02d/PIN_%s](%s)"
 					: " GPIO_%02d/PIN_%s(%s)",
-				p, pc->pins[p], to_lockstr_short(pc, p));
+				p, pc->pins[p], to_lockstr(pc, p));
 		}
 		if (ret < 0)
 			goto err;

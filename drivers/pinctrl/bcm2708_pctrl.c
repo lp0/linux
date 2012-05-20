@@ -34,7 +34,7 @@ const char *bcm2708_pinctrl_get_group_name(struct pinctrl_dev *pctl,
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
 
-	if (selector >= pc->nr_groups)
+	if (unlikely(selector >= pc->nr_groups))
 		return NULL;
 
 	return pc->grpidx[selector]->name;
@@ -45,7 +45,7 @@ int bcm2708_pinctrl_get_group_pins(struct pinctrl_dev *pctl, unsigned selector,
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
 
-	if (selector >= pc->nr_groups)
+	if (unlikely(selector >= pc->nr_groups))
 		return -EINVAL;
 
 	*pins = pc->grpidx[selector]->pins;
@@ -61,7 +61,7 @@ int bcm2708_pinmux_request(struct pinctrl_dev *pctl, unsigned offset)
 	dev_dbg(pc->dev, "pinmux_request %d\n", offset);
 
 	spin_lock_irq(&pc->lock);
-	if (!pc->active) {
+	if (unlikely(!pc->active)) {
 		spin_unlock_irq(&pc->lock);
 		return -ENODEV;
 	}
@@ -105,7 +105,7 @@ int bcm2708_pinmux_list_functions(struct pinctrl_dev *pctl,
 const char *bcm2708_pinmux_get_function_name(struct pinctrl_dev *pctl,
 	unsigned selector)
 {
-	if (selector != 0)
+	if (unlikely(selector != 0))
 		return NULL;
 
 	return MUX_FUNCTION;
@@ -117,7 +117,7 @@ int bcm2708_pinmux_get_function_groups(struct pinctrl_dev *pctl,
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
 
-	if (selector != 0)
+	if (unlikely(selector != 0))
 		return -EINVAL;
 
 	*groups = pc->grpnam;
@@ -133,14 +133,14 @@ int bcm2708_pinmux_enable(struct pinctrl_dev *pctl,
 	int ret = 0;
 	int i;
 
-	if (func_selector != 0 || group_selector >= pc->nr_groups)
+	if (unlikely(func_selector != 0 || group_selector >= pc->nr_groups))
 		return -EINVAL;
 
 	dev_dbg(pc->dev, "pinmux_enable group=%s\n",
 		pc->grpidx[group_selector]->name);
 
 	spin_lock_irq(&pc->lock);
-	if (!pc->active) {
+	if (unlikely(!pc->active)) {
 		spin_unlock_irq(&pc->lock);
 		return -ENODEV;
 	}
@@ -160,14 +160,14 @@ void bcm2708_pinmux_disable(struct pinctrl_dev *pctl,
 	struct bcm2708_pinmux *pm = pc->grpidx[group_selector];
 	int i;
 
-	if (func_selector != 0 || group_selector >= pc->nr_groups)
+	if (unlikely(func_selector != 0 || group_selector >= pc->nr_groups))
 		return;
 
 	dev_dbg(pc->dev, "pinmux_disable group=%s\n",
 		pc->grpidx[group_selector]->name);
 
 	spin_lock_irq(&pc->lock);
-	if (!pc->active) {
+	if (unlikely(!pc->active)) {
 		spin_unlock_irq(&pc->lock);
 		return;
 	}
@@ -182,11 +182,28 @@ int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
 	struct pinctrl_gpio_range *range, unsigned offset)
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
+	int ret;
 
-	dev_dbg(pc->dev,
-		"pinmux_gpio_request_enable offset=%u base=%u pin_base=%u npins=%u\n",
-		offset, range->base, range->pin_base, range->npins);
+	dev_dbg(pc->dev, "pinmux_gpio_request_enable %d\n", offset);
 
+	if (unlikely(offset >= PINS))
+		return -EINVAL;
+
+	spin_lock_irq(&pc->lock);
+	if (unlikely(!pc->active)) {
+		spin_unlock_irq(&pc->lock);
+		return -ENODEV;
+	}
+
+	if (pc->usr_locked[offset]) {
+		ret = -EBUSY;
+	} else {
+		WARN_ON(pc->pm_locked[offset]);
+		pc->pm_locked[offset] = true;
+	}
+
+	bcm2708_pinctrl_fsel_set(pc, offset, FSEL_GPIO_IN);
+	spin_unlock_irq(&pc->lock);
 	return 0;
 }
 
@@ -195,9 +212,22 @@ void bcm2708_pinmux_gpio_disable_free(struct pinctrl_dev *pctl,
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
 
-	dev_dbg(pc->dev,
-		"pinmux_gpio_disable_free offset=%u base=%u pin_base=%u npins=%u\n",
-		offset, range->base, range->pin_base, range->npins);
+	dev_dbg(pc->dev, "pinmux_gpio_disable_free %d\n", offset);
+
+	if (unlikely(offset >= PINS))
+		return;
+
+	spin_lock_irq(&pc->lock);
+	if (unlikely(!pc->active)) {
+		spin_unlock_irq(&pc->lock);
+		return;
+	}
+
+	WARN_ON(!pc->pm_locked[offset]);
+	pc->pm_locked[offset] = false;
+
+	bcm2708_pinctrl_fsel_set(pc, offset, FSEL_GPIO_IN);
+	spin_unlock_irq(&pc->lock);
 }
 
 int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
@@ -205,9 +235,19 @@ int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctl);
 
-	dev_dbg(pc->dev,
-		"pinmux_gpio_set_direction offset=%u base=%u pin_base=%u npins=%u input=%d\n",
-		offset, range->base, range->pin_base, range->npins, input);
+	dev_dbg(pc->dev, "pinmux_gpio_set_direction %d %d\n", offset, input);
 
+	if (unlikely(offset >= PINS))
+		return -EINVAL;
+
+	spin_lock_irq(&pc->lock);
+	if (unlikely(!pc->active)) {
+		spin_unlock_irq(&pc->lock);
+		return -ENODEV;
+	}
+
+	bcm2708_pinctrl_fsel_set(pc, offset,
+		input ? FSEL_GPIO_IN : FSEL_GPIO_OUT);
+	spin_unlock_irq(&pc->lock);
 	return 0;
 }
