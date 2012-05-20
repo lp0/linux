@@ -57,7 +57,11 @@ void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 	dev_dbg(pc->dev, "read %08x@%p (%u = %s)\n", val, reg, p,
 		fsel_names[cur]);
 
-	/* all GPIOs need to go via GPIO_IN first or it'll lock up */
+	/* check we're not already in the desired state */
+	if (cur == set)
+		return;
+
+	/* all pin state changes must go via GPIO_IN */
 	if (cur != FSEL_GPIO_IN && set != FSEL_GPIO_IN) {
 		val &= ~(FSEL_MASK << FSEL_SHIFT(p));
 		val |= (FSEL_GPIO_IN & FSEL_MASK) << FSEL_SHIFT(p);
