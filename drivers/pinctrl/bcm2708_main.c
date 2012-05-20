@@ -28,8 +28,6 @@
 
 #define MODULE_NAME "pinctrl-bcm2708"
 
-extern void bcm2708_pinctrl_test(void);
-
 static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 {
 	struct pinctrl_desc *desc = &pc->desc;
@@ -102,7 +100,6 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 		(unsigned long)pc->res.start);
 
 	platform_set_drvdata(pdev, pc);
-	bcm2708_pinctrl_test();
 	return 0;
 
 err_sysfs:

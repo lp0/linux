@@ -17,4 +17,4 @@ obj-$(CONFIG_PINCTRL_TEGRA30)	+= pinctrl-tegra30.o
 obj-$(CONFIG_PINCTRL_U300)	+= pinctrl-u300.o
 obj-$(CONFIG_PINCTRL_COH901)	+= pinctrl-coh901.o
 obj-$(CONFIG_PINCTRL_BCM2708)	+= pinctrl-bcm2708.o
-pinctrl-bcm2708-objs		:= bcm2708_main.o bcm2708_of.o bcm2708_io.o bcm2708_sysfs.o bcm2708_pctrl.o bcm2708_test.o
+pinctrl-bcm2708-objs		:= bcm2708_main.o bcm2708_of.o bcm2708_io.o bcm2708_sysfs.o bcm2708_pctrl.o
