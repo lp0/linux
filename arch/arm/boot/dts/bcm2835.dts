@@ -345,10 +345,12 @@
 
 		pins: pinctrl {
 			compatible = "broadcom,bcm2835-pinctrl", "broadcom,bcm2708-pinctrl";
-			reg = <0x200000 0x1c>;
+			reg = <0x200000 0x1c 0x200094 0x1c>;
+			reg-names = "fsel", "pull";
 
 			alts = <6>;
 			count = <54>;
+			base = <0>;
 
 			gpio = /*	ALT0		ALT1		ALT2		ALT3			ALT4		ALT5	*/
 			/*  0 */	"SDA0",		"SA5",		"",		"",			"",		"",
@@ -528,7 +530,7 @@
 
 		gpio {
 			compatible = "broadcom,bcm2835-gpio", "broadcom,bcm2708-gpio";
-			reg = <0x200000 0x1c>;
+			reg = <0x20001c 0x78>;
 
 			interrupt-parent = <&vic2>;
 			interrupts = <17 18 19 20>;
