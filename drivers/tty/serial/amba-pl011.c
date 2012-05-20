@@ -52,6 +52,7 @@
 #include <linux/scatterlist.h>
 #include <linux/delay.h>
 #include <linux/types.h>
+#include <linux/pinctrl/consumer.h>
 
 #include <asm/io.h>
 #include <asm/sizes.h>
@@ -170,6 +171,9 @@ struct uart_amba_port {
 	bool			using_rx_dma;
 	struct pl011_dmarx_data dmarx;
 	struct pl011_dmatx_data	dmatx;
+#endif
+#ifdef CONFIG_PINCTRL
+	struct pinctrl		*pctl;
 #endif
 };
 
@@ -1690,7 +1694,18 @@ static const char *pl011_type(struct uart_port *port)
  */
 static void pl010_release_port(struct uart_port *port)
 {
+#ifdef CONFIG_PINCTRL
+	struct uart_amba_port *uap = (struct uart_amba_port *)port;
+#endif
+
 	release_mem_region(port->mapbase, SZ_4K);
+
+#ifdef CONFIG_PINCTRL
+	if (uap->pctl != NULL) {
+		pinctrl_put(uap->pctl);
+		uap->pctl = NULL;
+	}
+#endif
 }
 
 /*
@@ -1698,6 +1713,32 @@ static void pl010_release_port(struct uart_port *port)
  */
 static int pl010_request_port(struct uart_port *port)
 {
+#ifdef CONFIG_PINCTRL
+	struct uart_amba_port *uap = (struct uart_amba_port *)port;
+	struct pinctrl_state *state;
+	int ret;
+
+	uap->pctl = pinctrl_get(uap->port.dev);
+	if (!IS_ERR(uap->pctl)) {
+		state = pinctrl_lookup_state(uap->pctl, PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(state)) {
+			pinctrl_put(uap->pctl);
+			uap->pctl = NULL;
+			return PTR_ERR(state);
+		}
+
+		ret = pinctrl_select_state(uap->pctl, state);
+		if (ret < 0) {
+			pinctrl_put(uap->pctl);
+			uap->pctl = NULL;
+			return ret;
+		}
+	} else {
+		/* ignore pinctrl if the device is not registered */
+		uap->pctl = NULL;
+	}
+#endif
+
 	return request_mem_region(port->mapbase, SZ_4K, "uart-pl011")
 			!= NULL ? 0 : -EBUSY;
 }
