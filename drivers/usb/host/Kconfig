@@ -17,6 +17,19 @@ config USB_C67X00_HCD
 	  To compile this driver as a module, choose M here: the
 	  module will be called c67x00.
 
+config USB_DWC2XX_HCD
+	tristate "Synopsys Designware 2.xx HCD support"
+	depends on USB && OF
+	help
+	  The Synopsys Designware 2.xx OTG chips are dual-role
+	  host/peripheral/OTG USB controllers.
+
+	  Enable this option to support this chip in host controller mode.
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called dwc2xx-hcd.
+
 config USB_XHCI_HCD
 	tristate "xHCI HCD (USB 3.0) support (EXPERIMENTAL)"
 	depends on USB && USB_ARCH_HAS_XHCI && EXPERIMENTAL
