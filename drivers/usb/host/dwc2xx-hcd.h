@@ -49,10 +49,7 @@
 struct dwc2xx_hcd {
 	struct device *dev;
 	struct resource res;
-	void __iomem *base;
 	int irq;
-	struct irqaction irqaction;
-	struct spinlock lock;
 
 	u32 id;		/* Synopsys ID */
 };
@@ -122,36 +119,42 @@ enum dwc_hwcfg2_mode {
 #define DWC_DV_TX_FIFO_SZ_REG(n) (DWC_DV_TX_FIFO_SZ_BASE + (n) * 4)
 #define DWC_DV_TX_FIFO_SZ_COUNT	16
 
-static void dwc2xx_hcd_dump_regs(struct dwc2xx_hcd *hcd)
+static inline struct dwc2xx_hcd *hcd_to_dwc(struct usb_hcd *hcd)
 {
+	return (struct dwc2xx_hcd *)hcd->hcd_priv;
+}
+
+static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 	int i;
 
 	WARN_ON(1);
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_OTG_CTL_REG\n", DWC_OTG_CTL_REG, readl(hcd->base + DWC_OTG_CTL_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_OTG_INT_REG\n", DWC_OTG_INT_REG, readl(hcd->base + DWC_OTG_INT_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_CORE_AHB_CFG_REG\n", DWC_CORE_AHB_CFG_REG, readl(hcd->base + DWC_CORE_AHB_CFG_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_CORE_USB_CFG_REG\n", DWC_CORE_USB_CFG_REG, readl(hcd->base + DWC_CORE_USB_CFG_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_CORE_RESET_REG\n", DWC_CORE_RESET_REG, readl(hcd->base + DWC_CORE_RESET_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_CORE_INT_REG\n", DWC_CORE_INT_REG, readl(hcd->base + DWC_CORE_INT_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_INT_MASK_REG\n", DWC_INT_MASK_REG, readl(hcd->base + DWC_INT_MASK_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_RX_STAT_PEEK_REG\n", DWC_RX_STAT_PEEK_REG, readl(hcd->base + DWC_RX_STAT_PEEK_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_RX_STAT_POP_REG\n", DWC_RX_STAT_POP_REG, readl(hcd->base + DWC_RX_STAT_POP_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_RX_FIFO_SZ_REG\n", DWC_RX_FIFO_SZ_REG, readl(hcd->base + DWC_RX_FIFO_SZ_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_NP_TX_FIFO_SZ_REG\n", DWC_NP_TX_FIFO_SZ_REG, readl(hcd->base + DWC_NP_TX_FIFO_SZ_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_NP_TX_STAT_READ_REG\n", DWC_NP_TX_STAT_READ_REG, readl(hcd->base + DWC_NP_TX_STAT_READ_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_I2C_CTL_REG\n", DWC_I2C_CTL_REG, readl(hcd->base + DWC_I2C_CTL_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_PHY_VENDOR_CTRL_REG\n", DWC_PHY_VENDOR_CTRL_REG, readl(hcd->base + DWC_PHY_VENDOR_CTRL_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_GPIO_REG\n", DWC_GPIO_REG, readl(hcd->base + DWC_GPIO_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_UID_REG\n", DWC_UID_REG, readl(hcd->base + DWC_UID_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_SNPS_ID_REG\n", DWC_SNPS_ID_REG, readl(hcd->base + DWC_SNPS_ID_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_USER_HW_CFG1_REG\n", DWC_USER_HW_CFG1_REG, readl(hcd->base + DWC_USER_HW_CFG1_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_USER_HW_CFG2_REG\n", DWC_USER_HW_CFG2_REG, readl(hcd->base + DWC_USER_HW_CFG2_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_USER_HW_CFG3_REG\n", DWC_USER_HW_CFG3_REG, readl(hcd->base + DWC_USER_HW_CFG3_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_USER_HW_CFG4_REG\n", DWC_USER_HW_CFG4_REG, readl(hcd->base + DWC_USER_HW_CFG4_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_CORE_LPM_CFG_REG\n", DWC_CORE_LPM_CFG_REG, readl(hcd->base + DWC_CORE_LPM_CFG_REG));
-	dev_dbg(hcd->dev, "%03x = %08x; DWC_HP_TX_FIFO_SZ_REG\n", DWC_HP_TX_FIFO_SZ_REG, readl(hcd->base + DWC_HP_TX_FIFO_SZ_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_OTG_CTL_REG\n", DWC_OTG_CTL_REG, readl(hcd->regs + DWC_OTG_CTL_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_OTG_INT_REG\n", DWC_OTG_INT_REG, readl(hcd->regs + DWC_OTG_INT_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_CORE_AHB_CFG_REG\n", DWC_CORE_AHB_CFG_REG, readl(hcd->regs + DWC_CORE_AHB_CFG_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_CORE_USB_CFG_REG\n", DWC_CORE_USB_CFG_REG, readl(hcd->regs + DWC_CORE_USB_CFG_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_CORE_RESET_REG\n", DWC_CORE_RESET_REG, readl(hcd->regs + DWC_CORE_RESET_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_CORE_INT_REG\n", DWC_CORE_INT_REG, readl(hcd->regs + DWC_CORE_INT_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_INT_MASK_REG\n", DWC_INT_MASK_REG, readl(hcd->regs + DWC_INT_MASK_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_RX_STAT_PEEK_REG\n", DWC_RX_STAT_PEEK_REG, readl(hcd->regs + DWC_RX_STAT_PEEK_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_RX_STAT_POP_REG\n", DWC_RX_STAT_POP_REG, readl(hcd->regs + DWC_RX_STAT_POP_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_RX_FIFO_SZ_REG\n", DWC_RX_FIFO_SZ_REG, readl(hcd->regs + DWC_RX_FIFO_SZ_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_NP_TX_FIFO_SZ_REG\n", DWC_NP_TX_FIFO_SZ_REG, readl(hcd->regs + DWC_NP_TX_FIFO_SZ_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_NP_TX_STAT_READ_REG\n", DWC_NP_TX_STAT_READ_REG, readl(hcd->regs + DWC_NP_TX_STAT_READ_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_I2C_CTL_REG\n", DWC_I2C_CTL_REG, readl(hcd->regs + DWC_I2C_CTL_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_PHY_VENDOR_CTRL_REG\n", DWC_PHY_VENDOR_CTRL_REG, readl(hcd->regs + DWC_PHY_VENDOR_CTRL_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_GPIO_REG\n", DWC_GPIO_REG, readl(hcd->regs + DWC_GPIO_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_UID_REG\n", DWC_UID_REG, readl(hcd->regs + DWC_UID_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_SNPS_ID_REG\n", DWC_SNPS_ID_REG, readl(hcd->regs + DWC_SNPS_ID_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_USER_HW_CFG1_REG\n", DWC_USER_HW_CFG1_REG, readl(hcd->regs + DWC_USER_HW_CFG1_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_USER_HW_CFG2_REG\n", DWC_USER_HW_CFG2_REG, readl(hcd->regs + DWC_USER_HW_CFG2_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_USER_HW_CFG3_REG\n", DWC_USER_HW_CFG3_REG, readl(hcd->regs + DWC_USER_HW_CFG3_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_USER_HW_CFG4_REG\n", DWC_USER_HW_CFG4_REG, readl(hcd->regs + DWC_USER_HW_CFG4_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_CORE_LPM_CFG_REG\n", DWC_CORE_LPM_CFG_REG, readl(hcd->regs + DWC_CORE_LPM_CFG_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_HP_TX_FIFO_SZ_REG\n", DWC_HP_TX_FIFO_SZ_REG, readl(hcd->regs + DWC_HP_TX_FIFO_SZ_REG));
 	for (i = 0; i < DWC_DV_TX_FIFO_SZ_COUNT; i++)
-		dev_dbg(hcd->dev, "%03x = %08x; DWC_DV_TX_FIFO_SZ_REG(%d)\n", DWC_DV_TX_FIFO_SZ_REG(i), readl(hcd->base + DWC_DV_TX_FIFO_SZ_REG(i)), i);
+		dev_dbg(dwc->dev, "%03x = %08x; DWC_DV_TX_FIFO_SZ_REG(%d)\n", DWC_DV_TX_FIFO_SZ_REG(i), readl(hcd->regs + DWC_DV_TX_FIFO_SZ_REG(i)), i);
 }
 
 #endif
