@@ -66,6 +66,7 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 	if (IS_ERR(pc->pctl))
 		return PTR_ERR(pc->pctl);
 
+	/* mappings can't be unregistered, don't fail after this */
 	ret = pinctrl_register_mappings(pc->pinmap, pc->nr_pinmaps);
 	if (ret)
 		goto err;
@@ -82,7 +83,7 @@ static void __devexit bcm2708_pinctrl_unregister(struct bcm2708_pinctrl *pc)
 {
 	pinctrl_remove_gpio_range(pc->pctl, &pc->gpio_range);
 	/* can't unregister mappings! */
-	WARN_ON(1);
+	WARN_ON(pc->nr_pinmaps > 0);
 	pinctrl_unregister(pc->pctl);
 }
 
@@ -122,6 +123,10 @@ err_free:
 static int __devexit bcm2708_pinctrl_remove(struct platform_device *pdev)
 {
 	struct bcm2708_pinctrl *pc = platform_get_drvdata(pdev);
+
+	/* can't unregister mappings! */
+	if (pc->nr_pinmaps > 0)
+		return -EBUSY;
 
 	/* make sure no sysfs activity can occur */
 	spin_lock_irq(&pc->lock);
