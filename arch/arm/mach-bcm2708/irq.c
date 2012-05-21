@@ -64,6 +64,7 @@ struct armctrl_ic {
 	void __iomem *enable;
 	void __iomem *disable;
 	struct irq_domain *domain;
+	struct irq_chip chip;
 
 	u32 valid_mask;
 	u32 source_mask;
@@ -145,12 +146,14 @@ struct of_armctrl_ic __init *of_read_armctrl_ic(struct device_node *node)
 	int nr_shortcuts, i;
 	int ret;
 
-	BUG_ON(data == NULL);
+	if (data == NULL)
+		panic("%s: out of memory\n", node->full_name);
 	/* this is freed in of_node_release */
 	node->data = data;
 
 	data->ic = kzalloc(sizeof(*data->ic), GFP_ATOMIC);
-	BUG_ON(data->ic == NULL);
+	if (data->ic == NULL)
+		panic("%s: out of memory\n", node->full_name);
 
 	ret = of_address_to_resource(node, 0, &res[0]);
 	ret |= of_address_to_resource(node, 1, &res[1]);
@@ -254,22 +257,24 @@ int __init armctrl_of_init(struct device_node *node,
 		intc = data->ic;
 	}
 
+	data->ic->domain = irq_domain_add_linear(node, 32,
+		&irq_domain_simple_ops, NULL);
+	if (!data->ic->domain)
+		panic("%s: unable to create IRQ domain\n",
+			node->full_name);
+
 	nr_irqs = 0;
-	for (i = 0, irq = data->base_irq; i < 32; i++, irq++) {
+	for (i = 0; i < 32; i++) {
 		if (!(data->ic->source_mask & BIT(i)))
 			continue;
 
+		irq = irq_create_mapping(data->ic->domain, i);
+		BUG_ON(irq <= 0);
 		irq_set_chip_and_handler(irq, &armctrl_chip, handle_level_irq);
 		irq_set_chip_data(irq, data->ic);
 		set_irq_flags(irq, IRQF_VALID | IRQF_PROBE);
 		nr_irqs++;
 	}
-
-	data->ic->domain = irq_domain_add_legacy(node, nr_irqs, data->base_irq,
-		0, &irq_domain_simple_ops, NULL);
-	if (!data->ic->domain)
-		panic("%s: unable to create IRQ domain\n",
-			node->full_name);
 
 	if (parent != NULL) {
 		armctrl_of_link_shortcuts(node->data, parent->data);
@@ -305,10 +310,10 @@ static void handle_one_irq(struct pt_regs *regs, struct armctrl_ic *dev)
 	while ((stat = readl_relaxed(dev->pending) & dev->valid_mask)) {
 		if (stat & dev->source_mask) {
 			irq = ffs(stat & dev->source_mask) - 1;
-			handle_IRQ(irq_find_mapping(dev->domain, irq), regs);
+			handle_IRQ(irq_linear_revmap(dev->domain, irq), regs);
 		} else if (stat & dev->shortcut_mask) {
 			irq = ffs(stat & dev->shortcut_mask) - 1;
-			handle_IRQ(irq_find_mapping(dev->shortcuts[irq].domain,
+			handle_IRQ(irq_linear_revmap(dev->shortcuts[irq].domain,
 				dev->shortcuts[irq].irq), regs);
 		} else if (stat & dev->bank_mask) {
 			irq = ffs(stat & dev->bank_mask) - 1;
