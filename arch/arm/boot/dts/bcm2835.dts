@@ -563,7 +563,13 @@
 			reg = <0x20001c 0x78>;
 
 			interrupt-parent = <&vic2>;
-			interrupts = <17 18 19 20>;
+			/* Unusual arrangement of interrupts (determined by testing)
+			 * 17: Bank 0 (GPIOs  0-31)
+			 * 19: Bank 1 (GPIOs 32-53)
+			 * 18: Bank 2
+			 * 20: All banks (GPIOs 0-53)
+			 */
+			interrupts = <17>, <19>, <18>, <20>;
 
 			gpio-controller;
 			#gpio-cells = <2>;
