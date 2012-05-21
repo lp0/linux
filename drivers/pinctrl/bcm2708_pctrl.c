@@ -16,7 +16,7 @@
  */
 
 #include <linux/err.h>
-#include <linux/spinlock.h>
+#include <linux/mutex.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
@@ -60,9 +60,9 @@ int bcm2708_pinmux_request(struct pinctrl_dev *pctl, unsigned offset)
 
 	dev_dbg(pc->dev, "pinmux_request %d\n", offset);
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -73,7 +73,7 @@ int bcm2708_pinmux_request(struct pinctrl_dev *pctl, unsigned offset)
 		pc->pm_locked[offset] = true;
 	}
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return ret;
 }
 
@@ -83,10 +83,10 @@ int bcm2708_pinmux_free(struct pinctrl_dev *pctl, unsigned offset)
 
 	dev_dbg(pc->dev, "pinmux_free %d\n", offset);
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	WARN_ON(!pc->pm_locked[offset]);
 	pc->pm_locked[offset] = false;
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return 0;
 }
 
@@ -139,16 +139,16 @@ int bcm2708_pinmux_enable(struct pinctrl_dev *pctl,
 	dev_dbg(pc->dev, "pinmux_enable group=%s\n",
 		pc->grpidx[group_selector]->name);
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
 	for (i = 0; i < pm->count; i++)
 		bcm2708_pinctrl_fsel_set(pc, pm->pins[i], pm->fsel[i]);
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return ret;
 }
 
@@ -166,16 +166,16 @@ void bcm2708_pinmux_disable(struct pinctrl_dev *pctl,
 	dev_dbg(pc->dev, "pinmux_disable group=%s\n",
 		pc->grpidx[group_selector]->name);
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return;
 	}
 
 	for (i = 0; i < pm->count; i++)
 		bcm2708_pinctrl_fsel_set(pc, pm->pins[i], FSEL_GPIO_IN);
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 }
 
 int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
@@ -189,9 +189,9 @@ int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
 	if (unlikely(offset >= pc->nr_pins))
 		return -EINVAL;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -203,7 +203,7 @@ int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
 	}
 
 	bcm2708_pinctrl_fsel_set(pc, offset, FSEL_GPIO_IN);
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return 0;
 }
 
@@ -217,9 +217,9 @@ void bcm2708_pinmux_gpio_disable_free(struct pinctrl_dev *pctl,
 	if (unlikely(offset >= pc->nr_pins))
 		return;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return;
 	}
 
@@ -227,7 +227,7 @@ void bcm2708_pinmux_gpio_disable_free(struct pinctrl_dev *pctl,
 	pc->pm_locked[offset] = false;
 
 	bcm2708_pinctrl_fsel_set(pc, offset, FSEL_GPIO_IN);
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 }
 
 int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
@@ -240,14 +240,14 @@ int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
 	if (unlikely(offset >= pc->nr_pins))
 		return -EINVAL;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (unlikely(!pc->active)) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
 	bcm2708_pinctrl_fsel_set(pc, offset,
 		input ? FSEL_GPIO_IN : FSEL_GPIO_OUT);
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return 0;
 }

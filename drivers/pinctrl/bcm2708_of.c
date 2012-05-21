@@ -19,11 +19,11 @@
 
 #include <linux/err.h>
 #include <linux/io.h>
+#include <linux/mutex.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include <linux/pinctrl/machine.h>
 
 #include "bcm2708.h"
@@ -327,7 +327,7 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 		return ERR_PTR(-ENOMEM);
 
 	pc->dev = &pdev->dev;
-	spin_lock_init(&pc->lock);
+	mutex_init(&pc->lock);
 	pc->active = false;
 	INIT_LIST_HEAD(&pc->groups);
 

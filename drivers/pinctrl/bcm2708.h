@@ -20,8 +20,8 @@
 
 #include <linux/device.h>
 #include <linux/list.h>
+#include <linux/mutex.h>
 #include <linux/platform_device.h>
-#include <linux/spinlock.h>
 #include <linux/sysfs.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
@@ -89,7 +89,7 @@ struct bcm2708_pinmux {
 
 struct bcm2708_pinctrl {
 	struct device *dev;
-	struct spinlock lock;
+	struct mutex lock;
 	bool active;
 
 	struct resource res;

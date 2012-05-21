@@ -16,6 +16,7 @@
  */
 
 #include <linux/list.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/string.h>
@@ -89,9 +90,9 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 	if (pc == NULL)
 		return -ENODEV;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (!pc->active) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -131,7 +132,7 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 		goto err;
 	len += ret;
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return len;
 
 err:
@@ -172,9 +173,9 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 	if (pc == NULL)
 		return -ENODEV;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (!pc->active) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -210,7 +211,7 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 			bcm2708_pinctrl_fsel_set(pc, p, value);
 	}
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return len;
 }
 
@@ -342,9 +343,9 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 	if (pc == NULL)
 		return -ENODEV;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (!pc->active) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -384,7 +385,7 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 		goto err;
 	len += ret;
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return len;
 
 err:
@@ -412,9 +413,9 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 	if (pc == NULL)
 		return -ENODEV;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	if (!pc->active) {
-		spin_unlock_irq(&pc->lock);
+		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
 
@@ -445,7 +446,7 @@ static ssize_t bcm2708_pinmux_sysfs_store_group(struct device *dev,
 		len = -EINVAL;
 	}
 
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 	return len;
 }
 

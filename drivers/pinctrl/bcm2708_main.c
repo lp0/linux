@@ -18,7 +18,7 @@
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/spinlock.h>
+#include <linux/mutex.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
@@ -101,9 +101,9 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_sysfs;
 
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	pc->active = true;
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 
 	dev_info(pc->dev, "%d pins at MMIO %#lx\n", pc->nr_pins,
 		(unsigned long)pc->res.start);
@@ -127,9 +127,9 @@ static int __devexit bcm2708_pinctrl_remove(struct platform_device *pdev)
 		return -EBUSY;
 
 	/* make sure no sysfs activity can occur */
-	spin_lock_irq(&pc->lock);
+	mutex_lock(&pc->lock);
 	pc->active = false;
-	spin_unlock_irq(&pc->lock);
+	mutex_unlock(&pc->lock);
 
 	bcm2708_pinctrl_unregister(pc);
 	bcm2708_pinctrl_sysfs_unregister(pc);
