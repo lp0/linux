@@ -35,4 +35,21 @@ config ENC28J60_WRITEVERIFY
 	  Enable the verify after the buffer write useful for debugging purpose.
 	  If unsure, say N.
 
+config ENC424J600
+	tristate "ENC424J600 support"
+	depends on SPI && EXPERIMENTAL
+	select CRC32
+	---help---
+	  Support for the Microchip EN424J600 ethernet chip.
+
+	  To compile this driver as a module, choose M here. The module will be
+	  called enc424j600.
+
+config ENC424J600_WRITEVERIFY
+	bool "Enable write verify"
+	depends on ENC424J600
+	---help---
+	  Enable the verify after the buffer write useful for debugging purpose.
+	  If unsure, say N.
+
 endif # NET_VENDOR_MICROCHIP
