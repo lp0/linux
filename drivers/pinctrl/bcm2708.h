@@ -101,6 +101,7 @@ struct bcm2708_pinctrl {
 	struct list_head groups;
 	int nr_groups;
 	u32 *pull;
+	bool *input_only;
 
 	/* sysfs */
 	struct bcm2708_pinctrl_attr *attr_gpio;

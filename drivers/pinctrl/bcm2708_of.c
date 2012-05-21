@@ -154,6 +154,7 @@ static void bcm2708_pinmux_of_free(struct bcm2708_pinctrl *pc)
 	kfree(pc->pull);
 	kfree(pc->attr_gpio);
 	kfree(pc->attr_pins);
+	kfree(pc->input_only);
 	kfree(pc->pm_locked);
 	kfree(pc->usr_locked);
 }
@@ -321,6 +322,7 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	struct device_node *np = pdev->dev.of_node;
 	struct bcm2708_pinctrl *pc = kzalloc(sizeof(*pc), GFP_KERNEL);
 	u32 nr_gpios, nr_alts, gpio_base;
+	int nr_inonly = 0;
 	int ret, p, a;
 
 	if (pc == NULL)
@@ -392,11 +394,13 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	pc->pull = kzalloc(sizeof(pc->pull[0]) * pc->nr_pins, GFP_KERNEL);
 	pc->attr_gpio = kzalloc(sizeof(pc->attr_gpio[0]) * pc->nr_pins, GFP_KERNEL);
 	pc->attr_pins = kzalloc(sizeof(pc->attr_pins[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->input_only = kzalloc(sizeof(pc->input_only[0]) * pc->nr_pins, GFP_KERNEL);
 	pc->pm_locked = kzalloc(sizeof(pc->pm_locked[0]) * pc->nr_pins, GFP_KERNEL);
 	pc->usr_locked = kzalloc(sizeof(pc->usr_locked[0]) * pc->nr_pins, GFP_KERNEL);
 	if (pc->gpio == NULL || pc->pins == NULL || pc->pull == NULL
 			|| pc->attr_gpio == NULL || pc->attr_pins == NULL
-			|| pc->pm_locked == NULL || pc->usr_locked == NULL) {
+			|| pc->input_only == NULL || pc->pm_locked == NULL
+			|| pc->usr_locked == NULL) {
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -435,6 +439,24 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	if (ret) {
 		dev_err(pc->dev, "error reading pull info (%d)\n", ret);
 		goto err;
+	}
+
+	ret = of_get_property(np, "input-only", &nr_inonly) != NULL;
+	nr_inonly /= 4;
+	if (ret) {
+		u32 tmp[nr_inonly];
+		int i;
+
+		ret = of_property_read_u32_array(np,
+			"input-only", tmp, nr_inonly);
+		if (ret) {
+			dev_err(pc->dev, "error reading input info (%d)\n", ret);
+			goto err;
+		}
+
+		for (i = 0; i < nr_inonly; i++)
+			if (tmp[i] < pc->nr_pins)
+				pc->input_only[tmp[i]] = true;
 	}
 
 	ret = bcm2708_pinmux_of_init(np, pc);

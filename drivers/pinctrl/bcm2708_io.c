@@ -69,9 +69,14 @@ void bcm2708_pinctrl_fsel_set(struct bcm2708_pinctrl *pc, unsigned p,
 			fsel_names[FSEL_GPIO_IN]);
 	}
 
-	val &= ~(FSEL_MASK << FSEL_SHIFT(p));
-	val |= (set & FSEL_MASK) << FSEL_SHIFT(p);
-	dev_dbg(pc->dev, "write %08x@%p (%u = %s)\n", val, reg, p,
-		fsel_names[set]);
-	writel(val, reg);
+	if (pc->input_only[p] && unlikely(set == FSEL_GPIO_OUT)) {
+		/* a group is misconfigured (the sysfs/gpio code checks this) */
+		WARN_ON(1);
+	} else {
+		val &= ~(FSEL_MASK << FSEL_SHIFT(p));
+		val |= (set & FSEL_MASK) << FSEL_SHIFT(p);
+		dev_dbg(pc->dev, "write %08x@%p (%u = %s)\n", val, reg, p,
+			fsel_names[set]);
+		writel(val, reg);
+	}
 }

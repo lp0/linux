@@ -99,23 +99,22 @@ static int bcm2708_pinctrl_sysfs_show_gpio(struct device *dev,
 	p = attr->pin;
 	status = bcm2708_pinctrl_fsel_get(pc, p);
 
-	if (status == FSEL_GPIO_IN) {
-		ret = snprintf(buf + len, PAGE_SIZE - len, "[%s] %s",
-			GPIO_IN_STR, GPIO_OUT_STR);
-		i = -1;
-	} else if (status == FSEL_GPIO_OUT) {
-		ret = snprintf(buf + len, PAGE_SIZE - len, "%s [%s]",
-			GPIO_IN_STR, GPIO_OUT_STR);
-		i = -1;
-	} else {
-		ret = snprintf(buf + len, PAGE_SIZE - len, "%s %s",
-			GPIO_IN_STR, GPIO_OUT_STR);
-		i = to_alt_index(status);
-	}
+	ret = snprintf(buf + len, PAGE_SIZE - len,
+		status == FSEL_GPIO_IN ? "[%s]" : "%s", GPIO_IN_STR);
 	if (ret < 0)
 		goto err;
 	len += ret;
 
+	if (!pc->input_only[p]) {
+		ret = snprintf(buf + len, PAGE_SIZE - len,
+			status == FSEL_GPIO_OUT ? " [%s]" : " %s",
+			GPIO_OUT_STR);
+		if (ret < 0)
+			goto err;
+		len += ret;
+	}
+
+	i = (status < FSEL_ALT_BASE) ? -1 : to_alt_index(status);
 	for (a = 0; a < ALTS; a++) {
 		if (!strcmp("", pc->gpio[p][a]))
 			continue;
@@ -205,7 +204,9 @@ static ssize_t bcm2708_pinctrl_sysfs_store_gpio(struct device *dev,
 	}
 
 	if (value != FSEL_NONE) {
-		if (pc->pm_locked[p] || pc->usr_locked[p])
+		if (pc->input_only[p] && value == FSEL_GPIO_OUT)
+			len = -EPERM;
+		else if (pc->pm_locked[p] || pc->usr_locked[p])
 			len = -EBUSY;
 		else
 			bcm2708_pinctrl_fsel_set(pc, p, value);

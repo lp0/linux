@@ -245,6 +245,10 @@ int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
 		mutex_unlock(&pc->lock);
 		return -ENODEV;
 	}
+	if (pc->input_only[offset] && unlikely(!input)) {
+		mutex_unlock(&pc->lock);
+		return -EPERM;
+	}
 
 	bcm2708_pinctrl_fsel_set(pc, offset,
 		input ? FSEL_GPIO_IN : FSEL_GPIO_OUT);
