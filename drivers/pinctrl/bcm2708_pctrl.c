@@ -186,7 +186,7 @@ int bcm2708_pinmux_gpio_request_enable(struct pinctrl_dev *pctl,
 
 	dev_dbg(pc->dev, "pinmux_gpio_request_enable %d\n", offset);
 
-	if (unlikely(offset >= PINS))
+	if (unlikely(offset >= pc->nr_pins))
 		return -EINVAL;
 
 	spin_lock_irq(&pc->lock);
@@ -214,7 +214,7 @@ void bcm2708_pinmux_gpio_disable_free(struct pinctrl_dev *pctl,
 
 	dev_dbg(pc->dev, "pinmux_gpio_disable_free %d\n", offset);
 
-	if (unlikely(offset >= PINS))
+	if (unlikely(offset >= pc->nr_pins))
 		return;
 
 	spin_lock_irq(&pc->lock);
@@ -237,7 +237,7 @@ int bcm2708_pinmux_gpio_set_direction(struct pinctrl_dev *pctl,
 
 	dev_dbg(pc->dev, "pinmux_gpio_set_direction %d %d\n", offset, input);
 
-	if (unlikely(offset >= PINS))
+	if (unlikely(offset >= pc->nr_pins))
 		return -EINVAL;
 
 	spin_lock_irq(&pc->lock);

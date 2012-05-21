@@ -325,7 +325,7 @@ static int bcm2708_pinmux_sysfs_show_group(struct device *dev,
 		struct bcm2708_pinmux_attr, dev);
 	struct bcm2708_pinmux *pm;
 	struct bcm2708_pinctrl *pc;
-	bool selected[PINS];
+	bool selected[MAX_PINS];
 	int count = 0;
 	int len = 0;
 	int ret = 0;
@@ -491,7 +491,7 @@ int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc)
 	struct bcm2708_pinmux *group;
 	int ret, p;
 
-	for (p = 0; p < PINS; p++) {
+	for (p = 0; p < pc->nr_pins; p++) {
 		ret = bcm2708_pinctrl_sysfs_register_pin(pc, p);
 		if (ret) {
 			dev_err(pc->dev,
@@ -518,7 +518,7 @@ int bcm2708_pinctrl_sysfs_register(struct bcm2708_pinctrl *pc)
 	return 0;
 
 err_group:
-	for (p = 0; p < PINS; p++)
+	for (p = 0; p < pc->nr_pins; p++)
 		bcm2708_pinctrl_sysfs_unregister_pin(pc, p);
 	return ret;
 }
@@ -528,7 +528,7 @@ void bcm2708_pinctrl_sysfs_unregister(struct bcm2708_pinctrl *pc)
 	struct bcm2708_pinmux *group;
 	int p;
 
-	for (p = 0; p < PINS; p++)
+	for (p = 0; p < pc->nr_pins; p++)
 		bcm2708_pinctrl_sysfs_unregister_pin(pc, p);
 
 	list_for_each_entry(group, &pc->groups, list)

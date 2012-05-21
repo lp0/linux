@@ -28,7 +28,7 @@
 
 #include "bcm2708.h"
 
-#define REG_SZ	((ABS_MAX_PINS / 10) * 4)
+#define REG_SZ	((MAX_PINS / 10) * 4)
 
 static int bcm2708_pinmux_of_group_init_one(struct bcm2708_pinctrl *pc, int p,
 	enum pin_fsel f, const char *name)
@@ -125,7 +125,7 @@ static void bcm2708_pinmux_of_free(struct bcm2708_pinctrl *pc)
 {
 	struct bcm2708_pinmux *group;
 	struct bcm2708_pinmux *tmp;
-	int i;
+	int p, i;
 
 	kfree(pc->grpidx);
 	kfree(pc->grpnam);
@@ -145,6 +145,17 @@ static void bcm2708_pinmux_of_free(struct bcm2708_pinctrl *pc)
 		kfree(group->fsel);
 		kfree(group);
 	}
+
+	if (pc->gpio)
+		for (p = 0; p < pc->nr_pins; p++)
+			kfree(pc->gpio[p]);
+	kfree(pc->gpio);
+	kfree(pc->pins);
+	kfree(pc->pull);
+	kfree(pc->attr_gpio);
+	kfree(pc->attr_pins);
+	kfree(pc->pm_locked);
+	kfree(pc->usr_locked);
 }
 
 static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
@@ -153,7 +164,7 @@ static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
 	struct bcm2708_pinmux *tmp;
 	int ret, p, f, i;
 
-	for (p = 0; p < PINS; p++) {
+	for (p = 0; p < pc->nr_pins; p++) {
 		for (f = 0; f < FSELS; f++) {
 			const char *name;
 
@@ -178,7 +189,7 @@ static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
 
 	pc->grpidx = kzalloc(sizeof(pc->grpidx[0]) * pc->nr_groups, GFP_KERNEL);
 	pc->grpnam = kzalloc(sizeof(pc->grpnam[0]) * pc->nr_groups, GFP_KERNEL);
-	pc->pindesc = kzalloc(sizeof(pc->pindesc[0]) * PINS, GFP_KERNEL);
+	pc->pindesc = kzalloc(sizeof(pc->pindesc[0]) * pc->nr_pins, GFP_KERNEL);
 	if (pc->grpidx == NULL || pc->grpnam == NULL || pc->pindesc == NULL) {
 		ret = -ENOMEM;
 		goto err;
@@ -196,7 +207,7 @@ static int __devinit bcm2708_pinmux_of_init(struct device_node *np,
 		i++;
 	}
 
-	for (p = 0; p < PINS; p++)
+	for (p = 0; p < pc->nr_pins; p++)
 		pc->pindesc[p].number = p;
 
 	return 0;
@@ -354,10 +365,11 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 		dev_err(pc->dev, "gpio count missing (%d)\n", ret);
 		goto err;
 	}
-	if (nr_gpios != PINS) {
-		dev_err(pc->dev, "unhandled gpio count %d\n", nr_gpios);
+	if (nr_gpios > MAX_PINS) {
+		dev_err(pc->dev, "unsupported gpio count %d\n", nr_gpios);
 		goto err;
 	}
+	pc->nr_pins = nr_gpios;
 
 	of_property_read_u32(np, "alts", &nr_alts);
 	if (ret) {
@@ -365,15 +377,40 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 		goto err;
 	}
 	if (nr_alts != ALTS) {
-		dev_err(pc->dev, "unhandled alts count %d\n", nr_alts);
+		dev_err(pc->dev, "unsupported alts count %d\n", nr_alts);
 		goto err;
 	}
 
 	gpio_base = 0;
 	of_property_read_u32(np, "base", &gpio_base);
 	pc->gpio_range.base = gpio_base;
+	pc->gpio_range.pin_base = 0;
+	pc->gpio_range.npins = pc->nr_pins;
 
-	for (p = 0; p < PINS; p++) {
+	pc->gpio = kzalloc(sizeof(pc->gpio[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->pins = kzalloc(sizeof(pc->pins[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->pull = kzalloc(sizeof(pc->pull[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->attr_gpio = kzalloc(sizeof(pc->attr_gpio[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->attr_pins = kzalloc(sizeof(pc->attr_pins[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->pm_locked = kzalloc(sizeof(pc->pm_locked[0]) * pc->nr_pins, GFP_KERNEL);
+	pc->usr_locked = kzalloc(sizeof(pc->usr_locked[0]) * pc->nr_pins, GFP_KERNEL);
+	if (pc->gpio == NULL || pc->pins == NULL || pc->pull == NULL
+			|| pc->attr_gpio == NULL || pc->attr_pins == NULL
+			|| pc->pm_locked == NULL || pc->usr_locked == NULL) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	for (p = 0; p < pc->nr_pins; p++) {
+		pc->gpio[p] = kzalloc(sizeof(pc->gpio[p][0]) * ALTS, GFP_KERNEL);
+
+		if (pc->gpio[p] == NULL) {
+			ret = -ENOMEM;
+			goto err;
+		}
+	}
+
+	for (p = 0; p < pc->nr_pins; p++) {
 		for (a = 0; a < ALTS; a++) {
 			ret = of_property_read_string_index(np, "gpio",
 				(p * ALTS) + a, &pc->gpio[p][a]);
@@ -391,13 +428,13 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 				"error reading pin info %d (%d)\n", p, ret);
 			goto err;
 		}
+	}
 
-		ret = of_property_read_u32_array(np, "pull", pc->pull, PINS);
-		if (ret) {
-			dev_err(pc->dev,
-				"error reading pull info (%d)\n", ret);
-			goto err;
-		}
+	ret = of_property_read_u32_array(np, "pull", pc->pull,
+		pc->nr_pins);
+	if (ret) {
+		dev_err(pc->dev, "error reading pull info (%d)\n", ret);
+		goto err;
 	}
 
 	ret = bcm2708_pinmux_of_init(np, pc);

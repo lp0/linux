@@ -37,8 +37,7 @@
  * The maximum pins we could support is 70 before the register layout would
  * need to change.
  */
-#define PINS		54
-#define ABS_MAX_PINS	70
+#define MAX_PINS	70
 
 enum pin_fsel {
 	FSEL_NONE = -1,
@@ -96,17 +95,18 @@ struct bcm2708_pinctrl {
 	struct resource res;
 	void __iomem *base;
 
-	const char *gpio[PINS][ALTS];
-	const char *pins[PINS];
+	int nr_pins;
+	const char ***gpio;
+	const char **pins;
 	struct list_head groups;
 	int nr_groups;
-	u32 pull[PINS];
+	u32 *pull;
 
 	/* sysfs */
-	struct bcm2708_pinctrl_attr attr_gpio[PINS];
-	struct bcm2708_pinctrl_attr attr_pins[PINS];
-	bool pm_locked[PINS];
-	bool usr_locked[PINS];
+	struct bcm2708_pinctrl_attr *attr_gpio;
+	struct bcm2708_pinctrl_attr *attr_pins;
+	bool *pm_locked;
+	bool *usr_locked;
 
 	/* pinctrl, pinmux */
 	struct bcm2708_pinmux **grpidx;

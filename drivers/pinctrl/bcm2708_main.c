@@ -35,7 +35,7 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 
 	desc->name = dev_name(pc->dev);
 	desc->pins = pc->pindesc;
-	desc->npins = PINS;
+	desc->npins = pc->nr_pins;
 	desc->pctlops = &pc->pctlops;
 	desc->pmxops = &pc->pmxops;
 	/* TODO: pinconf support */
@@ -58,8 +58,6 @@ static int __devinit bcm2708_pinctrl_register(struct bcm2708_pinctrl *pc)
 	pc->pmxops.gpio_set_direction = bcm2708_pinmux_gpio_set_direction;
 
 	pc->gpio_range.name = dev_name(pc->dev);
-	pc->gpio_range.pin_base = 0;
-	pc->gpio_range.npins = PINS;
 	pc->gpio_range.gc = NULL;
 
 	pc->pctl = pinctrl_register(desc, pc->dev, pc);
@@ -107,7 +105,7 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 	pc->active = true;
 	spin_unlock_irq(&pc->lock);
 
-	dev_info(pc->dev, "%d pins at MMIO %#lx\n", PINS,
+	dev_info(pc->dev, "%d pins at MMIO %#lx\n", pc->nr_pins,
 		(unsigned long)pc->res.start);
 
 	platform_set_drvdata(pdev, pc);
