@@ -28,7 +28,7 @@
 
 #include "bcm2708.h"
 
-#define REG_SZ 0x1c
+#define REG_SZ	((ABS_MAX_PINS / 10) * 4)
 
 static int bcm2708_pinmux_of_group_init_one(struct bcm2708_pinctrl *pc, int p,
 	enum pin_fsel f, const char *name)

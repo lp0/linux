@@ -27,8 +27,18 @@
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf.h>
 
-#define ALTS 6
-#define PINS 54
+/*
+ * The function selections are GPIOs + ALTs so the register layout would change
+ * if the number of ALTs changes (currently 3 bits per pin).
+ */
+#define ALTS		6
+
+/*
+ * The maximum pins we could support is 70 before the register layout would
+ * need to change.
+ */
+#define PINS		54
+#define ABS_MAX_PINS	70
 
 enum pin_fsel {
 	FSEL_NONE = -1,
@@ -44,10 +54,10 @@ enum pin_fsel {
 	FSELS
 };
 
-#define NAME_LEN 64
-#define NAME_SPLIT "|"
+#define NAME_LEN	64
+#define NAME_SPLIT	"|"
 
-#define MUX_FUNCTION "BCM2708"
+#define MUX_FUNCTION	"BCM2708"
 
 enum def_pull { PULL_NONE, PULL_LOW, PULL_HIGH };
 
