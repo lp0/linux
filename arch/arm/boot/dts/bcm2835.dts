@@ -53,7 +53,7 @@
 		 */
 		valid = <0x9>;
 
-		default-on = <0x9>;
+		default-off = <0x9>;
 	};
 
 	leds {
