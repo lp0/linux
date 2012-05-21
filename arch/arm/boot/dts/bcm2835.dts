@@ -379,6 +379,9 @@
 			count = <54>;
 			base = <0>;
 
+			/* Don't change this. They're connected internally and you'll cause a short circuit. */
+			input-only = <46 47 48 49 50 51 52 53>;
+
 			gpio = /*	ALT0		ALT1		ALT2		ALT3			ALT4		ALT5	*/
 			/*  0 */	"SDA0",		"SA5",		"",		"",			"",		"",
 			/*  1 */	"SCL0",		"SA4",		"",		"",			"",		"",
