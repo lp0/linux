@@ -128,10 +128,8 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 
 	pr_debug("of_irq_map_raw: ipar=%s, size=%d\n", ipar->full_name, intsize);
 
-	if (ointsize != intsize) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (ointsize != intsize)
 		return -EINVAL;
-	}
 
 	/* Look for this #address-cells. We have to implement the old linux
 	 * trick of looking for the parent here as some device-trees rely on it
@@ -267,7 +265,6 @@ int of_irq_map_raw(struct device_node *parent, const __be32 *intspec,
 	of_node_put(old);
 	of_node_put(newpar);
 
-	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -EINVAL;
 }
 EXPORT_SYMBOL_GPL(of_irq_map_raw);
@@ -296,10 +293,8 @@ int of_irq_map_one(struct device_node *device, int index, struct of_irq *out_irq
 
 	/* Get the interrupts property */
 	intspec = of_get_property(device, "interrupts", &intlen);
-	if (intspec == NULL) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (intspec == NULL)
 		return -EINVAL;
-	}
 	intlen /= sizeof(*intspec);
 
 	pr_debug(" intspec=%d intlen=%d\n", be32_to_cpup(intspec), intlen);
@@ -309,10 +304,8 @@ int of_irq_map_one(struct device_node *device, int index, struct of_irq *out_irq
 
 	/* Look for the interrupt parent. */
 	p = of_irq_find_parent(device);
-	if (p == NULL) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (p == NULL)
 		return -EINVAL;
-	}
 
 	/* Get size of interrupt specifier */
 	tmp = of_get_property(p, "#interrupt-cells", NULL);

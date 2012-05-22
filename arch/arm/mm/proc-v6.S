@@ -73,8 +73,6 @@ ENDPROC(cpu_v6_reset)
  *
  *	IRQs are already disabled.
  */
-
-/* See jira SW-5991 for details of this workaround */
 ENTRY(cpu_v6_do_idle)
 	.align 5
 	mov     r1, #2

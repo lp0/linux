@@ -374,18 +374,13 @@ struct device_node *of_find_node_by_path(const char *path)
 {
 	struct device_node *np = allnodes;
 
-	printk(KERN_DEBUG "of_find_node_by_path: '%s'\n", path);
-
 	read_lock(&devtree_lock);
 	for (; np; np = np->allnext) {
-		printk(KERN_DEBUG "of_find_node_by_path: np->full_name='%s'\n", np->full_name);
 		if (np->full_name && (of_node_cmp(np->full_name, path) == 0)
 		    && of_node_get(np))
 			break;
 	}
 	read_unlock(&devtree_lock);
-
-	printk(KERN_DEBUG "of_find_node_by_path: =%p\n", np);
 	return np;
 }
 EXPORT_SYMBOL(of_find_node_by_path);
@@ -596,10 +591,8 @@ int of_modalias_node(struct device_node *node, char *modalias, int len)
 	int cplen;
 
 	compatible = of_get_property(node, "compatible", &cplen);
-	if (!compatible || strlen(compatible) > cplen) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!compatible || strlen(compatible) > cplen)
 		return -ENODEV;
-	}
 	p = strchr(compatible, ',');
 	strlcpy(modalias, p ? p + 1 : compatible, len);
 	return 0;
@@ -649,18 +642,12 @@ int of_property_read_u32_array(const struct device_node *np,
 	struct property *prop = of_find_property(np, propname, NULL);
 	const __be32 *val;
 
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
-	if ((sz * sizeof(*out_values)) > prop->length) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if ((sz * sizeof(*out_values)) > prop->length)
 		return -EOVERFLOW;
-	}
 
 	val = prop->value;
 	while (sz--)
@@ -687,18 +674,12 @@ int of_property_read_u64(const struct device_node *np, const char *propname,
 {
 	struct property *prop = of_find_property(np, propname, NULL);
 
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
-	if (sizeof(*out_value) > prop->length) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (sizeof(*out_value) > prop->length)
 		return -EOVERFLOW;
-	}
 	*out_value = of_read_number(prop->value, 2);
 	return 0;
 }
@@ -723,18 +704,12 @@ int of_property_read_string(struct device_node *np, const char *propname,
 				const char **out_string)
 {
 	struct property *prop = of_find_property(np, propname, NULL);
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
-	if (strnlen(prop->value, prop->length) >= prop->length) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (strnlen(prop->value, prop->length) >= prop->length)
 		return -EILSEQ;
-	}
 	*out_string = prop->value;
 	return 0;
 }
@@ -766,18 +741,12 @@ int of_property_read_string_index(struct device_node *np, const char *propname,
 	size_t l = 0, total = 0;
 	const char *p;
 
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
-	if (strnlen(prop->value, prop->length) >= prop->length) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (strnlen(prop->value, prop->length) >= prop->length)
 		return -EILSEQ;
-	}
 
 	p = prop->value;
 
@@ -788,7 +757,6 @@ int of_property_read_string_index(struct device_node *np, const char *propname,
 			return 0;
 		}
 	}
-	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -ENODATA;
 }
 EXPORT_SYMBOL_GPL(of_property_read_string_index);
@@ -810,29 +778,22 @@ int of_property_match_string(struct device_node *np, const char *propname,
 	int i;
 	const char *p, *end;
 
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
 
 	p = prop->value;
 	end = p + prop->length;
 
 	for (i = 0; p < end; i++, p += l) {
 		l = strlen(p) + 1;
-		if (p + l > end) {
-			printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+		if (p + l > end)
 			return -EILSEQ;
-		}
 		pr_debug("comparing %s with %s\n", string, p);
 		if (strcmp(string, p) == 0)
 			return i; /* Found it; return index */
 	}
-	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -ENODATA;
 }
 EXPORT_SYMBOL_GPL(of_property_match_string);
@@ -856,18 +817,12 @@ int of_property_count_strings(struct device_node *np, const char *propname)
 	size_t l = 0, total = 0;
 	const char *p;
 
-	if (!prop) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop)
 		return -EINVAL;
-	}
-	if (!prop->value) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!prop->value)
 		return -ENODATA;
-	}
-	if (strnlen(prop->value, prop->length) >= prop->length) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (strnlen(prop->value, prop->length) >= prop->length)
 		return -EILSEQ;
-	}
 
 	p = prop->value;
 
@@ -946,10 +901,8 @@ int of_parse_phandle_with_args(struct device_node *np, const char *list_name,
 
 	/* Retrieve the phandle list property */
 	list = of_get_property(np, list_name, &size);
-	if (!list) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!list)
 		return -EINVAL;
-	}
 	list_end = list + size / sizeof(*list);
 
 	/* Loop over the phandles until all the requested entry is found */
@@ -997,10 +950,8 @@ int of_parse_phandle_with_args(struct device_node *np, const char *list_name,
 		 * or return -ENOENT for an empty entry.
 		 */
 		if (cur_index == index) {
-			if (!phandle) {
-				printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+			if (!phandle)
 				return -ENOENT;
-			}
 
 			if (out_args) {
 				int i;
@@ -1023,7 +974,6 @@ int of_parse_phandle_with_args(struct device_node *np, const char *list_name,
 	/* Loop exited without finding a valid entry; return an error */
 	if (node)
 		of_node_put(node);
-	printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 	return -EINVAL;
 }
 EXPORT_SYMBOL(of_parse_phandle_with_args);
@@ -1088,10 +1038,8 @@ int prom_remove_property(struct device_node *np, struct property *prop)
 	}
 	write_unlock_irqrestore(&devtree_lock, flags);
 
-	if (!found) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!found)
 		return -ENODEV;
-	}
 
 #ifdef CONFIG_PROC_DEVICETREE
 	/* try to remove the proc node as well */
@@ -1134,10 +1082,8 @@ int prom_update_property(struct device_node *np,
 	}
 	write_unlock_irqrestore(&devtree_lock, flags);
 
-	if (!found) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!found)
 		return -ENODEV;
-	}
 
 #ifdef CONFIG_PROC_DEVICETREE
 	/* try to add to proc as well if it was initialized */

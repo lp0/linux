@@ -248,7 +248,7 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 	const void *prop;
 	int i, ret;
 
-	pr_info("Creating amba device %s\n", node->full_name);
+	pr_debug("Creating amba device %s\n", node->full_name);
 
 	if (!of_device_is_available(node))
 		return NULL;
@@ -274,7 +274,6 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 	prop = of_get_property(node, "arm,primecell-periphid", NULL);
 	if (prop)
 		dev->periphid = of_read_ulong(prop, 1);
-	printk(KERN_DEBUG "periphid: %08x\n", dev->periphid);
 
 	/* Decode the IRQs and address ranges */
 	for (i = 0; i < AMBA_NR_IRQS; i++)
@@ -285,7 +284,6 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 		goto err_free;
 
 	ret = amba_device_add(dev, &iomem_resource);
-	printk(KERN_DEBUG "amba_device_add = %d\n", ret);
 	if (ret)
 		goto err_free;
 
@@ -323,7 +321,7 @@ static const struct of_dev_auxdata *of_dev_lookup(const struct of_dev_auxdata *l
 			continue;
 		if (res.start != lookup->phys_addr)
 			continue;
-		pr_info("%s: devname=%s\n", np->full_name, lookup->name);
+		pr_debug("%s: devname=%s\n", np->full_name, lookup->name);
 		return lookup;
 	}
 
@@ -353,11 +351,9 @@ static int of_platform_bus_create(struct device_node *bus,
 	void *platform_data = NULL;
 	int rc = 0;
 
-	pr_info("of_platform_bus_create: %s\n", bus->full_name);
-
 	/* Make sure it has a compatible property */
 	if (strict && (!of_get_property(bus, "compatible", NULL))) {
-		pr_info("%s() - skipping %s, no compatible prop\n",
+		pr_debug("%s() - skipping %s, no compatible prop\n",
 			 __func__, bus->full_name);
 		return 0;
 	}
@@ -378,7 +374,7 @@ static int of_platform_bus_create(struct device_node *bus,
 		return 0;
 
 	for_each_child_of_node(bus, child) {
-		pr_info("   create child: %s\n", child->full_name);
+		pr_debug("   create child: %s\n", child->full_name);
 		rc = of_platform_bus_create(child, matches, lookup, &dev->dev, strict);
 		if (rc) {
 			of_node_put(child);
@@ -405,13 +401,11 @@ int of_platform_bus_probe(struct device_node *root,
 	int rc = 0;
 
 	root = root ? of_node_get(root) : of_find_node_by_path("/");
-	if (!root) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!root)
 		return -EINVAL;
-	}
 
-	pr_info("of_platform_bus_probe()\n");
-	pr_info(" starting at: %s\n", root->full_name);
+	pr_debug("of_platform_bus_probe()\n");
+	pr_debug(" starting at: %s\n", root->full_name);
 
 	/* Do a self check of bus type, if there's a match, create children */
 	if (of_match_node(matches, root)) {
@@ -456,10 +450,8 @@ int of_platform_populate(struct device_node *root,
 	int rc = 0;
 
 	root = root ? of_node_get(root) : of_find_node_by_path("/");
-	if (!root) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (!root)
 		return -EINVAL;
-	}
 
 	for_each_child_of_node(root, child) {
 		rc = of_platform_bus_create(child, matches, lookup, parent, true);

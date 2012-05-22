@@ -134,19 +134,14 @@ int of_gpio_simple_xlate(struct gpio_chip *gc,
 	 */
 	if (gc->of_gpio_n_cells < 2) {
 		WARN_ON(1);
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
 		return -EINVAL;
 	}
 
-	if (WARN_ON(gpiospec->args_count < gc->of_gpio_n_cells)) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (WARN_ON(gpiospec->args_count < gc->of_gpio_n_cells))
 		return -EINVAL;
-	}
 
-	if (gpiospec->args[0] >= gc->ngpio) {
-		printk(KERN_DEBUG "%s: %d\n", __func__, __LINE__);
+	if (gpiospec->args[0] >= gc->ngpio)
 		return -EINVAL;
-	}
 
 	if (flags)
 		*flags = gpiospec->args[1];
