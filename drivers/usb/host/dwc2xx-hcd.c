@@ -193,27 +193,32 @@ static int dwc2xx_hcd_do_soft_reset(struct usb_hcd *hcd)
 static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	u32 usb_cfg;
 	int ret;
 
 	ret = dwc2xx_hcd_do_soft_reset(hcd);
 	if (ret)
 		return ret;
 
-	/* Program PHY */
+	/* Configure PHY */
+	usb_cfg = dwc->__usb_cfg;
 	if (dwc->hw_cfg2.hs_phy >= DWC_CFG2_HS_PHY_ULPI) {
 		dwc->usb_cfg.ulpi_utmi_sel = true;
 		dwc->usb_cfg.phyif = false;
 		dwc->usb_cfg.ddrsel = false;
-		dwc2xx_hcd_set_usb_cfg(hcd);
 	} else {
 		dwc->usb_cfg.ulpi_utmi_sel = false;
 		dwc->usb_cfg.phyif = dwc->hw_cfg4.utmi_phy_data_width;
-		dwc2xx_hcd_set_usb_cfg(hcd);
 	}
 
-	ret = dwc2xx_hcd_do_soft_reset(hcd);
-	if (ret)
-		return ret;
+	/* Don't reset again if the PHY is already configured */
+	if (dwc->__usb_cfg != usb_cfg) {
+		dwc2xx_hcd_set_usb_cfg(hcd);
+
+		ret = dwc2xx_hcd_do_soft_reset(hcd);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }
