@@ -31,6 +31,10 @@
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
 
+#ifdef CONFIG_BCM_VC_POWER
+# include "../../misc/bcm-vc-power.h"
+#endif
+
 #include "dwc2xx-hcd.h"
 
 #define MODULE_NAME "dwc2xx-hcd"
@@ -509,6 +513,26 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		goto err_unmap;
 	}
 
+#ifdef CONFIG_BCM_VC_POWER
+	/* We're going to need power now */
+	dwc->power = bcm_vc_power_get(np, "vc_power", "vc_index");
+	if (IS_ERR(dwc->power)) {
+		if (PTR_ERR(dwc->power) != -ECHILD) {
+			ret = PTR_ERR(dwc->power);
+			dev_err(dwc->dev, "no power manager (%d)\n", ret);
+			goto err_unmap;
+		} else {
+			dwc->power = NULL;
+		}
+	} else {
+		ret = bcm_vc_power_on(dwc->power);
+		if (ret) {
+			dev_err(dwc->dev, "unable to power on (%d)\n", ret);
+			goto err_power_put;
+		}
+	}
+#endif
+
 	dev_info(dwc->dev, "HCD v2.%03x (%08x) at MMIO %#lx (irq = %d)\n",
 		dwc->snps_id & ~DWC_SNPS_ID_MASK, dwc->user_id,
 		(unsigned long)dwc->res.start, dwc->irq);
@@ -523,12 +547,20 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 	ret = usb_add_hcd(hcd, dwc->irq, 0);
 	if (ret) {
 		dev_err(dwc->dev, "failed to add HCD (%d)\n", ret);
-		goto err_unmap;
+		goto err_power_off;
 	}
 
 	platform_set_drvdata(pdev, hcd);
 	return 0;
 
+err_power_off:
+#ifdef CONFIG_BCM_VC_POWER
+	if (dwc->power)
+		bcm_vc_power_off(dwc->power);
+err_power_put:
+	if (dwc->power)
+		bcm_vc_power_put(dwc->power);
+#endif
 err_unmap:
 	iounmap(hcd->regs);
 err_release:
@@ -544,6 +576,12 @@ static int dwc2xx_hcd_remove(struct platform_device *pdev)
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 
 	usb_remove_hcd(hcd);
+#ifdef CONFIG_BCM_VC_POWER
+	if (dwc->power) {
+		bcm_vc_power_off(dwc->power);
+		bcm_vc_power_put(dwc->power);
+	}
+#endif
 	iounmap(hcd->regs);
 	release_region(dwc->res.start, resource_size(&dwc->res));
 	usb_put_hcd(hcd);

@@ -258,6 +258,9 @@ struct dwc2xx_hcd {
 	struct device *dev;
 	struct resource res;
 	int irq;
+#ifdef CONFIG_BCM_VC_POWER
+	struct bcm_vc_power_dev *power;
+#endif
 
 	u32 snps_id;
 	u32 user_id;
