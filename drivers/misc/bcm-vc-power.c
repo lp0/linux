@@ -151,7 +151,10 @@ struct bcm_vc_power_dev *bcm_vc_power_get(struct device_node *node,
 	int ret;
 
 	if (node == NULL || pname == NULL || pindex == NULL)
-		return ERR_PTR(-EFAULT);
+		return ERR_PTR(-EINVAL);
+
+	if (!of_device_is_compatible(node, "broadcom,bcm2708-power-user"))
+		return ERR_PTR(-ECHILD);
 
 	index = ~0;
 	of_property_read_u32(node, pindex, &index);
