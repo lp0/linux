@@ -212,7 +212,8 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 		dwc->usb_cfg.ddrsel = false;
 	} else {
 		dwc->usb_cfg.ulpi_utmi_sel = false;
-		dwc->usb_cfg.phyif = dwc->hw_cfg4.utmi_phy_data_width;
+		dwc->usb_cfg.phyif = dwc->hw_cfg4.utmi_phy_data_width
+			>= DWC_CFG4_PHY_WIDTH_16BIT;
 	}
 
 	/* Don't reset again if the PHY is already configured */

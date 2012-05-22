@@ -182,13 +182,18 @@ struct dwc2xx_hcd_hw_cfg3 {
 	unsigned				dfifo_depth:16;
 };
 
+enum dwc_cfg4_phy_width {
+	DWC_CFG4_PHY_WIDTH_8BIT,
+	DWC_CFG4_PHY_WIDTH_16BIT,
+	DWC_CFG4_PHY_WIDTH_8_OR_16BIT
+};
 struct dwc2xx_hcd_hw_cfg4 {
 	unsigned				num_dev_perio_in_ep:4;
 	bool					power_optimiz:1;
 	bool					min_ahb_freq:1;
 	bool					part_power_down:1;
 	unsigned				reserved:7;
-	unsigned				utmi_phy_data_width:2;
+	enum dwc_cfg4_phy_width			utmi_phy_data_width:2;
 	unsigned				num_dev_mode_ctrl_ep:4;
 	bool					iddig_filt_en:1;
 	bool					vbus_valid_filt_en:1;
