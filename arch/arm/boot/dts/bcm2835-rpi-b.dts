@@ -7,8 +7,6 @@
 	#size-cells = <1>;
 	compatible = "raspberrypi,model-b", "broadcom,bcm2835", "broadcom,bcm2708";
 
-	mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
-
 	leds {
 		compatible = "gpio-leds";
 
@@ -116,7 +114,17 @@
 		};
 
 		usb {
-			/* TODO: smsc95xx location */
+			hub {
+				compatible = "usb,hub", "usb,device";
+				port = <1>;
+
+				ethernet {
+					compatible = "net,ethernet", "usb,device";
+					port = <1>;
+
+					mac-address = [00 00 00 00 00 00];	/* Set by VideoCore */
+				};
+			};
 		};
 	};
 };
