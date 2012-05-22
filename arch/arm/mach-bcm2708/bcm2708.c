@@ -19,7 +19,6 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/of_address.h>
-#include <linux/of_net.h>
 #include <linux/of_platform.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
@@ -59,7 +58,6 @@ static void __init bcm2708_of_system(void)
 	if (root) {
 		u32 rev;
 		u64 serial;
-		u8 *mac;
 
 		if (!of_property_read_u32(root, "system-rev", &rev))
 			system_rev = rev;
@@ -68,12 +66,6 @@ static void __init bcm2708_of_system(void)
 			system_serial_low = (u32)serial;
 			system_serial_high = (u32)(serial >> 32);
 		}
-
-		mac = (u8*)of_get_mac_address(root);
-		if (mac)
-			printk(KERN_INFO
-				"BCM2708 MAC Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
-				mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	}
 }
 
