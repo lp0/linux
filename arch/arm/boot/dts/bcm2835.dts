@@ -378,7 +378,7 @@
 			reg = <0x200000 0x1c 0x200094 0x1c>;
 			reg-names = "fsel", "pull";
 
-			alts = <6>;
+			functions = <6>;
 			count = <54>;
 			base = <0>;
 
