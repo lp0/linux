@@ -373,13 +373,13 @@ struct bcm2708_pinctrl __devinit *bcm2708_pinctrl_of_init(
 	}
 	pc->nr_pins = nr_gpios;
 
-	of_property_read_u32(np, "alts", &nr_alts);
+	of_property_read_u32(np, "functions", &nr_alts);
 	if (ret) {
-		dev_err(pc->dev, "alts count missing (%d)\n", ret);
+		dev_err(pc->dev, "function count missing (%d)\n", ret);
 		goto err;
 	}
 	if (nr_alts != ALTS) {
-		dev_err(pc->dev, "unsupported alts count %d\n", nr_alts);
+		dev_err(pc->dev, "unsupported function count %d\n", nr_alts);
 		goto err;
 	}
 
