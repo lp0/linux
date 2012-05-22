@@ -38,24 +38,270 @@
 static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	int res = IRQ_NONE;
+	u32 status;
 
-	dev_dbg(dwc->dev, "%s\n", __func__);
-	return IRQ_NONE;
+	status = readl(hcd->regs + DWC_CORE_INT_STAT_REG);
+	dev_dbg(dwc->dev, "%s: status = %08x\n", __func__, status);
+
+	if (status & DWC_CURRENT_MODE_INT)
+		dev_dbg(dwc->dev, "%s: DWC_CURRENT_MODE_INT\n", __func__);
+
+	if (status & DWC_MODE_MISMATCH_INT)
+		dev_dbg(dwc->dev, "%s: DWC_MODE_MISMATCH_INT\n", __func__);
+
+	if (status & DWC_OTG_INT) {
+		u32 otg_status;
+
+		otg_status = readl(hcd->regs + DWC_OTG_INT_REG);
+		dev_dbg(dwc->dev, "%s: DWC_OTG_INT otg_status = %08x\n", __func__, otg_status);
+
+		writel(otg_status, hcd->regs + DWC_OTG_INT_REG);
+	}
+
+	if (status & DWC_SOF_INT)
+		dev_dbg(dwc->dev, "%s: DWC_SOF_INT\n", __func__);
+
+	if (status & DWC_RX_STAT_LEVEL_INT)
+		dev_dbg(dwc->dev, "%s: DWC_RX_STAT_LEVEL_INT\n", __func__);
+
+	if (status & DWC_NP_TX_FIFO_EMPTY_INT)
+		dev_dbg(dwc->dev, "%s: DWC_NP_TX_FIFO_EMPTY_INT\n", __func__);
+
+	if (status & DWC_GINNAKEFF_INT)
+		dev_dbg(dwc->dev, "%s: DWC_GINNAKEFF_INT\n", __func__);
+
+	if (status & DWC_GOUTNAKEFF_INT)
+		dev_dbg(dwc->dev, "%s: DWC_GOUTNAKEFF_INT\n", __func__);
+
+	if (status & DWC_ULPICK_INT)
+		dev_dbg(dwc->dev, "%s: DWC_ULPICK_INT\n", __func__);
+
+	if (status & DWC_I2C_INT)
+		dev_dbg(dwc->dev, "%s: DWC_I2C_INT\n", __func__);
+
+	if (status & DWC_EARLY_SUSPEND_INT)
+		dev_dbg(dwc->dev, "%s: DWC_EARLY_SUSPEND_INT\n", __func__);
+
+	if (status & DWC_USB_SUSPEND_INT)
+		dev_dbg(dwc->dev, "%s: DWC_USB_SUSPEND_INT\n", __func__);
+
+	if (status & DWC_USB_RESET_INT)
+		dev_dbg(dwc->dev, "%s: DWC_USB_RESET_INT\n", __func__);
+
+	if (status & DWC_ENUM_DONE_INT)
+		dev_dbg(dwc->dev, "%s: DWC_ENUM_DONE_INT\n", __func__);
+
+	if (status & DWC_ISO_OUT_DROP_INT)
+		dev_dbg(dwc->dev, "%s: DWC_ISO_OUT_DROP_INT\n", __func__);
+
+	if (status & DWC_EOP_FRAME_INT)
+		dev_dbg(dwc->dev, "%s: DWC_EOP_FRAME_INT\n", __func__);
+
+	if (status & DWC_RESTORE_DONE_INT)
+		dev_dbg(dwc->dev, "%s: DWC_RESTORE_DONE_INT\n", __func__);
+
+	if (status & DWC_EP_MISMATCH_INT)
+		dev_dbg(dwc->dev, "%s: DWC_EP_MISMATCH_INT\n", __func__);
+
+	if (status & DWC_IN_EP_INT)
+		dev_dbg(dwc->dev, "%s: DWC_IN_EP_INT\n", __func__);
+
+	if (status & DWC_OUT_EP_INT)
+		dev_dbg(dwc->dev, "%s: DWC_OUT_EP_INT\n", __func__);
+
+	if (status & DWC_INCOMPLETE_ISO_IN_INT)
+		dev_dbg(dwc->dev, "%s: DWC_INCOMPLETE_ISO_IN_INT\n", __func__);
+
+	if (status & DWC_INCOMPLETE_ISO_OUT_INT)
+		dev_dbg(dwc->dev, "%s: DWC_INCOMPLETE_ISO_OUT_INT\n", __func__);
+
+	if (status & DWC_FETSUSP_INT)
+		dev_dbg(dwc->dev, "%s: DWC_FETSUSP_INT\n", __func__);
+
+	if (status & DWC_RESET_DETECT_INT)
+		dev_dbg(dwc->dev, "%s: DWC_RESET_DETECT_INT\n", __func__);
+
+	if (status & DWC_PORT_INT)
+		dev_dbg(dwc->dev, "%s: DWC_PORT_INT\n", __func__);
+
+	if (status & DWC_HC_INT)
+		dev_dbg(dwc->dev, "%s: DWC_HC_INT\n", __func__);
+
+	if (status & DWC_HP_TX_FIFO_EMPTY_INT)
+		dev_dbg(dwc->dev, "%s: DWC_HP_TX_FIFO_EMPTY_INT\n", __func__);
+
+	if (status & DWC_LPM_TXN_RCVD_INT)
+		dev_dbg(dwc->dev, "%s: DWC_LPM_TXN_RCVD_INT\n", __func__);
+
+	if (status & DWC_CON_ID_STAT_CHG_INT)
+		dev_dbg(dwc->dev, "%s: DWC_CON_ID_STAT_CHG_INT\n", __func__);
+
+	if (status & DWC_DISCONNECT_INT)
+		dev_dbg(dwc->dev, "%s: DWC_DISCONNECT_INT\n", __func__);
+
+	if (status & DWC_SESS_REQ_INT)
+		dev_dbg(dwc->dev, "%s: DWC_SESS_REQ_INT\n", __func__);
+
+	if (status & DWC_WAKEUP_INT)
+		dev_dbg(dwc->dev, "%s: DWC_WAKEUP_INT\n", __func__);
+
+	writel(status, hcd->regs + DWC_CORE_INT_STAT_REG);
+	res = IRQ_HANDLED;
+
+	return res;
+}
+
+static int dwc2xx_hcd_do_soft_reset(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	int i;
+
+	/* Wait for AHB master idle state */
+	for (i = 0; i < DWC_AHB_TIMEOUT_MS; i++) {
+		if (readl(hcd->regs + DWC_CORE_RESET_REG)
+				& BIT(DWC_AHB_MASTER_IDLE))
+			break;
+		msleep(1);
+	}
+	dev_dbg(dwc->dev, "%s: master idle in %d ms\n", __func__, i);
+	if (i == DWC_AHB_TIMEOUT_MS) {
+		dev_err(dwc->dev, "%s: not in AHB master idle state", __func__);
+		return -ETIMEDOUT;
+	}
+
+	/* Perform a soft reset */
+	writel(BIT(DWC_CORE_SOFT_RESET), hcd->regs + DWC_CORE_RESET_REG);
+
+	/* Wait for it to complete */
+	for (i = 0; i < DWC_SOFT_RESET_TIMEOUT_MS; i++) {
+		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
+				& BIT(DWC_CORE_SOFT_RESET)))
+			break;
+		msleep(1);
+	}
+	dev_dbg(dwc->dev, "%s: soft reset in %d ms\n", __func__, i);
+	if (i == DWC_SOFT_RESET_TIMEOUT_MS) {
+		dev_err(dwc->dev, "%s: soft reset did not complete", __func__);
+		return -ETIMEDOUT;
+	}
+
+	dwc2xx_hcd_get_cfg(hcd);
+	return 0;
 }
 
 static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	int ret;
 
-	dev_dbg(dwc->dev, "%s\n", __func__);
+	ret = dwc2xx_hcd_do_soft_reset(hcd);
+	if (ret)
+		return ret;
+
+	/* Program PHY */
+	if (dwc->hw_cfg2.hs_phy >= DWC_CFG2_HS_PHY_ULPI) {
+		dwc->usb_cfg.ulpi_utmi_sel = true;
+		dwc->usb_cfg.phyif = false;
+		dwc->usb_cfg.ddrsel = false;
+		dwc2xx_hcd_set_usb_cfg(hcd);
+	} else {
+		dwc->usb_cfg.ulpi_utmi_sel = false;
+		dwc->usb_cfg.phyif = dwc->hw_cfg4.utmi_phy_data_width;
+		dwc2xx_hcd_set_usb_cfg(hcd);
+	}
+
+	ret = dwc2xx_hcd_do_soft_reset(hcd);
+	if (ret)
+		return ret;
+
 	return 0;
 }
 
 static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	u32 ints = 0;
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
+
+	/* Configure DMA */
+	dwc->ahb_cfg.dma_enable = true;
+	dwc->ahb_cfg.dma_single = false;
+	dwc->ahb_cfg.dma_burst = DWC_AHB_DMA_BURST_INCR4;
+
+	/* Configure ULPI FSLS */
+	if (dwc->hw_cfg2.hs_phy == DWC_CFG2_HS_PHY_ULPI
+			&& dwc->hw_cfg2.fs_phy == DWC_CFG2_FS_PHY_FSLS) {
+		dwc->usb_cfg.ulpi_fsls = true;
+		dwc->usb_cfg.ulpi_clk_sus_m = true;
+	} else {
+		dwc->usb_cfg.ulpi_fsls = false;
+		dwc->usb_cfg.ulpi_clk_sus_m = false;
+	}
+
+	/* Configure hnp/srp capablitites */
+	switch (dwc->hw_cfg2.op_mode) {
+	case DWC_MODE_HNP_SRP_CAPABLE:
+		dwc->usb_cfg.hnp_capable = true;
+		dwc->usb_cfg.srp_capable = true;
+		break;
+	case DWC_MODE_SRP_ONLY_CAPABLE:
+	case DWC_MODE_SRP_CAPABLE_DEVICE:
+	case DWC_MODE_SRP_CAPABLE_HOST:
+		dwc->usb_cfg.hnp_capable = false;
+		dwc->usb_cfg.srp_capable = true;
+		break;
+	case DWC_MODE_NO_HNP_SRP_CAPABLE:
+	case DWC_MODE_NO_SRP_CAPABLE_DEVICE:
+	case DWC_MODE_NO_SRP_CAPABLE_HOST:
+		dwc->usb_cfg.hnp_capable = false;
+		dwc->usb_cfg.srp_capable = false;
+		break;
+	}
+	dwc2xx_hcd_set_usb_cfg(hcd);
+
+	/* Configure Low Power Mode */
+	dwc->lpm_cfg.lpm_cap_en = dwc->hw_cfg3.otg_lpm_en;
+	if (dwc->hw_cfg3.otg_lpm_en) {
+		dwc->lpm_cfg.appl_resp = true;
+		dwc->lpm_cfg.retry_count = 3;
+	}
+
+	/* Configure Inter-Chip USB */
+	dwc->usb_cfg.ic_usb_capable = dwc->hw_cfg2.otg_enable_ic_usb;
+
+	/* Apply configuration */
+	dwc2xx_hcd_set_ahb_cfg(hcd);
+	dwc2xx_hcd_set_usb_cfg(hcd);
+	dwc2xx_hcd_set_lpm_cfg(hcd);
+
+	/* Clear all pending interrupts */
+	writel(~0, hcd->regs + DWC_OTG_INT_REG);
+	writel(~0, hcd->regs + DWC_CORE_INT_STAT_REG);
+
+	/* Unmask common interrupts */
+	ints |= DWC_MODE_MISMATCH_INT;
+	ints |= DWC_OTG_INT;
+	if (dwc->ahb_cfg.dma_enable)
+		ints |= DWC_RX_STAT_LEVEL_INT;
+	ints |= DWC_CON_ID_STAT_CHG_INT;
+	ints |= DWC_WAKEUP_INT;
+	ints |= DWC_DISCONNECT_INT;
+	ints |= DWC_USB_SUSPEND_INT;
+	ints |= DWC_SESS_REQ_INT;
+	if (dwc->lpm_cfg.lpm_cap_en)
+		ints |= DWC_LPM_TXN_RCVD_INT;
+
+	/* Unmask host interrupts */
+	ints |= DWC_PORT_INT;
+	ints |= DWC_HC_INT;
+	writel(ints, hcd->regs + DWC_CORE_INT_MASK_REG);
+
+	/* Enable interrupts */
+	dwc->ahb_cfg.int_enable = true;
+	dwc2xx_hcd_set_ahb_cfg(hcd);
+
 	return 0;
 }
 
@@ -183,6 +429,14 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 	struct dwc2xx_hcd *dwc;
 	int ret;
 
+	BUILD_BUG_ON(sizeof(dwc->__ahb_cfg) != sizeof(dwc->ahb_cfg));
+	BUILD_BUG_ON(sizeof(dwc->__usb_cfg) != sizeof(dwc->usb_cfg));
+	BUILD_BUG_ON(sizeof(dwc->__hw_cfg1) != sizeof(dwc->hw_cfg1));
+	BUILD_BUG_ON(sizeof(dwc->__hw_cfg2) != sizeof(dwc->hw_cfg2));
+	BUILD_BUG_ON(sizeof(dwc->__hw_cfg3) != sizeof(dwc->hw_cfg3));
+	BUILD_BUG_ON(sizeof(dwc->__hw_cfg4) != sizeof(dwc->hw_cfg4));
+	BUILD_BUG_ON(sizeof(dwc->__lpm_cfg) != sizeof(dwc->lpm_cfg));
+
 	hcd = usb_create_hcd(&dwc2xx_hcd_hc_driver,
 			&pdev->dev, dev_name(&pdev->dev));
 	if (hcd == NULL)
@@ -210,6 +464,8 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	hcd->rsrc_start = dwc->res.start;
+	hcd->rsrc_len = resource_size(&dwc->res);
 	hcd->regs = ioremap(dwc->res.start, resource_size(&dwc->res));
 	if (!hcd->regs) {
 		dev_err(dwc->dev, "error mapping io at %#lx\n",
@@ -218,9 +474,25 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		goto err_release;
 	}
 
-	dwc->id = readl(hcd->regs + DWC_SNPS_ID_REG);
-	if ((dwc->id & DWC_SNPS_ID_MASK) != DWC_SNPS_ID_MATCH) {
-		dev_err(dwc->dev, "incompatible device %08x\n", dwc->id);
+	dwc->snps_id = readl(hcd->regs + DWC_SNPS_ID_REG);
+	if ((dwc->snps_id & DWC_SNPS_ID_MASK) != DWC_SNPS_ID_MATCH) {
+		dev_err(dwc->dev, "incompatible device %08x\n", dwc->snps_id);
+		ret = -ENODEV;
+		goto err_unmap;
+	}
+	dwc->user_id = readl(hcd->regs + DWC_USER_ID_REG);
+	dwc2xx_hcd_get_cfg(hcd);
+
+	if (dwc->hw_cfg2.arch != DWC_INT_DMA_ARCH) {
+		dev_err(dwc->dev, "architecture %d not supported\n",
+			dwc->hw_cfg2.arch);
+		ret = -ENODEV;
+		goto err_unmap;
+	}
+
+	if (dwc->hw_cfg2.hs_phy == DWC_CFG2_HS_PHY_NOT_SUPPORTED) {
+		dev_err(dwc->dev, "hs phy %d not supported\n",
+			dwc->hw_cfg2.hs_phy);
 		ret = -ENODEV;
 		goto err_unmap;
 	}
@@ -232,13 +504,17 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		goto err_unmap;
 	}
 
-	dev_info(dwc->dev, "HCD v2.%03x at MMIO %#lx (irq = %d)\n",
-		dwc->id & ~DWC_SNPS_ID_MASK,
+	dev_info(dwc->dev, "HCD v2.%03x (%08x) at MMIO %#lx (irq = %d)\n",
+		dwc->snps_id & ~DWC_SNPS_ID_MASK, dwc->user_id,
 		(unsigned long)dwc->res.start, dwc->irq);
 
-	dwc2xx_hcd_dump_regs(hcd);
+	dwc2xx_hcd_debug(hcd);
 
-	/* TODO: ensure the device won't trigger any interrupts */
+	/* Ensure the device won't trigger any interrupts */
+	dwc->ahb_cfg.int_enable = false;
+	dwc2xx_hcd_set_ahb_cfg(hcd);
+	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
+
 	ret = usb_add_hcd(hcd, dwc->irq, 0);
 	if (ret) {
 		dev_err(dwc->dev, "failed to add HCD (%d)\n", ret);
