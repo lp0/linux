@@ -241,9 +241,15 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 		spin_unlock_irq(&dwc->lock);
 
 		ret = dwc2xx_hcd_do_soft_reset(hcd);
-	} else {
-		spin_unlock_irq(&dwc->lock);
+		spin_lock_irq(&dwc->lock);
 	}
+
+	/* Turn the host port off */
+	dwc2xx_hcd_get_hprt(hcd);
+	dwc->hprt.power = false;
+	dwc2xx_hcd_set_hprt(hcd);
+
+	spin_unlock_irq(&dwc->lock);
 	return ret;
 }
 
@@ -424,7 +430,24 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
-	return -ENOSYS;
+
+	switch (typeReq) {
+	case GetHubDescriptor: {
+		struct usb_hub_descriptor *d = (struct usb_hub_descriptor *)buf;
+		d->bDescLength = 9;
+		d->bDescriptorType = USB_DT_HUB;
+		d->bNbrPorts = 1;
+		d->wHubCharacteristics = HUB_CHAR_INDV_PORT_LPSM
+			| HUB_CHAR_INDV_PORT_OCPM;
+		d->bPwrOn2PwrGood = 1;
+		d->bHubContrCurrent = 0;
+		d->u.hs.DeviceRemovable[0] = 0;
+		d->u.hs.PortPwrCtrlMask[0] = ~0;
+		return 0;
+	}
+	}
+
+	return -EPIPE;
 }
 
 static int dwc2xx_hcd_bus_suspend(struct usb_hcd *hcd)
