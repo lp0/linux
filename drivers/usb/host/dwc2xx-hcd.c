@@ -27,6 +27,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
+#include <linux/spinlock.h>
 
 #include <linux/usb.h>
 #include <linux/usb/hcd.h>
@@ -42,8 +43,11 @@
 static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	unsigned long flags;
 	int res = IRQ_NONE;
 	u32 status;
+
+	spin_lock_irqsave(&dwc->lock, flags);
 
 	status = readl(hcd->regs + DWC_CORE_INT_STAT_REG);
 	dev_dbg(dwc->dev, "%s: status = %08x\n", __func__, status);
@@ -153,6 +157,7 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 	writel(status, hcd->regs + DWC_CORE_INT_STAT_REG);
 	res = IRQ_HANDLED;
 
+	spin_unlock_irqrestore(&dwc->lock, flags);
 	return res;
 }
 
@@ -161,36 +166,38 @@ static int dwc2xx_hcd_do_soft_reset(struct usb_hcd *hcd)
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 	int i;
 
-	/* Wait for AHB master idle state */
-	for (i = 0; i < DWC_AHB_TIMEOUT_MS; i++) {
-		if (readl(hcd->regs + DWC_CORE_RESET_REG)
-				& BIT(DWC_AHB_MASTER_IDLE))
-			break;
-		msleep(1);
-	}
-	dev_dbg(dwc->dev, "%s: master idle in %d ms\n", __func__, i);
-	if (i == DWC_AHB_TIMEOUT_MS) {
-		dev_err(dwc->dev, "%s: not in AHB master idle state", __func__);
-		return -ETIMEDOUT;
-	}
-
 	/* Perform a soft reset */
 	writel(BIT(DWC_CORE_SOFT_RESET), hcd->regs + DWC_CORE_RESET_REG);
 
 	/* Wait for it to complete */
-	for (i = 0; i < DWC_SOFT_RESET_TIMEOUT_MS; i++) {
+	for (i = 0; i < DWC_SOFT_RESET_TIMEOUT; i++) {
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
 				& BIT(DWC_CORE_SOFT_RESET)))
 			break;
 		msleep(1);
 	}
-	dev_dbg(dwc->dev, "%s: soft reset in %d ms\n", __func__, i);
-	if (i == DWC_SOFT_RESET_TIMEOUT_MS) {
+	dev_dbg(dwc->dev, "%s: soft reset in %d\n", __func__, i+1);
+	if (i == DWC_SOFT_RESET_TIMEOUT) {
 		dev_err(dwc->dev, "%s: soft reset did not complete", __func__);
 		return -ETIMEDOUT;
 	}
 
+	/* Wait for AHB master idle state */
+	for (i = 0; i < DWC_AHB_TIMEOUT; i++) {
+		if (readl(hcd->regs + DWC_CORE_RESET_REG)
+				& BIT(DWC_AHB_MASTER_IDLE))
+			break;
+		msleep(1);
+	}
+	dev_dbg(dwc->dev, "%s: master idle in %d\n", __func__, i+1);
+	if (i == DWC_AHB_TIMEOUT) {
+		dev_err(dwc->dev, "%s: not in AHB master idle state", __func__);
+		return -ETIMEDOUT;
+	}
+
+	spin_lock_irq(&dwc->lock);
 	dwc2xx_hcd_get_cfg(hcd);
+	spin_unlock_irq	(&dwc->lock);
 	return 0;
 }
 
@@ -200,9 +207,21 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 	u32 usb_cfg;
 	int ret;
 
+#ifdef CONFIG_BCM_VC_POWER
+	if (dwc->power) {
+		ret = bcm_vc_power_on(dwc->power);
+		if (ret) {
+			dev_err(dwc->dev, "unable to power on (%d)\n", ret);
+			return ret;
+		}
+	}
+#endif
+
 	ret = dwc2xx_hcd_do_soft_reset(hcd);
 	if (ret)
 		return ret;
+
+	spin_lock_irq(&dwc->lock);
 
 	/* Configure PHY */
 	usb_cfg = dwc->__usb_cfg;
@@ -219,21 +238,23 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 	/* Don't reset again if the PHY is already configured */
 	if (dwc->__usb_cfg != usb_cfg) {
 		dwc2xx_hcd_set_usb_cfg(hcd);
+		spin_unlock_irq(&dwc->lock);
 
 		ret = dwc2xx_hcd_do_soft_reset(hcd);
-		if (ret)
-			return ret;
+	} else {
+		spin_unlock_irq(&dwc->lock);
 	}
-
-	return 0;
+	return ret;
 }
 
 static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct usb_bus *bus = hcd_to_bus(hcd);
 	u32 ints = 0;
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
+	spin_lock_irq(&dwc->lock);
 
 	/* Configure DMA */
 	dwc->ahb_cfg.dma_enable = true;
@@ -312,6 +333,10 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 	dwc->ahb_cfg.int_enable = true;
 	dwc2xx_hcd_set_ahb_cfg(hcd);
 
+	spin_unlock_irq(&dwc->lock);
+
+	if (bus->root_hub)
+		usb_hcd_resume_root_hub(hcd);
 	return 0;
 }
 
@@ -320,6 +345,22 @@ static void dwc2xx_hcd_stop(struct usb_hcd *hcd)
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
+
+	spin_lock_irq(&dwc->lock);
+
+	/* Disable interrupts */
+	dwc->ahb_cfg.int_enable = false;
+	dwc2xx_hcd_set_ahb_cfg(hcd);
+
+	/* Mask all interrupts */
+	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
+
+	spin_unlock_irq(&dwc->lock);
+
+	/* Turn the host port off */
+	dwc2xx_hcd_get_hprt(hcd);
+	dwc->hprt.power = false;
+	dwc2xx_hcd_set_hprt(hcd);
 }
 
 static void dwc2xx_hcd_shutdown(struct usb_hcd *hcd)
@@ -327,6 +368,12 @@ static void dwc2xx_hcd_shutdown(struct usb_hcd *hcd)
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
+
+#ifdef CONFIG_BCM_VC_POWER
+	/* Turn our power off */
+	if (dwc->power)
+		bcm_vc_power_off(dwc->power);
+#endif
 }
 
 static int dwc2xx_hcd_get_frame_number(struct usb_hcd *hcd)
@@ -446,6 +493,7 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 	BUILD_BUG_ON(sizeof(dwc->__hw_cfg3) != sizeof(dwc->hw_cfg3));
 	BUILD_BUG_ON(sizeof(dwc->__hw_cfg4) != sizeof(dwc->hw_cfg4));
 	BUILD_BUG_ON(sizeof(dwc->__lpm_cfg) != sizeof(dwc->lpm_cfg));
+	BUILD_BUG_ON(sizeof(dwc->__hprt) != sizeof(dwc->hprt));
 
 	hcd = usb_create_hcd(&dwc2xx_hcd_hc_driver,
 			&pdev->dev, dev_name(&pdev->dev));
@@ -545,6 +593,8 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 	dwc->ahb_cfg.int_enable = false;
 	dwc2xx_hcd_set_ahb_cfg(hcd);
 	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
+
+	spin_lock_init(&dwc->lock);
 
 	ret = usb_add_hcd(hcd, dwc->irq, 0);
 	if (ret) {

@@ -46,8 +46,8 @@
 #ifndef _DWC2XX_HCD_H
 #define _DWC2XX_HCD_H
 
-#define DWC_AHB_TIMEOUT_MS		1000
-#define DWC_SOFT_RESET_TIMEOUT_MS	100
+#define DWC_SOFT_RESET_TIMEOUT		100
+#define DWC_AHB_TIMEOUT			100
 
 enum dwc_ahb_cfg_dma_burst {
 	DWC_AHB_DMA_BURST_SINGLE,
@@ -259,6 +259,29 @@ struct dwc2xx_hcd_lpm_cfg {
 	bool					inv_sel_hsic:1;
 };
 
+enum dwc_hprt_speed {
+	DWC_HPRT_SPEED_LOW,
+	DWC_HPRT_SPEED_FULL,
+	DWC_HPRT_SPEED_HIGH,
+};
+struct dwc2xx_hcd_hprt {
+	bool				conn_stat:1;
+	bool				conn_det:1;
+	bool				enabled:1;
+	bool				prtenchng:1;
+	bool				over_curr_act:1;
+	bool				over_curr_chng:1;
+	bool				resume:1;
+	bool				suspend:1;
+	bool				reset:1;
+	unsigned			reserved9:1;
+	unsigned			prtlnsts:2;
+	bool				power:1;
+	unsigned			prttstctl:4;
+	enum dwc_hprt_speed		speed:2;
+	unsigned			reserved19_31:13;
+};
+
 struct dwc2xx_hcd {
 	struct device *dev;
 	struct resource res;
@@ -266,6 +289,7 @@ struct dwc2xx_hcd {
 #ifdef CONFIG_BCM_VC_POWER
 	struct bcm_vc_power_dev *power;
 #endif
+	struct spinlock lock;
 
 	u32 snps_id;
 	u32 user_id;
@@ -296,6 +320,10 @@ struct dwc2xx_hcd {
 	union {
 		u32 __lpm_cfg;
 		struct dwc2xx_hcd_lpm_cfg lpm_cfg;
+	};
+	union {
+		u32 __hprt;
+		struct dwc2xx_hcd_hprt hprt;
 	};
 };
 
@@ -380,7 +408,7 @@ enum dwc2xx_hcd_core_int {
 #define DWC_RX_STAT_POP_REG	0x020	/* Receive Status Queue Read & POP (Read Only) */
 #define DWC_RX_FIFO_SZ_REG	0x024	/* Receive FIFO Size */
 #define DWC_NP_TX_FIFO_SZ_REG	0x028	/* Non Periodic Transmit FIFO Size */
-#define DWC_NP_TX_STAT_READ_REG	0x02c	/* Non Periodic Transmit FIFO/Queue Status */
+#define DWC_NP_TX_STAT_REG	0x02c	/* Non Periodic Transmit FIFO/Queue Status */
 #define DWC_I2C_CTL_REG		0x030	/* I2C Access */
 #define DWC_PHY_VENDOR_CTRL_REG	0x034	/* PHY Vendor Control */
 #define DWC_GPIO_REG		0x038	/* General Purpose Input/Output */
@@ -397,6 +425,26 @@ enum dwc2xx_hcd_core_int {
 #define DWC_DV_TX_FIFO_SZ_BASE	0x104	/* Device Periodic Transmit FIFO#n if dedicated fifos are disabled, otherwise Device Transmit FIFO#n */
 #define DWC_DV_TX_FIFO_SZ_REG(n) (DWC_DV_TX_FIFO_SZ_BASE + (n) * 4)
 #define DWC_DV_TX_FIFO_SZ_COUNT	15
+
+#define DWC_HOST_CFG_REG		0x400	/* Host Configuration Register */
+#define DWC_HOST_FRAME_INTVL_REG	0x404	/* Host Frame Interval Register */
+#define DWC_HOST_FRAME_NUM_REG		0x408	/* Host Frame Number / Frame Remaining */
+#define DWC_HP_TX_FIFO_STAT_REG		0x410	/* Host Periodic Transmit FIFO/Queue Status */
+#define DWC_HOST_ALL_CHANS_INT_STAT_REG	0x414	/* Host All Channels Interrupt */
+#define DWC_HOST_ALL_CHANS_INT_MASK_REG	0x418	/* Host All Channels Interrupt Mask */
+#define DWC_HOST_FRAME_LIST_REG		0x41c	/* Host Frame List Base Address */
+
+#define DWC_HOST_PORT_REG		0x440	/* Host Port */
+
+#define DWC_HOST_CHAN_BASE		0x500	/* Host Channel Registers */
+#define DWC_HOST_CHAN_CHAR_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x00)	/* Host Channel Characteristic */
+#define DWC_HOST_CHAN_SPLIT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x04)	/* Host Channel Split Control */
+#define DWC_HOST_CHAN_INT_STAT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x08)	/* Host Channel Interrupt */
+#define DWC_HOST_CHAN_INT_MASK_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x0c)	/* Host Channel Interrupt Mask */
+#define DWC_HOST_CHAN_TX_SZ_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x10)	/* Host Channel Transfer Size */
+#define DWC_HOST_CHAN_DMA_ADDR_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x14)	/* Host Channel DMA Address */
+#define DWC_HOST_CHAN_DMA_BUFA_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x1c)	/* Host Channel DMA Buffer Address */
+#define DWC_HOST_CHAN_COUNT		16	
 
 static inline struct dwc2xx_hcd *hcd_to_dwc(struct usb_hcd *hcd)
 {
@@ -445,6 +493,22 @@ static void dwc2xx_hcd_set_lpm_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__lpm_cfg);
 }
 
+static void dwc2xx_hcd_get_hprt(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
+}
+
+static void dwc2xx_hcd_set_hprt(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	u32 value = dwc->__hprt;
+	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
+	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
+	WARN(dwc->__hprt != value, "%s: write %08x, read %08x\n",
+		__func__, value, dwc->__hprt);
+}
+
 static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
@@ -459,7 +523,7 @@ static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_RX_STAT_POP_REG\n", DWC_RX_STAT_POP_REG, readl(hcd->regs + DWC_RX_STAT_POP_REG));
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_RX_FIFO_SZ_REG\n", DWC_RX_FIFO_SZ_REG, readl(hcd->regs + DWC_RX_FIFO_SZ_REG));
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_NP_TX_FIFO_SZ_REG\n", DWC_NP_TX_FIFO_SZ_REG, readl(hcd->regs + DWC_NP_TX_FIFO_SZ_REG));
-	dev_dbg(dwc->dev, "%03x = %08x; DWC_NP_TX_STAT_READ_REG\n", DWC_NP_TX_STAT_READ_REG, readl(hcd->regs + DWC_NP_TX_STAT_READ_REG));
+	dev_dbg(dwc->dev, "%03x = %08x; DWC_NP_TX_STAT_REG\n", DWC_NP_TX_STAT_REG, readl(hcd->regs + DWC_NP_TX_STAT_REG));
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_I2C_CTL_REG\n", DWC_I2C_CTL_REG, readl(hcd->regs + DWC_I2C_CTL_REG));
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_PHY_VENDOR_CTRL_REG\n", DWC_PHY_VENDOR_CTRL_REG, readl(hcd->regs + DWC_PHY_VENDOR_CTRL_REG));
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_GPIO_REG\n", DWC_GPIO_REG, readl(hcd->regs + DWC_GPIO_REG));
