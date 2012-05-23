@@ -43,8 +43,8 @@
  * DAMAGE.
  */
 
-#ifndef _DWC2XX_HCD_H
-#define _DWC2XX_HCD_H
+#ifndef _DWC2_HCD_H
+#define _DWC2_HCD_H
 
 #define DWC_SOFT_RESET_TIMEOUT		100
 #define DWC_AHB_TIMEOUT			100
@@ -56,7 +56,7 @@ enum dwc_ahb_cfg_dma_burst {
 	DWC_AHB_DMA_BURST_INCR8 = 5,
 	DWC_AHB_DMA_BURST_INCR16 = 7
 };
-struct dwc2xx_hcd_ahb_cfg {
+struct dwc2_hcd_ahb_cfg {
 	bool					int_enable:1;
 	enum dwc_ahb_cfg_dma_burst		dma_burst:4;
 	bool					dma_enable:1;
@@ -79,7 +79,7 @@ enum dwc_host_cfg_pclk {
 	DWC_HOST_PCLK_48_MHZ,
 	DWC_HOST_PCLK_6_MHZ
 };
-struct dwc2xx_hcd_host_cfg {
+struct dwc2_hcd_host_cfg {
 	enum dwc_host_cfg_pclk			fsls_pclk:2;
 	bool					fsls_only:1;
 	unsigned				reserved3_6:4;
@@ -93,7 +93,7 @@ struct dwc2xx_hcd_host_cfg {
 	bool					mode_chg_time:1;
 };
 
-struct dwc2xx_hcd_usb_cfg {
+struct dwc2_hcd_usb_cfg {
 	unsigned				toutcal:3;
 	bool					phyif:1;
 	bool					ulpi_utmi_sel:1;
@@ -124,7 +124,7 @@ struct dwc2xx_hcd_usb_cfg {
 	unsigned				reserved31:1;
 };
 
-struct dwc2xx_hcd_hw_cfg1 {
+struct dwc2_hcd_hw_cfg1 {
 	unsigned ep_dir0:2;
 	unsigned ep_dir1:2;
 	unsigned ep_dir2:2;
@@ -169,7 +169,7 @@ enum dwc_cfg2_fs_phy_type {
 	DWC_CFG2_FS_PHY_2,
 	DWC_CFG2_FS_PHY_3
 };
-struct dwc2xx_hcd_hw_cfg2 {
+struct dwc2_hcd_hw_cfg2 {
 	enum dwc_cfg2_op_mode			op_mode:3;
 	enum dwc_cfg2_arch			arch:2;
 	bool					point2point:1;
@@ -187,7 +187,7 @@ struct dwc2xx_hcd_hw_cfg2 {
 	bool					otg_enable_ic_usb:1;
 };
 
-struct dwc2xx_hcd_hw_cfg3 {
+struct dwc2_hcd_hw_cfg3 {
 	unsigned				xfer_size_cntr_width:4;
 	unsigned				packet_size_cntr_width:3;
 	bool					otg_func:1;
@@ -207,7 +207,7 @@ enum dwc_cfg4_phy_width {
 	DWC_CFG4_PHY_WIDTH_16BIT,
 	DWC_CFG4_PHY_WIDTH_8_OR_16BIT
 };
-struct dwc2xx_hcd_hw_cfg4 {
+struct dwc2_hcd_hw_cfg4 {
 	unsigned				num_dev_perio_in_ep:4;
 	bool					power_optimiz:1;
 	bool					min_ahb_freq:1;
@@ -226,7 +226,7 @@ struct dwc2xx_hcd_hw_cfg4 {
 	bool					desc_dma_dyn:1;
 };
 
-struct dwc2xx_hcd_lpm_cfg {
+struct dwc2_hcd_lpm_cfg {
 	/* LPM-Capable (LPMCap) (Device and Host) The application uses this bit
 	 * to control the DWC_otg core LPM capabilities. */
 	bool					lpm_cap_en:1;
@@ -279,7 +279,7 @@ struct dwc2xx_hcd_lpm_cfg {
 	bool					inv_sel_hsic:1;
 };
 
-struct dwc2xx_hcd_hfir_cfg {
+struct dwc2_hcd_hfir_cfg {
 	u16				frame_interval:16;
 	bool				dyn_frame_reload:1;
 	unsigned			reserved:15;
@@ -290,7 +290,7 @@ enum dwc_hprt_speed {
 	DWC_HPRT_SPEED_FULL,
 	DWC_HPRT_SPEED_LOW
 };
-struct dwc2xx_hcd_hprt {
+struct dwc2_hcd_hprt {
 	bool				connect:1;
 	bool				connect_int:1;		/* intr */
 	bool				enabled:1;
@@ -308,7 +308,7 @@ struct dwc2xx_hcd_hprt {
 	unsigned			reserved19_31:13;
 };
 
-struct dwc2xx_hcd {
+struct dwc2_hcd {
 	struct device *dev;
 	struct resource res;
 	int irq;
@@ -321,43 +321,43 @@ struct dwc2xx_hcd {
 	u32 user_id;
 	union {
 		u32 __ahb_cfg;
-		struct dwc2xx_hcd_ahb_cfg ahb_cfg;
+		struct dwc2_hcd_ahb_cfg ahb_cfg;
 	};
 	union {
 		u32 __host_cfg;
-		struct dwc2xx_hcd_host_cfg host_cfg;
+		struct dwc2_hcd_host_cfg host_cfg;
 	};
 	union {
 		u32 __usb_cfg;
-		struct dwc2xx_hcd_usb_cfg usb_cfg;
+		struct dwc2_hcd_usb_cfg usb_cfg;
 	};
 	union {
 		u32 __hw_cfg1;
-		struct dwc2xx_hcd_hw_cfg1 hw_cfg1;
+		struct dwc2_hcd_hw_cfg1 hw_cfg1;
 	};
 	union {
 		u32 __hw_cfg2;
-		struct dwc2xx_hcd_hw_cfg2 hw_cfg2;
+		struct dwc2_hcd_hw_cfg2 hw_cfg2;
 	};
 	union {
 		u32 __hw_cfg3;
-		struct dwc2xx_hcd_hw_cfg3 hw_cfg3;
+		struct dwc2_hcd_hw_cfg3 hw_cfg3;
 	};
 	union {
 		u32 __hw_cfg4;
-		struct dwc2xx_hcd_hw_cfg4 hw_cfg4;
+		struct dwc2_hcd_hw_cfg4 hw_cfg4;
 	};
 	union {
 		u32 __lpm_cfg;
-		struct dwc2xx_hcd_lpm_cfg lpm_cfg;
+		struct dwc2_hcd_lpm_cfg lpm_cfg;
 	};
 	union {
 		u32 __hfir_cfg;
-		struct dwc2xx_hcd_hfir_cfg hfir_cfg;
+		struct dwc2_hcd_hfir_cfg hfir_cfg;
 	};
 	union {
 		u32 __hprt;
-		struct dwc2xx_hcd_hprt hprt;
+		struct dwc2_hcd_hprt hprt;
 	};
 };
 
@@ -389,7 +389,7 @@ struct dwc2xx_hcd {
 #define DWC_CORE_USB_CFG_REG		0x00c	/* Core USB Configuration */
 
 #define DWC_CORE_RESET_REG		0x010	/* Core Reset */
-enum dwc2xx_hcd_core_reset {
+enum dwc2_hcd_core_reset {
 	DWC_CORE_SOFT_RESET,		/* Core Soft Reset (CSftRst) (Device and Host) */
 	DWC_HCLK_SOFT_RESET,		/* Hclk Soft Reset */
 	DWC_HOST_FC_RESET,		/* Host Frame Counter Reset (Host Only) */
@@ -403,7 +403,7 @@ enum dwc2xx_hcd_core_reset {
 
 #define DWC_CORE_INT_STAT_REG		0x014	/* Core Interrupt */
 #define DWC_CORE_INT_MASK_REG		0x018	/* Core Interrupt Mask */
-enum dwc2xx_hcd_core_int {
+enum dwc2_hcd_core_int {
 	DWC_CURRENT_MODE_INT		= BIT(0),
 	DWC_MODE_MISMATCH_INT		= BIT(1),
 	DWC_OTG_INT			= BIT(2),
@@ -475,7 +475,7 @@ enum dwc2xx_hcd_core_int {
 #define DWC_HOST_CHAN_SPLIT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x04)	/* Host Channel Split Control */
 #define DWC_HOST_CHAN_INT_STAT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x08)	/* Host Channel Interrupt */
 #define DWC_HOST_CHAN_INT_MASK_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x0c)	/* Host Channel Interrupt Mask */
-enum dwc2xx_hcd_host_chan_int {
+enum dwc2_hcd_host_chan_int {
 	DWC_CHAN_XFER_COMP_INT		= BIT(0),
 	DWC_CHAN_HALT_INT		= BIT(1),
 	DWC_CHAN_AHB_ERR_INT		= BIT(2),
@@ -499,14 +499,14 @@ enum dwc2xx_hcd_host_chan_int {
 
 #define DWC_OTG_PWR_CLK_CTL_REG		0xe00
 
-static inline struct dwc2xx_hcd *hcd_to_dwc(struct usb_hcd *hcd)
+static inline struct dwc2_hcd *hcd_to_dwc(struct usb_hcd *hcd)
 {
-	return (struct dwc2xx_hcd *)hcd->hcd_priv;
+	return (struct dwc2_hcd *)hcd->hcd_priv;
 }
 
-static void dwc2xx_hcd_get_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_get_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc->__ahb_cfg = readl(hcd->regs + DWC_CORE_AHB_CFG_REG);
 	dwc->__usb_cfg = readl(hcd->regs + DWC_CORE_USB_CFG_REG);
 	dwc->__hw_cfg1 = readl(hcd->regs + DWC_USER_HW_CFG1_REG);
@@ -516,9 +516,9 @@ static void dwc2xx_hcd_get_cfg(struct usb_hcd *hcd)
 	dwc->__lpm_cfg = readl(hcd->regs + DWC_CORE_LPM_CFG_REG);
 }
 
-static void dwc2xx_hcd_set_ahb_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_set_ahb_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__ahb_cfg;
 	writel(dwc->__ahb_cfg, hcd->regs + DWC_CORE_AHB_CFG_REG);
 	dwc->__ahb_cfg = readl(hcd->regs + DWC_CORE_AHB_CFG_REG);
@@ -526,15 +526,15 @@ static void dwc2xx_hcd_set_ahb_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__ahb_cfg);
 }
 
-static void dwc2xx_hcd_get_host_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_get_host_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc->__host_cfg = readl(hcd->regs + DWC_HOST_CFG_REG);
 }
 
-static void dwc2xx_hcd_set_host_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_set_host_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__host_cfg;
 	writel(dwc->__host_cfg, hcd->regs + DWC_HOST_CFG_REG);
 	dwc->__host_cfg = readl(hcd->regs + DWC_HOST_CFG_REG);
@@ -542,9 +542,9 @@ static void dwc2xx_hcd_set_host_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__host_cfg);
 }
 
-static void dwc2xx_hcd_set_usb_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_set_usb_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__usb_cfg;
 	writel(dwc->__usb_cfg, hcd->regs + DWC_CORE_USB_CFG_REG);
 	dwc->__usb_cfg = readl(hcd->regs + DWC_CORE_USB_CFG_REG);
@@ -552,9 +552,9 @@ static void dwc2xx_hcd_set_usb_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__usb_cfg);
 }
 
-static void dwc2xx_hcd_set_lpm_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_set_lpm_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__lpm_cfg;
 	writel(dwc->__lpm_cfg, hcd->regs + DWC_CORE_LPM_CFG_REG);
 	dwc->__lpm_cfg = readl(hcd->regs + DWC_CORE_LPM_CFG_REG);
@@ -562,15 +562,15 @@ static void dwc2xx_hcd_set_lpm_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__lpm_cfg);
 }
 
-static void dwc2xx_hcd_get_hprt(struct usb_hcd *hcd)
+static void dwc2_hcd_get_hprt(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
 }
 
-static void dwc2xx_hcd_set_hprt(struct usb_hcd *hcd)
+static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__hprt;
 	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
 	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
@@ -579,15 +579,15 @@ static void dwc2xx_hcd_set_hprt(struct usb_hcd *hcd)
 		__func__, value, dwc->__hprt);
 }
 
-static void dwc2xx_hcd_get_hfir_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_get_hfir_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc->__hfir_cfg = readl(hcd->regs + DWC_HOST_FRAME_INTVL_REG);
 }
 
-static void dwc2xx_hcd_set_hfir_cfg(struct usb_hcd *hcd)
+static void dwc2_hcd_set_hfir_cfg(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 value = dwc->__hfir_cfg;
 	writel(dwc->__hfir_cfg, hcd->regs + DWC_HOST_FRAME_INTVL_REG);
 	dwc->__hfir_cfg = readl(hcd->regs + DWC_HOST_FRAME_INTVL_REG);
@@ -595,9 +595,9 @@ static void dwc2xx_hcd_set_hfir_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__hfir_cfg);
 }
 
-static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
+static void dwc2_hcd_dump_regs(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	int i;
 
 	dev_dbg(dwc->dev, "%03x = %08x; DWC_OTG_CTL_REG\n", DWC_OTG_CTL_REG, readl(hcd->regs + DWC_OTG_CTL_REG));
@@ -618,9 +618,9 @@ static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
 		dev_dbg(dwc->dev, "%03x = %08x; DWC_DV_TX_FIFO_SZ_REG(%d)\n", DWC_DV_TX_FIFO_SZ_REG(i), readl(hcd->regs + DWC_DV_TX_FIFO_SZ_REG(i)), i);
 }
 
-static void dwc2xx_hcd_dump_config(struct usb_hcd *hcd)
+static void dwc2_hcd_dump_config(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "ahb.int_enable = %u\n", dwc->ahb_cfg.int_enable);
 	dev_dbg(dwc->dev, "ahb.dma_burst = %u\n", dwc->ahb_cfg.dma_burst);
@@ -743,11 +743,11 @@ static void dwc2xx_hcd_dump_config(struct usb_hcd *hcd)
 	dev_dbg(dwc->dev, "lpm.inv_sel_hsic = %u\n", dwc->lpm_cfg.inv_sel_hsic);
 }
 
-static void dwc2xx_hcd_debug(struct usb_hcd *hcd)
+static void dwc2_hcd_debug(struct usb_hcd *hcd)
 {
 	WARN_ON(1);
-	dwc2xx_hcd_dump_regs(hcd);
-	dwc2xx_hcd_dump_config(hcd);
+	dwc2_hcd_dump_regs(hcd);
+	dwc2_hcd_dump_config(hcd);
 }
 
 #endif

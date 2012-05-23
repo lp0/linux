@@ -15,7 +15,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  *
- * Derived from the Synopsys, Inc. driver (see dwc2xx-hcd.h for licence notice)
+ * Derived from the Synopsys, Inc. driver (see dwc2-hcd.h for licence notice)
  */
 
 #include <linux/device.h>
@@ -36,14 +36,14 @@
 # include "../../misc/bcm-vc-power.h"
 #endif
 
-#include "dwc2xx-hcd.h"
+#include "dwc2-hcd.h"
 
-#define MODULE_NAME "dwc2xx-hcd"
+#define MODULE_NAME "dwc2-hcd"
 
 /* TODO simplify this */
 static u16 dwc_calc_frame_interval(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u16 clock = 60;
 
 	if (dwc->usb_cfg.physel) {
@@ -75,9 +75,9 @@ static u16 dwc_calc_frame_interval(struct usb_hcd *hcd)
 		return 1000 * clock;
 }
 
-static irqreturn_t dwc2xx_hcd_host_chan_irq(struct usb_hcd *hcd, int chan)
+static irqreturn_t dwc2_hcd_host_chan_irq(struct usb_hcd *hcd, int chan)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 status = readl(hcd->regs + DWC_HOST_CHAN_INT_STAT_REG(chan));
 	u32 mask = readl(hcd->regs + DWC_HOST_CHAN_INT_MASK_REG(chan));
 	u32 handled = 0;
@@ -138,9 +138,9 @@ static irqreturn_t dwc2xx_hcd_host_chan_irq(struct usb_hcd *hcd, int chan)
 	}
 }
 
-static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
+static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	unsigned long flags;
 	u32 status = readl(hcd->regs + DWC_CORE_INT_STAT_REG);
 	u32 mask = readl(hcd->regs + DWC_CORE_INT_MASK_REG);
@@ -223,7 +223,7 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 
 	if (status & DWC_PORT_INT) {
 		spin_lock_irqsave(&dwc->lock, flags);
-		dwc2xx_hcd_get_hprt(hcd);
+		dwc2_hcd_get_hprt(hcd);
 		dev_dbg(dwc->dev, "%s: DWC_PORT_INT con=%d en=%d ovrc=%d\n",
 			__func__,
 			dwc->hprt.connect_int,
@@ -234,11 +234,11 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 		/* Ignore overcurrent_int as we've now stored it */
 		if (dwc->hprt.enabled_int && dwc->hprt.enabled) {
 			/* Reconfigure Host Frame Interval */
-			dwc2xx_hcd_get_hfir_cfg(hcd);
+			dwc2_hcd_get_hfir_cfg(hcd);
 			dwc->hfir_cfg.frame_interval = dwc_calc_frame_interval(hcd);
-			dwc2xx_hcd_set_hfir_cfg(hcd);
+			dwc2_hcd_set_hfir_cfg(hcd);
 		}
-		dwc2xx_hcd_set_hprt(hcd);
+		dwc2_hcd_set_hprt(hcd);
 		spin_unlock_irqrestore(&dwc->lock, flags);
 	}
 
@@ -249,7 +249,7 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 		dev_dbg(dwc->dev, "%s: DWC_HOST_CHAN_INT\n", __func__);
 
 		for (i = 0; i < DWC_HOST_CHAN_COUNT; i++)
-			ok &= dwc2xx_hcd_host_chan_irq(hcd, i) != IRQ_NONE;
+			ok &= dwc2_hcd_host_chan_irq(hcd, i) != IRQ_NONE;
 
 		if (ok)
 			handled |= DWC_HOST_CHAN_INT;
@@ -272,9 +272,9 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 	}
 }
 
-static int dwc2xx_hcd_do_soft_reset(struct usb_hcd *hcd)
+static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	int i;
 
 	/* Perform a soft reset */
@@ -307,14 +307,14 @@ static int dwc2xx_hcd_do_soft_reset(struct usb_hcd *hcd)
 	}
 
 	spin_lock_irq(&dwc->lock);
-	dwc2xx_hcd_get_cfg(hcd);
+	dwc2_hcd_get_cfg(hcd);
 	spin_unlock_irq	(&dwc->lock);
 	return 0;
 }
 
-static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
+static int dwc2_hcd_reset(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	u32 usb_cfg;
 	int ret;
 
@@ -328,7 +328,7 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 	}
 #endif
 
-	ret = dwc2xx_hcd_do_soft_reset(hcd);
+	ret = dwc2_hcd_do_soft_reset(hcd);
 	if (ret)
 		return ret;
 
@@ -348,25 +348,25 @@ static int dwc2xx_hcd_reset(struct usb_hcd *hcd)
 
 	/* Don't reset again if the PHY is already configured */
 	if (dwc->__usb_cfg != usb_cfg) {
-		dwc2xx_hcd_set_usb_cfg(hcd);
+		dwc2_hcd_set_usb_cfg(hcd);
 		spin_unlock_irq(&dwc->lock);
 
-		ret = dwc2xx_hcd_do_soft_reset(hcd);
+		ret = dwc2_hcd_do_soft_reset(hcd);
 		spin_lock_irq(&dwc->lock);
 	}
 
 	/* Turn the host port off */
-	dwc2xx_hcd_get_hprt(hcd);
+	dwc2_hcd_get_hprt(hcd);
 	dwc->hprt.power = false;
-	dwc2xx_hcd_set_hprt(hcd);
+	dwc2_hcd_set_hprt(hcd);
 
 	spin_unlock_irq(&dwc->lock);
 	return ret;
 }
 
-static int dwc2xx_hcd_start(struct usb_hcd *hcd)
+static int dwc2_hcd_start(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	struct usb_bus *bus = hcd_to_bus(hcd);
 	u32 ints = 0;
 	int i;
@@ -378,13 +378,13 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 	writel(0, hcd->regs + DWC_OTG_PWR_CLK_CTL_REG);
 
 	/* Host configuration */
-	dwc2xx_hcd_get_host_cfg(hcd);
+	dwc2_hcd_get_host_cfg(hcd);
 	dwc->host_cfg.fsls_pclk = DWC_HOST_PCLK_30_60_MHZ;
-	dwc2xx_hcd_set_host_cfg(hcd);
+	dwc2_hcd_set_host_cfg(hcd);
 
-	dwc2xx_hcd_get_hfir_cfg(hcd);
+	dwc2_hcd_get_hfir_cfg(hcd);
 	dwc->hfir_cfg.dyn_frame_reload = true;
-	dwc2xx_hcd_set_hfir_cfg(hcd);
+	dwc2_hcd_set_hfir_cfg(hcd);
 
 	/* Configure DMA */
 	dwc->host_cfg.sg_dma = dwc->hw_cfg4.desc_dma
@@ -427,7 +427,7 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 		dwc->usb_cfg.srp_capable = false;
 		break;
 	}
-	dwc2xx_hcd_set_usb_cfg(hcd);
+	dwc2_hcd_set_usb_cfg(hcd);
 
 	/* Low power mode not supported */
 	dwc->lpm_cfg.lpm_cap_en = false;
@@ -437,9 +437,9 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 	dwc->usb_cfg.ic_usb_capable = dwc->hw_cfg2.otg_enable_ic_usb;
 
 	/* Apply configuration */
-	dwc2xx_hcd_set_ahb_cfg(hcd);
-	dwc2xx_hcd_set_usb_cfg(hcd);
-	dwc2xx_hcd_set_lpm_cfg(hcd);
+	dwc2_hcd_set_ahb_cfg(hcd);
+	dwc2_hcd_set_usb_cfg(hcd);
+	dwc2_hcd_set_lpm_cfg(hcd);
 
 	/* Clear all pending interrupts */
 	writel(~0, hcd->regs + DWC_OTG_INT_REG);
@@ -491,7 +491,7 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 
 	/* Enable interrupts */
 	dwc->ahb_cfg.int_enable = true;
-	dwc2xx_hcd_set_ahb_cfg(hcd);
+	dwc2_hcd_set_ahb_cfg(hcd);
 
 	spin_unlock_irq(&dwc->lock);
 
@@ -500,9 +500,9 @@ static int dwc2xx_hcd_start(struct usb_hcd *hcd)
 	return 0;
 }
 
-static void dwc2xx_hcd_stop(struct usb_hcd *hcd)
+static void dwc2_hcd_stop(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 
@@ -510,7 +510,7 @@ static void dwc2xx_hcd_stop(struct usb_hcd *hcd)
 
 	/* Disable interrupts */
 	dwc->ahb_cfg.int_enable = false;
-	dwc2xx_hcd_set_ahb_cfg(hcd);
+	dwc2_hcd_set_ahb_cfg(hcd);
 
 	/* Mask all interrupts */
 	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
@@ -518,14 +518,14 @@ static void dwc2xx_hcd_stop(struct usb_hcd *hcd)
 	spin_unlock_irq(&dwc->lock);
 
 	/* Turn the host port off */
-	dwc2xx_hcd_get_hprt(hcd);
+	dwc2_hcd_get_hprt(hcd);
 	dwc->hprt.power = false;
-	dwc2xx_hcd_set_hprt(hcd);
+	dwc2_hcd_set_hprt(hcd);
 }
 
-static void dwc2xx_hcd_shutdown(struct usb_hcd *hcd)
+static void dwc2_hcd_shutdown(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 
@@ -536,52 +536,52 @@ static void dwc2xx_hcd_shutdown(struct usb_hcd *hcd)
 #endif
 }
 
-static int dwc2xx_hcd_get_frame_number(struct usb_hcd *hcd)
+static int dwc2_hcd_get_frame_number(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return -ENOSYS;
 }
 
-static int dwc2xx_hcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
+static int dwc2_hcd_urb_enqueue(struct usb_hcd *hcd, struct urb *urb,
 	gfp_t mem_flags)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return -ENOSYS;
 }
 
-static int dwc2xx_hcd_urb_dequeue(struct usb_hcd *hcd, struct urb *urb,
+static int dwc2_hcd_urb_dequeue(struct usb_hcd *hcd, struct urb *urb,
 	int status)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return -ENOSYS;
 }
 
-static void dwc2xx_hcd_endpoint_disable(struct usb_hcd *hcd,
+static void dwc2_hcd_endpoint_disable(struct usb_hcd *hcd,
 	struct usb_host_endpoint *ep)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 }
 
-static int dwc2xx_hcd_hub_status_data(struct usb_hcd *hcd, char *buf)
+static int dwc2_hcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return -ENOSYS;
 }
 
-static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
+static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	u16 typeReq, u16 wValue, u16 wIndex, char *buf, u16 wLength)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	int port = wIndex - 1;
 
 	switch (typeReq) {
@@ -610,9 +610,9 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 
 		switch (wValue) {
 		case USB_PORT_FEAT_POWER:
-			dwc2xx_hcd_get_hprt(hcd);
+			dwc2_hcd_get_hprt(hcd);
 			dwc->hprt.power = true;
-			dwc2xx_hcd_set_hprt(hcd);
+			dwc2_hcd_set_hprt(hcd);
 			return dwc->hprt.power ? 0 : -EPIPE;
 		}
 		break;
@@ -624,9 +624,9 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 
 		switch (wValue) {
 		case USB_PORT_FEAT_POWER:
-			dwc2xx_hcd_get_hprt(hcd);
+			dwc2_hcd_get_hprt(hcd);
 			dwc->hprt.power = false;
-			dwc2xx_hcd_set_hprt(hcd);
+			dwc2_hcd_set_hprt(hcd);
 			return !dwc->hprt.power ? 0 : -EPIPE;
 		};
 		break;
@@ -640,63 +640,63 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 	return -EPIPE;
 }
 
-static int dwc2xx_hcd_bus_suspend(struct usb_hcd *hcd)
+static int dwc2_hcd_bus_suspend(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return 0;
 }
 
-static int dwc2xx_hcd_bus_resume(struct usb_hcd *hcd)
+static int dwc2_hcd_bus_resume(struct usb_hcd *hcd)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return 0;
 }
 
-static int dwc2xx_hcd_start_port_reset(struct usb_hcd *hcd, unsigned port_num)
+static int dwc2_hcd_start_port_reset(struct usb_hcd *hcd, unsigned port_num)
 {
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	dev_dbg(dwc->dev, "%s\n", __func__);
 	return -ENOSYS;
 }
 
-static const struct hc_driver dwc2xx_hcd_hc_driver = {
+static const struct hc_driver dwc2_hcd_hc_driver = {
 	.description		= MODULE_NAME,
-	.product_desc		= "DWC 2.xx Host Controller",
-	.hcd_priv_size		= sizeof(struct dwc2xx_hcd),
+	.product_desc		= "Synopsys DesignWare USB 2.0 Host Controller",
+	.hcd_priv_size		= sizeof(struct dwc2_hcd),
 	
-	.irq			= dwc2xx_hcd_irq,
+	.irq			= dwc2_hcd_irq,
 	.flags			= HCD_MEMORY | HCD_USB2,
 
-	.reset			= dwc2xx_hcd_reset,
-	.start			= dwc2xx_hcd_start,
-	.stop			= dwc2xx_hcd_stop,
-	.shutdown		= dwc2xx_hcd_shutdown,
+	.reset			= dwc2_hcd_reset,
+	.start			= dwc2_hcd_start,
+	.stop			= dwc2_hcd_stop,
+	.shutdown		= dwc2_hcd_shutdown,
 
-	.urb_enqueue		= dwc2xx_hcd_urb_enqueue,
-	.urb_dequeue		= dwc2xx_hcd_urb_dequeue,
-	.endpoint_disable	= dwc2xx_hcd_endpoint_disable,
+	.urb_enqueue		= dwc2_hcd_urb_enqueue,
+	.urb_dequeue		= dwc2_hcd_urb_dequeue,
+	.endpoint_disable	= dwc2_hcd_endpoint_disable,
 
-	.get_frame_number	= dwc2xx_hcd_get_frame_number,
+	.get_frame_number	= dwc2_hcd_get_frame_number,
 
-	.hub_status_data	= dwc2xx_hcd_hub_status_data,
-	.hub_control		= dwc2xx_hcd_hub_control,
+	.hub_status_data	= dwc2_hcd_hub_status_data,
+	.hub_control		= dwc2_hcd_hub_control,
 
-	.bus_suspend		= dwc2xx_hcd_bus_suspend,
-	.bus_resume		= dwc2xx_hcd_bus_resume,
+	.bus_suspend		= dwc2_hcd_bus_suspend,
+	.bus_resume		= dwc2_hcd_bus_resume,
 
-	.start_port_reset       = dwc2xx_hcd_start_port_reset
+	.start_port_reset       = dwc2_hcd_start_port_reset
 };
 
-static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
+static int __devinit dwc2_hcd_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct usb_hcd *hcd;
-	struct dwc2xx_hcd *dwc;
+	struct dwc2_hcd *dwc;
 	int ret;
 
 	BUILD_BUG_ON(sizeof(dwc->__ahb_cfg) != sizeof(dwc->ahb_cfg));
@@ -710,7 +710,7 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 	BUILD_BUG_ON(sizeof(dwc->__hfir_cfg) != sizeof(dwc->hfir_cfg));
 	BUILD_BUG_ON(sizeof(dwc->__hprt) != sizeof(dwc->hprt));
 
-	hcd = usb_create_hcd(&dwc2xx_hcd_hc_driver,
+	hcd = usb_create_hcd(&dwc2_hcd_hc_driver,
 			&pdev->dev, dev_name(&pdev->dev));
 	if (hcd == NULL)
 		return -ENOMEM;
@@ -754,7 +754,7 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		goto err_unmap;
 	}
 	dwc->user_id = readl(hcd->regs + DWC_USER_ID_REG);
-	dwc2xx_hcd_get_cfg(hcd);
+	dwc2_hcd_get_cfg(hcd);
 
 	if (dwc->hw_cfg2.arch != DWC_INT_DMA_ARCH) {
 		dev_err(dwc->dev, "architecture %d not supported\n",
@@ -802,11 +802,11 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 		dwc->snps_id & ~DWC_SNPS_ID_MASK, dwc->user_id,
 		(unsigned long)dwc->res.start, dwc->irq);
 
-	dwc2xx_hcd_debug(hcd);
+	dwc2_hcd_debug(hcd);
 
 	/* Ensure the device won't trigger any interrupts */
 	dwc->ahb_cfg.int_enable = false;
-	dwc2xx_hcd_set_ahb_cfg(hcd);
+	dwc2_hcd_set_ahb_cfg(hcd);
 	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
 
 	spin_lock_init(&dwc->lock);
@@ -834,10 +834,10 @@ err:
 	return ret;
 }
 
-static int dwc2xx_hcd_remove(struct platform_device *pdev)
+static int dwc2_hcd_remove(struct platform_device *pdev)
 {
 	struct usb_hcd *hcd = platform_get_drvdata(pdev);
-	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 
 	usb_remove_hcd(hcd);
 #ifdef CONFIG_BCM_VC_POWER
@@ -851,23 +851,23 @@ static int dwc2xx_hcd_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct of_device_id dwc2xx_hcd_match[] __devinitconst = {
+static struct of_device_id dwc2_hcd_match[] __devinitconst = {
 	{ .compatible = "synopsys,designware-hs-otg2-host" },
 	{ .compatible = "broadcom,bcm2708-usb" },
 	{}
 };
-MODULE_DEVICE_TABLE(of, dwc2xx_hcd_match);
+MODULE_DEVICE_TABLE(of, dwc2_hcd_match);
 
-static struct platform_driver dwc2xx_hcd_driver = {
-	.probe	= dwc2xx_hcd_probe,
-	.remove	= dwc2xx_hcd_remove,
+static struct platform_driver dwc2_hcd_driver = {
+	.probe	= dwc2_hcd_probe,
+	.remove	= dwc2_hcd_remove,
 	.driver	= {
 		.name = MODULE_NAME,
 		.owner = THIS_MODULE,
-		.of_match_table = dwc2xx_hcd_match
+		.of_match_table = dwc2_hcd_match
 	}
 };
-module_platform_driver(dwc2xx_hcd_driver);
+module_platform_driver(dwc2_hcd_driver);
 
 MODULE_AUTHOR("Simon Arlott");
 MODULE_DESCRIPTION("Synopsys Designware HS OTG 2.xx driver (host mode)");
