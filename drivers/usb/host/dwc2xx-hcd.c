@@ -149,17 +149,14 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 	status &= mask;
 	dev_dbg(dwc->dev, "%s: status = %08x\n", __func__, status);
 
-	if (status & DWC_CURRENT_MODE_INT)
-		dev_warn(dwc->dev, "%s: DWC_CURRENT_MODE_INT\n", __func__);
+	if (status & DWC_MODE_MISMATCH_INT) {
+		dev_emerg(dwc->dev, "%s: OTG USB mode mismatch\n", __func__);
+		/* We could turn off the power? */
+		handled |= DWC_MODE_MISMATCH_INT;
+	}
 
-	if (status & DWC_MODE_MISMATCH_INT)
-		dev_warn(dwc->dev, "%s: DWC_MODE_MISMATCH_INT\n", __func__);
-
-	if (status & DWC_OTG_INT)
-		dev_warn(dwc->dev, "%s: DWC_OTG_INT\n", __func__);
-
-	if (status & DWC_SOF_INT)
-		dev_warn(dwc->dev, "%s: DWC_SOF_INT\n", __func__);
+	if (status & DWC_DMA_SOF_INT)
+		dev_warn(dwc->dev, "%s: DWC_DMA_SOF_INT\n", __func__);
 
 	if (status & DWC_RX_STAT_LEVEL_INT) {
 		dev_dbg(dwc->dev, "%s: DWC_RX_STAT_LEVEL_INT\n", __func__);
@@ -187,12 +184,6 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 
 	if (status & DWC_EARLY_SUSPEND_INT)
 		dev_warn(dwc->dev, "%s: DWC_EARLY_SUSPEND_INT\n", __func__);
-
-	if (status & DWC_USB_SUSPEND_INT) {
-		dev_dbg(dwc->dev, "%s: DWC_USB_SUSPEND_INT\n", __func__);
-		/* TODO */
-		handled |= DWC_USB_SUSPEND_INT;
-	}
 
 	if (status & DWC_USB_RESET_INT)
 		dev_warn(dwc->dev, "%s: DWC_USB_RESET_INT\n", __func__);
@@ -268,33 +259,6 @@ static irqreturn_t dwc2xx_hcd_irq(struct usb_hcd *hcd)
 		dev_dbg(dwc->dev, "%s: DWC_HP_TX_FIFO_EMPTY_INT\n", __func__);
 		/* TODO */
 		handled |= DWC_HP_TX_FIFO_EMPTY_INT;
-	}
-
-	if (status & DWC_LPM_TXN_RCVD_INT)
-		dev_warn(dwc->dev, "%s: DWC_LPM_TXN_RCVD_INT\n", __func__);
-
-	if (status & DWC_CON_ID_STAT_CHG_INT) {
-		dev_dbg(dwc->dev, "%s: DWC_CON_ID_STAT_CHG_INT\n", __func__);
-		/* TODO */
-		handled |= DWC_CON_ID_STAT_CHG_INT;
-	}
-
-	if (status & DWC_DISCONNECT_INT) {
-		dev_dbg(dwc->dev, "%s: DWC_DISCONNECT_INT\n", __func__);
-		/* TODO */
-		handled |= DWC_DISCONNECT_INT;
-	}
-
-	if (status & DWC_SESS_REQ_INT) {
-		dev_dbg(dwc->dev, "%s: DWC_SESS_REQ_INT\n", __func__);
-		/* TODO */
-		handled |= DWC_SESS_REQ_INT;
-	}
-
-	if (status & DWC_WAKEUP_INT) {
-		dev_dbg(dwc->dev, "%s: DWC_WAKEUP_INT\n", __func__);
-		/* TODO */
-		handled |= DWC_WAKEUP_INT;
 	}
 
 	writel(handled, hcd->regs + DWC_CORE_INT_STAT_REG);
