@@ -429,7 +429,9 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
 
-	dev_dbg(dwc->dev, "%s\n", __func__);
+	dev_dbg(dwc->dev,
+		"%s typeReq=%04x wValue=%04x wIndex=%04x wLength=%04x\n",
+		__func__, typeReq, wValue, wIndex, wLength);
 
 	switch (typeReq) {
 	case GetHubDescriptor: {
@@ -443,7 +445,12 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 		d->bHubContrCurrent = 0;
 		d->u.hs.DeviceRemovable[0] = 0;
 		d->u.hs.PortPwrCtrlMask[0] = ~0;
-		return 0;
+		return d->bDescLength;
+	}
+
+	case GetHubStatus: {
+		*(__le32 *)buf = cpu_to_le32(0); /* OK */
+		return 4;
 	}
 	}
 
