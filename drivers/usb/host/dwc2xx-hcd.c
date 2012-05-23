@@ -428,10 +428,7 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 	u16 typeReq, u16 wValue, u16 wIndex, char *buf, u16 wLength)
 {
 	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
-
-	dev_dbg(dwc->dev,
-		"%s typeReq=%04x wValue=%04x wIndex=%04x wLength=%04x\n",
-		__func__, typeReq, wValue, wIndex, wLength);
+	int port = wIndex - 1;
 
 	switch (typeReq) {
 	case GetHubDescriptor: {
@@ -452,7 +449,39 @@ static int dwc2xx_hcd_hub_control(struct usb_hcd *hcd,
 		*(__le32 *)buf = cpu_to_le32(0); /* OK */
 		return 4;
 	}
+
+	case SetPortFeature: {
+		if (port > 0)
+			break;
+
+		switch (wValue) {
+		case USB_PORT_FEAT_POWER:
+			dwc2xx_hcd_get_hprt(hcd);
+			dwc->hprt.power = true;
+			dwc2xx_hcd_set_hprt(hcd);
+			return dwc->hprt.power ? 0 : -EPIPE;
+		}
+		break;
 	}
+
+	case ClearPortFeature: {
+		if (port > 0)
+			break;
+
+		switch (wValue) {
+		case USB_PORT_FEAT_POWER:
+			dwc2xx_hcd_get_hprt(hcd);
+			dwc->hprt.power = false;
+			dwc2xx_hcd_set_hprt(hcd);
+			return !dwc->hprt.power ? 0 : -EPIPE;
+		};
+		break;
+	}
+	}
+
+	dev_dbg(dwc->dev,
+		"%s typeReq=%04x wValue=%04x wIndex=%04x wLength=%04x\n",
+		__func__, typeReq, wValue, wIndex, wLength);
 
 	return -EPIPE;
 }
