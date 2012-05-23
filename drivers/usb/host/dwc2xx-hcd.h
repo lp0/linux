@@ -74,6 +74,25 @@ struct dwc2xx_hcd_ahb_cfg {
 	unsigned				reserved24_31:8;
 };
 
+enum dwc_host_cfg_pclk {
+	DWC_HOST_PCLK_30_60_MHZ,
+	DWC_HOST_PCLK_48_MHZ,
+	DWC_HOST_PCLK_6_MHZ
+};
+struct dwc2xx_hcd_host_cfg {
+	enum dwc_host_cfg_pclk			fsls_pclk:2;
+	bool					fsls_only:1;
+	unsigned				reserved3_6:4;
+	unsigned				en_32khz_susp:1;
+	unsigned				res_val_period:8;
+	unsigned				reserved16_22:7;
+	bool					sg_dma:1;
+	unsigned				fr_list_sz:2;
+	unsigned				per_sched:1;
+	unsigned				reserved27_30:4;
+	bool					mode_chg_time:1;
+};
+
 struct dwc2xx_hcd_usb_cfg {
 	unsigned				toutcal:3;
 	bool					phyif:1;
@@ -85,7 +104,8 @@ struct dwc2xx_hcd_usb_cfg {
 	bool					hnp_capable:1;
 	unsigned				usbtrdtim:4;
 	unsigned				reserved1:1;
-	bool					phylpwrclksel:1;
+	/* PHY lower power mode clock select */
+	bool					phy_lpm_clk_sel:1;
 	bool					otgutmifssel:1;
 	bool					ulpi_fsls:1;
 	bool					ulpi_auto_res:1;
@@ -259,18 +279,24 @@ struct dwc2xx_hcd_lpm_cfg {
 	bool					inv_sel_hsic:1;
 };
 
+struct dwc2xx_hcd_hfir_cfg {
+	u16				frame_interval:16;
+	bool				dyn_frame_reload:1;
+	unsigned			reserved:15;
+};
+
 enum dwc_hprt_speed {
-	DWC_HPRT_SPEED_LOW,
-	DWC_HPRT_SPEED_FULL,
 	DWC_HPRT_SPEED_HIGH,
+	DWC_HPRT_SPEED_FULL,
+	DWC_HPRT_SPEED_LOW
 };
 struct dwc2xx_hcd_hprt {
-	bool				conn_stat:1;
-	bool				conn_det:1;
+	bool				connect:1;
+	bool				connect_int:1;		/* intr */
 	bool				enabled:1;
-	bool				prtenchng:1;
-	bool				over_curr_act:1;
-	bool				over_curr_chng:1;
+	bool				enabled_int:1;		/* intr */
+	bool				overcurrent:1;
+	bool				overcurrent_int:1;	/* intr */	
 	bool				resume:1;
 	bool				suspend:1;
 	bool				reset:1;
@@ -298,6 +324,10 @@ struct dwc2xx_hcd {
 		struct dwc2xx_hcd_ahb_cfg ahb_cfg;
 	};
 	union {
+		u32 __host_cfg;
+		struct dwc2xx_hcd_host_cfg host_cfg;
+	};
+	union {
 		u32 __usb_cfg;
 		struct dwc2xx_hcd_usb_cfg usb_cfg;
 	};
@@ -320,6 +350,10 @@ struct dwc2xx_hcd {
 	union {
 		u32 __lpm_cfg;
 		struct dwc2xx_hcd_lpm_cfg lpm_cfg;
+	};
+	union {
+		u32 __hfir_cfg;
+		struct dwc2xx_hcd_hfir_cfg hfir_cfg;
 	};
 	union {
 		u32 __hprt;
@@ -395,7 +429,7 @@ enum dwc2xx_hcd_core_int {
 	DWC_FETSUSP_INT			= BIT(22), /* TODO: rename */
 	DWC_RESET_DETECT_INT		= BIT(23),
 	DWC_PORT_INT			= BIT(24),
-	DWC_HC_INT			= BIT(25),
+	DWC_HOST_CHAN_INT		= BIT(25),
 	DWC_HP_TX_FIFO_EMPTY_INT	= BIT(26),
 	DWC_LPM_TXN_RCVD_INT		= BIT(27),
 	DWC_CON_ID_STAT_CHG_INT		= BIT(28),
@@ -441,10 +475,29 @@ enum dwc2xx_hcd_core_int {
 #define DWC_HOST_CHAN_SPLIT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x04)	/* Host Channel Split Control */
 #define DWC_HOST_CHAN_INT_STAT_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x08)	/* Host Channel Interrupt */
 #define DWC_HOST_CHAN_INT_MASK_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x0c)	/* Host Channel Interrupt Mask */
+enum dwc2xx_hcd_host_chan_int {
+	DWC_CHAN_XFER_COMP_INT		= BIT(0),
+	DWC_CHAN_HALT_INT		= BIT(1),
+	DWC_CHAN_AHB_ERR_INT		= BIT(2),
+	DWC_CHAN_STALL_INT		= BIT(3),
+	DWC_CHAN_NAK_INT		= BIT(4),
+	DWC_CHAN_ACK_INT		= BIT(5),
+	DWC_CHAN_NYET_INT		= BIT(6),
+	DWC_CHAN_XACT_ERR_INT		= BIT(7),
+	DWC_CHAN_BBL_ERR_INT		= BIT(8), /* Babble error */
+	DWC_CHAN_FR_OVERRUN_INT		= BIT(9),
+	DWC_CHAN_DTGL_ERR_INT		= BIT(10), /* Data toggle error */
+	DWC_CHAN_BNA_INT		= BIT(11), /* Buffer not available */
+	DWC_CHAN_XCES_ERR_INT		= BIT(12), /* Excessive txn error */
+	DWC_CHAN_FR_LIST_ROLL_INT	= BIT(13) /* Frame list rollover */
+};
+
 #define DWC_HOST_CHAN_TX_SZ_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x10)	/* Host Channel Transfer Size */
 #define DWC_HOST_CHAN_DMA_ADDR_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x14)	/* Host Channel DMA Address */
 #define DWC_HOST_CHAN_DMA_BUFA_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x1c)	/* Host Channel DMA Buffer Address */
 #define DWC_HOST_CHAN_COUNT		16	
+
+#define DWC_OTG_PWR_CLK_CTL_REG		0xe00
 
 static inline struct dwc2xx_hcd *hcd_to_dwc(struct usb_hcd *hcd)
 {
@@ -471,6 +524,22 @@ static void dwc2xx_hcd_set_ahb_cfg(struct usb_hcd *hcd)
 	dwc->__ahb_cfg = readl(hcd->regs + DWC_CORE_AHB_CFG_REG);
 	WARN(dwc->__ahb_cfg != value, "%s: write %08x, read %08x\n",
 		__func__, value, dwc->__ahb_cfg);
+}
+
+static void dwc2xx_hcd_get_host_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__host_cfg = readl(hcd->regs + DWC_HOST_CFG_REG);
+}
+
+static void dwc2xx_hcd_set_host_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	u32 value = dwc->__host_cfg;
+	writel(dwc->__host_cfg, hcd->regs + DWC_HOST_CFG_REG);
+	dwc->__host_cfg = readl(hcd->regs + DWC_HOST_CFG_REG);
+	WARN(dwc->__host_cfg != value, "%s: write %08x, read %08x\n",
+		__func__, value, dwc->__host_cfg);
 }
 
 static void dwc2xx_hcd_set_usb_cfg(struct usb_hcd *hcd)
@@ -505,8 +574,25 @@ static void dwc2xx_hcd_set_hprt(struct usb_hcd *hcd)
 	u32 value = dwc->__hprt;
 	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
 	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
+	value &= ~0x2A; /* Interrupts */
 	WARN(dwc->__hprt != value, "%s: write %08x, read %08x\n",
 		__func__, value, dwc->__hprt);
+}
+
+static void dwc2xx_hcd_get_hfir_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__hfir_cfg = readl(hcd->regs + DWC_HOST_FRAME_INTVL_REG);
+}
+
+static void dwc2xx_hcd_set_hfir_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2xx_hcd *dwc = hcd_to_dwc(hcd);
+	u32 value = dwc->__hfir_cfg;
+	writel(dwc->__hfir_cfg, hcd->regs + DWC_HOST_FRAME_INTVL_REG);
+	dwc->__hfir_cfg = readl(hcd->regs + DWC_HOST_FRAME_INTVL_REG);
+	WARN(dwc->__hfir_cfg != value, "%s: write %08x, read %08x\n",
+		__func__, value, dwc->__hfir_cfg);
 }
 
 static void dwc2xx_hcd_dump_regs(struct usb_hcd *hcd)
@@ -558,7 +644,7 @@ static void dwc2xx_hcd_dump_config(struct usb_hcd *hcd)
 	dev_dbg(dwc->dev, "usb.hnp_capable = %u\n", dwc->usb_cfg.hnp_capable);
 	dev_dbg(dwc->dev, "usb.usbtrdtim = %u\n", dwc->usb_cfg.usbtrdtim);
 	dev_dbg(dwc->dev, "usb.reserved1 = %u\n", dwc->usb_cfg.reserved1);
-	dev_dbg(dwc->dev, "usb.phylpwrclksel = %u\n", dwc->usb_cfg.phylpwrclksel);
+	dev_dbg(dwc->dev, "usb.phy_lpm_clk_sel = %u\n", dwc->usb_cfg.phy_lpm_clk_sel);
 	dev_dbg(dwc->dev, "usb.otgutmifssel = %u\n", dwc->usb_cfg.otgutmifssel);
 	dev_dbg(dwc->dev, "usb.ulpi_fsls = %u\n", dwc->usb_cfg.ulpi_fsls);
 	dev_dbg(dwc->dev, "usb.ulpi_auto_res = %u\n", dwc->usb_cfg.ulpi_auto_res);
