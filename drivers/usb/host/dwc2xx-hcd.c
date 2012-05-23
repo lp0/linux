@@ -516,21 +516,22 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_BCM_VC_POWER
 	/* We're going to need power now */
-	dwc->power = bcm_vc_power_get(np, "vc_power", "vc_index");
-	if (IS_ERR(dwc->power)) {
-		if (PTR_ERR(dwc->power) != -ECHILD) {
+	if (bcm_vc_power_is_user(np)) {
+		dwc->power = bcm_vc_power_get(np, NULL, NULL);
+		if (IS_ERR(dwc->power)) {
 			ret = PTR_ERR(dwc->power);
 			dev_err(dwc->dev, "no power manager (%d)\n", ret);
 			goto err_unmap;
 		} else {
-			dwc->power = NULL;
+			ret = bcm_vc_power_on(dwc->power);
+			if (ret) {
+				dev_err(dwc->dev,
+					"unable to power on (%d)\n", ret);
+				goto err_power_off;
+			}
 		}
 	} else {
-		ret = bcm_vc_power_on(dwc->power);
-		if (ret) {
-			dev_err(dwc->dev, "unable to power on (%d)\n", ret);
-			goto err_power_put;
-		}
+		dwc->power = NULL;
 	}
 #endif
 
@@ -557,9 +558,6 @@ static int __devinit dwc2xx_hcd_probe(struct platform_device *pdev)
 err_power_off:
 #ifdef CONFIG_BCM_VC_POWER
 	if (dwc->power)
-		bcm_vc_power_off(dwc->power);
-err_power_put:
-	if (dwc->power)
 		bcm_vc_power_put(dwc->power);
 #endif
 err_unmap:
@@ -578,10 +576,8 @@ static int dwc2xx_hcd_remove(struct platform_device *pdev)
 
 	usb_remove_hcd(hcd);
 #ifdef CONFIG_BCM_VC_POWER
-	if (dwc->power) {
-		bcm_vc_power_off(dwc->power);
+	if (dwc->power)
 		bcm_vc_power_put(dwc->power);
-	}
 #endif
 	iounmap(hcd->regs);
 	release_region(dwc->res.start, resource_size(&dwc->res));
