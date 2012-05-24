@@ -324,6 +324,12 @@ struct dwc2_hcd {
 
 	u32 snps_id;
 	u32 user_id;
+	bool connect;
+	bool enable;
+	bool overcurrent;
+	bool disable;
+	bool reset_req;
+	bool reset_res;
 	union {
 		u32 __ahb_cfg;
 		struct dwc2_hcd_ahb_cfg ahb_cfg;
@@ -611,6 +617,22 @@ static void dwc2_hcd_get_hprt(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
+	dev_dbg(dwc->dev, "%s: c=%d e=%d o=%d r=%d\n", __func__,
+		dwc->hprt.connect, dwc->hprt.enable, dwc->hprt.overcurrent,
+		dwc->hprt.reset);
+	dwc->connect |= dwc->hprt.connect_chg;
+	dwc->enable |= dwc->hprt.enable_chg;
+	dwc->overcurrent |= dwc->hprt.overcurrent_chg;
+	if (dwc->hprt.reset) {
+		dwc->reset_req = false;
+		dwc->reset_res = true;
+
+		/* Clear reset */
+		dwc->hprt.reset = false;
+	} else if (dwc->reset_req) {
+		/* Send reset until successful or the reset will be aborted */
+		dwc->hprt.reset = true;
+	}
 }
 
 static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
@@ -619,22 +641,23 @@ static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
 	dwc->hprt.connect_chg = false;
 	dwc->hprt.enable_chg = false;
 	dwc->hprt.overcurrent_chg = false;
+	/* Send enable after a reset or the port will be disabled */
+	dwc->hprt.enable = !dwc->disable;
+	dev_dbg(dwc->dev, "%s: e=%d r=%d\n", __func__, dwc->hprt.enable,
+		dwc->hprt.reset);
 	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
+	dwc->reset_req = dwc->hprt.reset;
 }
 
-union dwc_hprt {
-	u32 __value;
-	struct dwc2_hcd_hprt value;
-};
-
-static void dwc2_hcd_ack_hprt(struct usb_hcd *hcd, int feat)
+static void dwc2_hcd_ack_hprt(struct usb_hcd *hcd)
 {
-	union dwc_hprt tmp;
-	tmp.__value = readl(hcd->regs + DWC_HOST_PORT_REG);
-	tmp.value.connect_chg = (feat == USB_PORT_FEAT_C_CONNECTION);
-	tmp.value.enable_chg = (feat == USB_PORT_FEAT_C_ENABLE);
-	tmp.value.overcurrent_chg = (feat == USB_PORT_FEAT_C_OVER_CURRENT);
-	writel(tmp.__value, hcd->regs + DWC_HOST_PORT_REG);
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc2_hcd_get_hprt(hcd);
+	/* Send enable after a reset or the port will be disabled */
+	dwc->hprt.enable = !dwc->disable;
+	dev_dbg(dwc->dev, "%s: e=%d r=%d\n", __func__, dwc->hprt.enable,
+		dwc->hprt.reset);
+	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
 }
 
 static void dwc2_hcd_get_hfir_cfg(struct usb_hcd *hcd)

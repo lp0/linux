@@ -144,6 +144,7 @@ static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 	u32 status = readl(hcd->regs + DWC_CORE_INT_STAT_REG);
 	u32 mask = readl(hcd->regs + DWC_CORE_INT_MASK_REG);
 	u32 handled = 0;
+	unsigned long flags;
 
 	status &= mask;
 	dev_dbg(dwc->dev, "%s: status = %08x\n", __func__, status);
@@ -220,6 +221,23 @@ static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 	if (status & DWC_RESET_DETECT_INT)
 		dev_warn(dwc->dev, "%s: DWC_RESET_DETECT_INT\n", __func__);
 
+	/* FIXME: remove this and the copy of the _chg flags */
+	if (status & DWC_PORT_INT) {
+		dev_dbg(dwc->dev, "%s: DWC_PORT_INT\n", __func__);
+
+		spin_lock_irqsave(&dwc->lock, flags);
+		dev_dbg(dwc->dev, "%s: DWC_PORT_INT c=%d e=%d o=%d r=%d/%d\n",
+			__func__, dwc->connect, dwc->enable, dwc->overcurrent,
+			dwc->reset_req, dwc->reset_res);
+		dwc2_hcd_ack_hprt(hcd);
+		dev_dbg(dwc->dev, "%s: DWC_PORT_INT c=%d e=%d o=%d r=%d/%d\n",
+			__func__, dwc->connect, dwc->enable, dwc->overcurrent,
+			dwc->reset_req, dwc->reset_res);
+		spin_unlock_irqrestore(&dwc->lock, flags);
+
+		handled |= DWC_PORT_INT;
+	}
+
 	if (status & DWC_HOST_CHAN_INT) {
 		bool ok = true;
 		int i;
@@ -240,9 +258,9 @@ static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 	}
 
 	writel(handled, hcd->regs + DWC_CORE_INT_STAT_REG);
-	if (status & handled) {
+	if (status & ~handled) {
 		dev_warn(dwc->dev, "%s: IRQ_NONE %08x\n", __func__,
-			status & handled);
+			status & ~handled);
 		return IRQ_NONE;
 	} else {
 		dev_dbg(dwc->dev, "%s: IRQ_HANDLED %08x\n", __func__, status);
@@ -521,7 +539,7 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 		ints |= DWC_LPM_TXN_RCVD_INT; */
 
 	/* Unmask host interrupts */
-	/* ints |= DWC_PORT_INT; */
+	ints |= DWC_PORT_INT;
 	ints |= DWC_HOST_CHAN_INT;
 	spin_unlock_irq(&dwc->lock);
 
@@ -663,15 +681,15 @@ static void dwc2_hcd_endpoint_disable(struct usb_hcd *hcd,
 static int dwc2_hcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	unsigned long flags;
 
-	dev_dbg(dwc->dev, "%s\n", __func__);
 	*buf = 0;
-	spin_lock_irq(&dwc->lock);
-	dwc2_hcd_get_hprt(hcd);
-	if (dwc->hprt.connect_chg || dwc->hprt.enable_chg || dwc->hprt.reset
-			|| dwc->hprt.overcurrent_chg)
+	spin_lock_irqsave(&dwc->lock, flags);
+	if (dwc->connect || dwc->enable || dwc->overcurrent
+			|| dwc->reset_req || dwc->reset_res)
 		*buf |= BIT(1);
-	spin_unlock_irq(&dwc->lock);
+	spin_unlock_irqrestore(&dwc->lock, flags);
+	dev_dbg(dwc->dev, "%s: %d\n", __func__, !!*buf);
 	return !!*buf;
 }
 
@@ -679,7 +697,6 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	u16 typeReq, u16 wValue, u16 wIndex, char *buf, u16 wLength)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
-	int port = wIndex - 1;
 
 	switch (typeReq) {
 	case GetHubDescriptor: {
@@ -706,7 +723,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	case SetPortFeature: {
 		int ret;
 
-		if (port != 1)
+		if (wIndex != 1)
 			break;
 
 		switch (wValue) {
@@ -714,6 +731,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 			dev_dbg(dwc->dev, "SetPortFeature USB_PORT_FEAT_POWER\n");
 			spin_lock_irq(&dwc->lock);
 			dwc2_hcd_get_hprt(hcd);
+			dwc->disable = false;
 			dwc->hprt.power = true;
 			dwc2_hcd_set_hprt(hcd);
 			ret = dwc->hprt.power ? 0 : -EPIPE;
@@ -724,6 +742,8 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 			dev_dbg(dwc->dev, "SetPortFeature USB_PORT_FEAT_RESET\n");
 			spin_lock_irq(&dwc->lock);
 			dwc2_hcd_get_hprt(hcd);
+			dwc->disable = false;
+			dwc->reset_res = false;
 			dwc->hprt.reset = true;
 			dwc2_hcd_set_hprt(hcd);
 			spin_unlock_irq(&dwc->lock);
@@ -735,7 +755,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	case ClearPortFeature: {
 		int ret;
 
-		if (port != 1)
+		if (wIndex != 1)
 			break;
 
 		switch (wValue) {
@@ -753,32 +773,36 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 			dev_dbg(dwc->dev, "ClearPortFeature USB_PORT_FEAT_ENABLE\n");
 			spin_lock_irq(&dwc->lock);
 			dwc2_hcd_get_hprt(hcd);
-			dwc->hprt.enable = false;
+			dwc->disable = true;
 			dwc2_hcd_set_hprt(hcd);
 			spin_unlock_irq(&dwc->lock);
 			return 0;
 
 		case USB_PORT_FEAT_C_CONNECTION:
 			dev_dbg(dwc->dev, "ClearPortFeature USB_PORT_FEAT_C_CONNECTION\n");
-			dwc2_hcd_ack_hprt(hcd, wValue);
+			spin_lock_irq(&dwc->lock);
+			dwc->connect = false;
+			spin_unlock_irq(&dwc->lock);
 			return 0;
 
 		case USB_PORT_FEAT_C_ENABLE:
 			dev_dbg(dwc->dev, "ClearPortFeature USB_PORT_FEAT_C_ENABLE\n");
-			dwc2_hcd_ack_hprt(hcd, wValue);
+			spin_lock_irq(&dwc->lock);
+			dwc->enable = false;
+			spin_unlock_irq(&dwc->lock);
 			return 0;
 
 		case USB_PORT_FEAT_C_OVER_CURRENT:
 			dev_dbg(dwc->dev, "ClearPortFeature USB_PORT_FEAT_C_OVER_CURRENT\n");
-			dwc2_hcd_ack_hprt(hcd, wValue);
+			spin_lock_irq(&dwc->lock);
+			dwc->overcurrent = false;
+			spin_unlock_irq(&dwc->lock);
 			return 0;
 
 		case USB_PORT_FEAT_C_RESET:
 			dev_dbg(dwc->dev, "ClearPortFeature USB_PORT_FEAT_C_RESET\n");
 			spin_lock_irq(&dwc->lock);
-			dwc2_hcd_get_hprt(hcd);
-			dwc->hprt.reset = false;
-			dwc2_hcd_set_hprt(hcd);
+			dwc->reset_res = false;
 			spin_unlock_irq(&dwc->lock);
 			return 0;
 		}
@@ -788,33 +812,23 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	case GetPortStatus: {
 		u32 status = 0;
 
-		if (port != 1)
+		if (wIndex != 1)
 			break;
 
-		dev_dbg(dwc->dev, "GetPortStatus:\n");
 		spin_lock_irq(&dwc->lock);
-		dwc2_hcd_get_hprt(hcd);
+		dev_dbg(dwc->dev, "GetPortStatus:\n");
 
-		if (dwc->hprt.reset) {
-			dwc->hprt.reset = false;
-			dwc2_hcd_set_hprt(hcd);
-
+		if (dwc->reset_req && !dwc->reset_res) {
 			dwc2_hcd_get_hprt(hcd);
-			if (dwc->hprt.reset)
-				dev_dbg(dwc->dev, "USB_PORT_STAT_RESET\n");
+			if (dwc->reset_res) {
+				dwc2_hcd_set_hprt(hcd);
+				dwc2_hcd_get_hprt(hcd);
+				if (!dwc->hprt.enable)
+					dwc2_hcd_get_hprt(hcd);
+			}
 		}
 
-		if (dwc->hprt.overcurrent_chg) {
-			dev_dbg(dwc->dev, "USB_PORT_STAT_C_OVERCURRENT\n");
-			status |= USB_PORT_STAT_C_OVERCURRENT << 16;
-		}
-
-		if (dwc->hprt.overcurrent) {
-			dev_dbg(dwc->dev, "USB_PORT_STAT_OVERCURRENT\n");
-			status |= USB_PORT_STAT_OVERCURRENT;
-		}
-
-		if (dwc->hprt.connect_chg) {
+		if (dwc->connect) {
 			dev_dbg(dwc->dev, "USB_PORT_STAT_C_CONNECTION\n");
 			status |= USB_PORT_STAT_C_CONNECTION << 16;
 		}
@@ -824,7 +838,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 			status |= USB_PORT_STAT_CONNECTION;
 		}
 
-		if (dwc->hprt.enable_chg) {
+		if (dwc->enable) {
 			dev_dbg(dwc->dev, "USB_PORT_STAT_C_ENABLE\n");
 			status |= USB_PORT_STAT_C_ENABLE << 16;
 		}
@@ -832,6 +846,26 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 		if (dwc->hprt.enable) {
 			dev_dbg(dwc->dev, "USB_PORT_STAT_ENABLE\n");
 			status |= USB_PORT_STAT_ENABLE;
+		}
+
+		if (dwc->overcurrent) {
+			dev_dbg(dwc->dev, "USB_PORT_STAT_C_OVERCURRENT\n");
+			status |= USB_PORT_STAT_C_OVERCURRENT << 16;
+		}
+
+		if (dwc->hprt.overcurrent) {
+			dev_dbg(dwc->dev, "USB_PORT_STAT_OVERCURRENT\n");
+			status |= USB_PORT_STAT_OVERCURRENT;
+		}
+
+		if (dwc->reset_res) {
+			dev_dbg(dwc->dev, "USB_PORT_STAT_C_RESET\n");
+			status |= USB_PORT_STAT_C_RESET << 16;
+		}
+
+		if (dwc->reset_req) {
+			dev_dbg(dwc->dev, "USB_PORT_STAT_RESET\n");
+			status |= USB_PORT_STAT_RESET;
 		}
 
 		if (dwc->hprt.power) {
@@ -858,10 +892,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 
 		if (!status)
 			dev_dbg(dwc->dev, "NONE\n");
-
-		dwc2_hcd_set_hprt(hcd);
 		spin_unlock_irq(&dwc->lock);
-
 		*(__le32 *)buf = cpu_to_le32(status);
 		return 0;
 	}
@@ -1044,6 +1075,7 @@ static int __devinit dwc2_hcd_probe(struct platform_device *pdev)
 	writel(0, hcd->regs + DWC_CORE_INT_MASK_REG);
 
 	spin_lock_init(&dwc->lock);
+	hcd->uses_new_polling = true;
 
 	ret = usb_add_hcd(hcd, dwc->irq, 0);
 	if (ret) {
