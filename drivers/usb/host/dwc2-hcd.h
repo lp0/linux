@@ -48,6 +48,11 @@
 
 #define DWC_SOFT_RESET_TIMEOUT		100
 #define DWC_AHB_TIMEOUT			100
+#define DWC_FIFO_FLUSH_TIMEOUT		10
+#define DWC_CHAN_HALT_TIMEOUT		10
+#define DWC_RX_FIFO_SZ			20480	/* 16 to 32768 */
+#define DWC_NP_TX_FIFO_SZ		20480	/* 16 to 32768 */
+#define DWC_HP_TX_FIFO_SZ		20480	/* 16 to 32768 */
 
 enum dwc_ahb_cfg_dma_burst {
 	DWC_AHB_DMA_BURST_SINGLE,
@@ -361,6 +366,26 @@ struct dwc2_hcd {
 	};
 };
 
+enum dwc_ep_type {
+	DWC_EP_TYPE_CTRL,
+	DWC_EP_TYPE_ISOC,
+	DWC_EP_TYPE_BULK,
+	DWC_EP_TYPE_INTR
+};
+struct dwc2_hcd_cchar {
+	unsigned			mps:11; /* Maximum packet size in bytes */
+	unsigned			epnum:4; /* Endpoint number */
+	bool				outep:1;
+	unsigned			reserved:1;
+	bool				low_speed;
+	enum dwc_ep_type		eptype:2;
+	unsigned			multicnt:2; /* Packets per frame for periodic transfers */
+	unsigned			devaddr:7; /* Device address */
+	unsigned			oddfrm:1; /* Frame to transmit periodic transaction */
+	bool				disable:1;
+	bool				enable:1;
+};
+
 /* 
  * The application interfaces with the HS OTG core by reading from and
  * writing to the Control and Status Register (CSR) space through the
@@ -396,7 +421,7 @@ enum dwc2_hcd_core_reset {
 	DWC_IN_TOKEN_QUEUE_FLUSH,	/* In Token Sequence Learning Queue Flush (INTknQFlsh) (Device Only) */
 	DWC_RX_FIFO_FLUSH,		/* RxFIFO Flush (RxFFlsh) (Device and Host) */
 	DWC_TX_FIFO_FLUSH,		/* TxFIFO Flush (TxFFlsh) (Device and Host) */
-#define DWC_TX_FIFO_FLUSH_MASK		0x07C0	/* TxFIFO Number (TxFNum) (Device and Host) */
+	DWC_TX_FIFO_FLUSH_SHIFT,	/* TxFIFO Number (TxFNum) (Device and Host) 0x00-0x1F */
 	DWC_DMA_REQ_SIGNAL = 30,	/* DMA Request Signal */
 	DWC_AHB_MASTER_IDLE		/* AHB Master Idle */
 };
@@ -455,6 +480,10 @@ enum dwc2_hcd_core_int {
 #define DWC_USER_HW_CFG3_REG	0x04c	/* User HW Config3 (Read Only) */
 #define DWC_USER_HW_CFG4_REG	0x050	/* User HW Config4 (Read Only) */
 #define DWC_CORE_LPM_CFG_REG	0x054	/* Core LPM Configuration */
+#define DWC_CORE_PWR_DOWN_REG	0x058	/* Core Power Down */
+#define DWC_CORE_FIFO_CFG_REG	0x05c	/* Core FIFO Configuration */
+#define DWC_CORE_ADP_CTL_REG	0x060	/* Core ADP Timer, Control and Status */
+
 #define DWC_HP_TX_FIFO_SZ_REG	0x100	/* Host Periodic Transmit FIFO Size */
 #define DWC_DV_TX_FIFO_SZ_BASE	0x104	/* Device Periodic Transmit FIFO#n if dedicated fifos are disabled, otherwise Device Transmit FIFO#n */
 #define DWC_DV_TX_FIFO_SZ_REG(n) (DWC_DV_TX_FIFO_SZ_BASE + (n) * 4)
@@ -495,7 +524,7 @@ enum dwc2_hcd_host_chan_int {
 #define DWC_HOST_CHAN_TX_SZ_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x10)	/* Host Channel Transfer Size */
 #define DWC_HOST_CHAN_DMA_ADDR_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x14)	/* Host Channel DMA Address */
 #define DWC_HOST_CHAN_DMA_BUFA_REG(n)	(DWC_HOST_CHAN_BASE + (n) * 0x20 + 0x1c)	/* Host Channel DMA Buffer Address */
-#define DWC_HOST_CHAN_COUNT		16	
+#define DWC_HOST_CHAN_COUNT		16
 
 #define DWC_OTG_PWR_CLK_CTL_REG		0xe00
 
@@ -507,13 +536,16 @@ static inline struct dwc2_hcd *hcd_to_dwc(struct usb_hcd *hcd)
 static void dwc2_hcd_get_cfg(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
-	dwc->__ahb_cfg = readl(hcd->regs + DWC_CORE_AHB_CFG_REG);
-	dwc->__usb_cfg = readl(hcd->regs + DWC_CORE_USB_CFG_REG);
 	dwc->__hw_cfg1 = readl(hcd->regs + DWC_USER_HW_CFG1_REG);
 	dwc->__hw_cfg2 = readl(hcd->regs + DWC_USER_HW_CFG2_REG);
 	dwc->__hw_cfg3 = readl(hcd->regs + DWC_USER_HW_CFG3_REG);
 	dwc->__hw_cfg4 = readl(hcd->regs + DWC_USER_HW_CFG4_REG);
-	dwc->__lpm_cfg = readl(hcd->regs + DWC_CORE_LPM_CFG_REG);
+}
+
+static void dwc2_hcd_get_ahb_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__ahb_cfg = readl(hcd->regs + DWC_CORE_AHB_CFG_REG);
 }
 
 static void dwc2_hcd_set_ahb_cfg(struct usb_hcd *hcd)
@@ -542,6 +574,12 @@ static void dwc2_hcd_set_host_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__host_cfg);
 }
 
+static void dwc2_hcd_get_usb_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__usb_cfg = readl(hcd->regs + DWC_CORE_USB_CFG_REG);
+}
+
 static void dwc2_hcd_set_usb_cfg(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
@@ -551,6 +589,13 @@ static void dwc2_hcd_set_usb_cfg(struct usb_hcd *hcd)
 	WARN(dwc->__usb_cfg != value, "%s: write %08x, read %08x\n",
 		__func__, value, dwc->__usb_cfg);
 }
+
+static void dwc2_hcd_get_lpm_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__lpm_cfg = readl(hcd->regs + DWC_CORE_LPM_CFG_REG);
+}
+
 
 static void dwc2_hcd_set_lpm_cfg(struct usb_hcd *hcd)
 {
@@ -593,6 +638,27 @@ static void dwc2_hcd_set_hfir_cfg(struct usb_hcd *hcd)
 	dwc->__hfir_cfg = readl(hcd->regs + DWC_HOST_FRAME_INTVL_REG);
 	WARN(dwc->__hfir_cfg != value, "%s: write %08x, read %08x\n",
 		__func__, value, dwc->__hfir_cfg);
+}
+
+union dwc_hcchar {
+	u32 __value;
+	struct dwc2_hcd_cchar value;
+};
+
+static struct dwc2_hcd_cchar dwc2_hcd_get_cchar(struct usb_hcd *hcd,
+	int channel)
+{
+	union dwc_hcchar tmp;
+	tmp.__value = readl(hcd->regs + DWC_HOST_CHAN_CHAR_REG(channel));
+	return tmp.value;
+}
+
+static void dwc2_hcd_set_cchar(struct usb_hcd *hcd,
+	int channel, struct dwc2_hcd_cchar hcchar)
+{
+	union dwc_hcchar tmp;
+	tmp.value = hcchar;
+	writel(tmp.__value, hcd->regs + DWC_HOST_CHAN_CHAR_REG(channel));
 }
 
 static void dwc2_hcd_dump_regs(struct usb_hcd *hcd)

@@ -231,13 +231,10 @@ static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 			dwc->hprt.overcurrent_int);
 
 		/* Ignore connect_int as it's for OTG detection */
+		/* Ignore enabled_int as there's nothing to do */
 		/* Ignore overcurrent_int as we've now stored it */
-		if (dwc->hprt.enabled_int && dwc->hprt.enabled) {
-			/* Reconfigure Host Frame Interval */
-			dwc2_hcd_get_hfir_cfg(hcd);
-			dwc->hfir_cfg.frame_interval = dwc_calc_frame_interval(hcd);
-			dwc2_hcd_set_hfir_cfg(hcd);
-		}
+
+		/* Ack interrupts */
 		dwc2_hcd_set_hprt(hcd);
 		spin_unlock_irqrestore(&dwc->lock, flags);
 	}
@@ -312,6 +309,47 @@ static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 	return 0;
 }
 
+static int dwc2_hcd_do_flush_fifos(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	int i;
+
+	/* Perform TX fifo flush */
+	writel(BIT(DWC_TX_FIFO_FLUSH) | (16 << DWC_TX_FIFO_FLUSH_SHIFT),
+		hcd->regs + DWC_CORE_RESET_REG);
+
+	/* Wait for it to complete */
+	for (i = 0; i < DWC_FIFO_FLUSH_TIMEOUT; i++) {
+		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
+				& BIT(DWC_TX_FIFO_FLUSH)))
+			break;
+		msleep(1);
+	}
+	dev_dbg(dwc->dev, "%s: tx fifo flush in %d\n", __func__, i+1);
+	if (i == DWC_SOFT_RESET_TIMEOUT) {
+		dev_err(dwc->dev, "%s: tx fifo flush did not complete", __func__);
+		return -ETIMEDOUT;
+	}
+
+	/* Perform RX fifo flush */
+	writel(BIT(DWC_RX_FIFO_FLUSH), hcd->regs + DWC_CORE_RESET_REG);
+
+	/* Wait for it to complete */
+	for (i = 0; i < DWC_FIFO_FLUSH_TIMEOUT; i++) {
+		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
+				& BIT(DWC_RX_FIFO_FLUSH)))
+			break;
+		msleep(1);
+	}
+	dev_dbg(dwc->dev, "%s: rx fifo flush in %d\n", __func__, i+1);
+	if (i == DWC_SOFT_RESET_TIMEOUT) {
+		dev_err(dwc->dev, "%s: rx fifo flush did not complete", __func__);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
 static int dwc2_hcd_reset(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
@@ -335,6 +373,7 @@ static int dwc2_hcd_reset(struct usb_hcd *hcd)
 	spin_lock_irq(&dwc->lock);
 
 	/* Configure PHY */
+	dwc2_hcd_get_usb_cfg(hcd);
 	usb_cfg = dwc->__usb_cfg;
 	if (dwc->hw_cfg2.hs_phy >= DWC_CFG2_HS_PHY_ULPI) {
 		dwc->usb_cfg.ulpi_utmi_sel = true;
@@ -368,6 +407,7 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	struct usb_bus *bus = hcd_to_bus(hcd);
+	bool sg_dma;
 	u32 ints = 0;
 	int i;
 
@@ -378,12 +418,17 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 	writel(0, hcd->regs + DWC_OTG_PWR_CLK_CTL_REG);
 
 	/* Host configuration */
+	dwc2_hcd_get_ahb_cfg(hcd);
+	dwc2_hcd_get_usb_cfg(hcd);
+	dwc2_hcd_get_lpm_cfg(hcd);
+
 	dwc2_hcd_get_host_cfg(hcd);
 	dwc->host_cfg.fsls_pclk = DWC_HOST_PCLK_30_60_MHZ;
 	dwc2_hcd_set_host_cfg(hcd);
 
 	dwc2_hcd_get_hfir_cfg(hcd);
-	dwc->hfir_cfg.dyn_frame_reload = true;
+	dwc->hfir_cfg.frame_interval = dwc_calc_frame_interval(hcd);
+	dwc->hfir_cfg.dyn_frame_reload = false;
 	dwc2_hcd_set_hfir_cfg(hcd);
 
 	/* Configure DMA */
@@ -393,10 +438,28 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 	dwc->ahb_cfg.dma_single = false;
 	dwc->ahb_cfg.dma_burst = DWC_AHB_DMA_BURST_INCR4;
 
-	/* FIXME: Configure FIFOs */
-	/* FIXME: Flush FIFOs */
-	/* FIXME: Flush DMA */
-	/* FIXME: Halt all channels */
+	/* Configure FIFOs */
+	BUILD_BUG_ON(DWC_RX_FIFO_SZ > 32678);
+	writel(DWC_RX_FIFO_SZ, hcd->regs + DWC_RX_FIFO_SZ_REG);
+
+	BUILD_BUG_ON(DWC_NP_TX_FIFO_SZ > 32678);
+	BUILD_BUG_ON(DWC_HP_TX_FIFO_SZ > 32678);
+	BUILD_BUG_ON(DWC_HP_TX_FIFO_SZ > 32678);
+	BUILD_BUG_ON(
+		(DWC_RX_FIFO_SZ + DWC_NP_TX_FIFO_SZ + DWC_HP_TX_FIFO_SZ)
+		>= 65536);
+
+	writel(DWC_NP_TX_FIFO_SZ | (DWC_RX_FIFO_SZ << 16),
+		hcd->regs + DWC_RX_FIFO_SZ_REG);
+
+	writel(DWC_HP_TX_FIFO_SZ | ((DWC_RX_FIFO_SZ + DWC_NP_TX_FIFO_SZ) << 16),
+		hcd->regs + DWC_RX_FIFO_SZ_REG);
+
+	writel(DWC_HP_TX_FIFO_SZ | ((DWC_RX_FIFO_SZ + DWC_NP_TX_FIFO_SZ) << 16),
+		hcd->regs + DWC_RX_FIFO_SZ_REG);
+
+	writel(DWC_RX_FIFO_SZ + DWC_NP_TX_FIFO_SZ + DWC_HP_TX_FIFO_SZ,
+		hcd->regs + DWC_RX_FIFO_SZ_REG);
 
 	/* Configure ULPI FSLS */
 	if (dwc->hw_cfg2.hs_phy == DWC_CFG2_HS_PHY_ULPI
@@ -427,7 +490,6 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 		dwc->usb_cfg.srp_capable = false;
 		break;
 	}
-	dwc2_hcd_set_usb_cfg(hcd);
 
 	/* Low power mode not supported */
 	dwc->lpm_cfg.lpm_cap_en = false;
@@ -440,10 +502,7 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 	dwc2_hcd_set_ahb_cfg(hcd);
 	dwc2_hcd_set_usb_cfg(hcd);
 	dwc2_hcd_set_lpm_cfg(hcd);
-
-	/* Clear all pending interrupts */
-	writel(~0, hcd->regs + DWC_OTG_INT_REG);
-	writel(~0, hcd->regs + DWC_CORE_INT_STAT_REG);
+	sg_dma = dwc->host_cfg.sg_dma;
 
 	/* Unmask common interrupts */
 	if (dwc->ahb_cfg.dma_enable)
@@ -483,6 +542,55 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 	/* Unmask host interrupts */
 	ints |= DWC_PORT_INT;
 	ints |= DWC_HOST_CHAN_INT;
+	spin_unlock_irq(&dwc->lock);
+
+	/* Flush FIFOs */
+	dwc2_hcd_do_flush_fifos(hcd);
+
+	if (!sg_dma) {
+		struct dwc2_hcd_cchar hcchar;
+		int j;
+
+		/* Flush queued requests */
+		for (i = 0; i < DWC_HOST_CHAN_COUNT; i++) {
+			hcchar = dwc2_hcd_get_cchar(hcd, i);
+			hcchar.enable = false;
+			hcchar.disable = true;
+			hcchar.outep = false;
+			dwc2_hcd_set_cchar(hcd, i, hcchar);
+		}
+
+		/* Halt all channels */
+		for (i = 0; i < DWC_HOST_CHAN_COUNT; i++) {
+			hcchar = dwc2_hcd_get_cchar(hcd, i);
+			hcchar.enable = true;
+			hcchar.disable = true;
+			hcchar.outep = false;
+			dwc2_hcd_set_cchar(hcd, i, hcchar);
+
+			/* Wait for it to complete */
+			for (j = 0; j < DWC_CHAN_HALT_TIMEOUT; j++) {
+				hcchar = dwc2_hcd_get_cchar(hcd, i);
+				if (!hcchar.enable)
+					break;
+				msleep(1);
+			}
+			dev_dbg(dwc->dev, "%s: chan %d halt in %d\n", __func__,
+				i, j+1);
+			if (j == DWC_CHAN_HALT_TIMEOUT) {
+				dev_err(dwc->dev,
+					"%s: chan %d halt did not complete",
+					__func__, i);
+				return -ETIMEDOUT;
+			}
+		}
+	}
+
+	/* Clear all pending interrupts */
+	writel(~0, hcd->regs + DWC_OTG_INT_REG);
+	writel(~0, hcd->regs + DWC_CORE_INT_STAT_REG);
+
+	/* Apply interrupt configuration */
 	writel(ints, hcd->regs + DWC_CORE_INT_MASK_REG);
 
 	/* TODO Unmask all host channel interrutps */
@@ -490,9 +598,10 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 		writel(0, hcd->regs + DWC_HOST_CHAN_INT_MASK_REG(i));
 
 	/* Enable interrupts */
+	spin_lock_irq(&dwc->lock);
+	dwc2_hcd_get_ahb_cfg(hcd);
 	dwc->ahb_cfg.int_enable = true;
 	dwc2_hcd_set_ahb_cfg(hcd);
-
 	spin_unlock_irq(&dwc->lock);
 
 	if (bus->root_hub)
