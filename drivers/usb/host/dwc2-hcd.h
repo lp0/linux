@@ -297,18 +297,18 @@ enum dwc_hprt_speed {
 };
 struct dwc2_hcd_hprt {
 	bool				connect:1;
-	bool				connect_int:1;		/* intr */
-	bool				enabled:1;
-	bool				enabled_int:1;		/* intr */
+	bool				connect_chg:1;
+	bool				enable:1;
+	bool				enable_chg:1;
 	bool				overcurrent:1;
-	bool				overcurrent_int:1;	/* intr */	
+	bool				overcurrent_chg:1;
 	bool				resume:1;
 	bool				suspend:1;
 	bool				reset:1;
 	unsigned			reserved9:1;
 	unsigned			prtlnsts:2;
 	bool				power:1;
-	unsigned			prttstctl:4;
+	unsigned			test_ctl:4;
 	enum dwc_hprt_speed		speed:2;
 	unsigned			reserved19_31:13;
 };
@@ -616,12 +616,25 @@ static void dwc2_hcd_get_hprt(struct usb_hcd *hcd)
 static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
-	u32 value = dwc->__hprt;
+	dwc->hprt.connect_chg = false;
+	dwc->hprt.enable_chg = false;
+	dwc->hprt.overcurrent_chg = false;
 	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
-	dwc->__hprt = readl(hcd->regs + DWC_HOST_PORT_REG);
-	value &= ~0x2A; /* Interrupts */
-	WARN(dwc->__hprt != value, "%s: write %08x, read %08x\n",
-		__func__, value, dwc->__hprt);
+}
+
+union dwc_hprt {
+	u32 __value;
+	struct dwc2_hcd_hprt value;
+};
+
+static void dwc2_hcd_ack_hprt(struct usb_hcd *hcd, int feat)
+{
+	union dwc_hprt tmp;
+	tmp.__value = readl(hcd->regs + DWC_HOST_PORT_REG);
+	tmp.value.connect_chg = (feat == USB_PORT_FEAT_C_CONNECTION);
+	tmp.value.enable_chg = (feat == USB_PORT_FEAT_C_ENABLE);
+	tmp.value.overcurrent_chg = (feat == USB_PORT_FEAT_C_OVER_CURRENT);
+	writel(tmp.__value, hcd->regs + DWC_HOST_PORT_REG);
 }
 
 static void dwc2_hcd_get_hfir_cfg(struct usb_hcd *hcd)
