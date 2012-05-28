@@ -281,7 +281,7 @@ static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
 				& BIT(DWC_CORE_SOFT_RESET)))
 			break;
-		msleep(1);
+		udelay(1);
 	}
 	dev_dbg(dwc->dev, "%s: soft reset in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
@@ -294,7 +294,7 @@ static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 		if (readl(hcd->regs + DWC_CORE_RESET_REG)
 				& BIT(DWC_AHB_MASTER_IDLE))
 			break;
-		msleep(1);
+		udelay(1);
 	}
 	dev_dbg(dwc->dev, "%s: master idle in %d\n", __func__, i+1);
 	if (i == DWC_AHB_TIMEOUT) {
@@ -322,7 +322,7 @@ static int dwc2_hcd_do_flush_fifos(struct usb_hcd *hcd)
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
 				& BIT(DWC_TX_FIFO_FLUSH)))
 			break;
-		msleep(1);
+		udelay(1);
 	}
 	dev_dbg(dwc->dev, "%s: tx fifo flush in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
@@ -338,7 +338,7 @@ static int dwc2_hcd_do_flush_fifos(struct usb_hcd *hcd)
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
 				& BIT(DWC_RX_FIFO_FLUSH)))
 			break;
-		msleep(1);
+		udelay(1);
 	}
 	dev_dbg(dwc->dev, "%s: rx fifo flush in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
@@ -541,6 +541,11 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 	/* Unmask host interrupts */
 	ints |= DWC_PORT_INT;
 	ints |= DWC_HOST_CHAN_INT;
+
+	/* Set HNP Enable */
+	dwc2_hcd_get_otg_cfg(hcd);
+	dwc->otg_cfg.hstsethnpen = true;
+	dwc2_hcd_set_otg_cfg(hcd);
 	spin_unlock_irq(&dwc->lock);
 
 	/* Flush FIFOs */
@@ -555,8 +560,27 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 			hcchar = dwc2_hcd_get_cchar(hcd, i);
 			hcchar.enable = false;
 			hcchar.disable = true;
-			hcchar.outep = false;
+			hcchar.epdir = DWC_EP_IN;
 			dwc2_hcd_set_cchar(hcd, i, hcchar);
+		}
+		
+		/* Wait for it to complete */
+		for (i = 0; i < DWC_HOST_CHAN_COUNT; i++) {
+			for (j = 0; j < DWC_CHAN_HALT_TIMEOUT; j++) {
+				hcchar = dwc2_hcd_get_cchar(hcd, j);
+				if (!hcchar.disable) {
+					dev_dbg(dwc->dev, "%s: chan %d flush in %d\n", __func__,
+						i, j+1);
+					break;
+				}
+				msleep(1);
+			}
+			if (j == DWC_CHAN_HALT_TIMEOUT) {
+				dev_err(dwc->dev,
+					"%s: chan %d flush did not complete",
+					__func__, i);
+				return -ETIMEDOUT;
+			}
 		}
 
 		/* Halt all channels */
@@ -564,18 +588,21 @@ static int dwc2_hcd_start(struct usb_hcd *hcd)
 			hcchar = dwc2_hcd_get_cchar(hcd, i);
 			hcchar.enable = true;
 			hcchar.disable = true;
-			hcchar.outep = false;
+			hcchar.epdir = DWC_EP_IN;
 			dwc2_hcd_set_cchar(hcd, i, hcchar);
-
-			/* Wait for it to complete */
+		}
+		
+		/* Wait for it to complete */
+		for (i = 0; i < DWC_HOST_CHAN_COUNT; i++) {
 			for (j = 0; j < DWC_CHAN_HALT_TIMEOUT; j++) {
-				hcchar = dwc2_hcd_get_cchar(hcd, i);
-				if (!hcchar.enable)
+				hcchar = dwc2_hcd_get_cchar(hcd, j);
+				if (!hcchar.enable) {
+					dev_dbg(dwc->dev, "%s: chan %d halt in %d\n", __func__,
+						i, j+1);
 					break;
-				msleep(1);
+				}
+				udelay(1);
 			}
-			dev_dbg(dwc->dev, "%s: chan %d halt in %d\n", __func__,
-				i, j+1);
 			if (j == DWC_CHAN_HALT_TIMEOUT) {
 				dev_err(dwc->dev,
 					"%s: chan %d halt did not complete",
@@ -964,6 +991,7 @@ static int __devinit dwc2_hcd_probe(struct platform_device *pdev)
 	struct dwc2_hcd *dwc;
 	int ret;
 
+	BUILD_BUG_ON(sizeof(dwc->__otg_cfg) != sizeof(dwc->otg_cfg));
 	BUILD_BUG_ON(sizeof(dwc->__ahb_cfg) != sizeof(dwc->ahb_cfg));
 	BUILD_BUG_ON(sizeof(dwc->__host_cfg) != sizeof(dwc->host_cfg));
 	BUILD_BUG_ON(sizeof(dwc->__usb_cfg) != sizeof(dwc->usb_cfg));

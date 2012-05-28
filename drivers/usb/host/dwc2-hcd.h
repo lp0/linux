@@ -46,13 +46,38 @@
 #ifndef _DWC2_HCD_H
 #define _DWC2_HCD_H
 
-#define DWC_SOFT_RESET_TIMEOUT		100
-#define DWC_AHB_TIMEOUT			100
-#define DWC_FIFO_FLUSH_TIMEOUT		10
-#define DWC_CHAN_HALT_TIMEOUT		10
+#define DWC_SOFT_RESET_TIMEOUT		10000
+#define DWC_AHB_TIMEOUT			10000
+#define DWC_FIFO_FLUSH_TIMEOUT		10000
+#define DWC_CHAN_HALT_TIMEOUT		10000
 #define DWC_RX_FIFO_SZ			20480	/* 16 to 32768 */
 #define DWC_NP_TX_FIFO_SZ		20480	/* 16 to 32768 */
 #define DWC_HP_TX_FIFO_SZ		20480	/* 16 to 32768 */
+
+struct dwc2_hcd_otg_cfg {
+	bool		sesreqscs:1;
+	bool		sesreq:1;
+	bool		vbvalidoven:1;
+	bool		vbvalidovval:1;
+	bool		avalidoven:1;
+	bool		avalidovval:1;
+	bool		bvalidoven:1;
+	bool		bvalidovval:1;
+	bool		hstnegscs:1;
+	bool		hnpreq:1;
+	bool 		hstsethnpen:1;
+	bool		devhnpen:1;
+	unsigned	reserved12_15:4;
+	bool		conidsts:1;
+	unsigned	dbnctime:1;
+	bool		asesvld:1;
+	bool		bsesvld:1;
+	unsigned	otgver:1;
+	unsigned	reserved1:1;
+	unsigned	multvalidbc:5;
+	bool		chirpen:1;
+	unsigned	reserved28_31:4;
+};
 
 enum dwc_ahb_cfg_dma_burst {
 	DWC_AHB_DMA_BURST_SINGLE,
@@ -331,6 +356,10 @@ struct dwc2_hcd {
 	bool reset_req;
 	bool reset_res;
 	union {
+		u32 __otg_cfg;
+		struct dwc2_hcd_otg_cfg otg_cfg;
+	};
+	union {
 		u32 __ahb_cfg;
 		struct dwc2_hcd_ahb_cfg ahb_cfg;
 	};
@@ -373,15 +402,19 @@ struct dwc2_hcd {
 };
 
 enum dwc_ep_type {
-	DWC_EP_TYPE_CTRL,
-	DWC_EP_TYPE_ISOC,
-	DWC_EP_TYPE_BULK,
-	DWC_EP_TYPE_INTR
+	DWC_EP_CTRL,
+	DWC_EP_ISOC,
+	DWC_EP_BULK,
+	DWC_EP_INTR
+};
+enum dwc_ep_dir {
+	DWC_EP_IN,
+	DWC_EP_OUT
 };
 struct dwc2_hcd_cchar {
 	unsigned			mps:11; /* Maximum packet size in bytes */
 	unsigned			epnum:4; /* Endpoint number */
-	bool				outep:1;
+	enum dwc_ep_dir			epdir:1;
 	unsigned			reserved:1;
 	bool				low_speed;
 	enum dwc_ep_type		eptype:2;
@@ -546,6 +579,22 @@ static void dwc2_hcd_get_cfg(struct usb_hcd *hcd)
 	dwc->__hw_cfg2 = readl(hcd->regs + DWC_USER_HW_CFG2_REG);
 	dwc->__hw_cfg3 = readl(hcd->regs + DWC_USER_HW_CFG3_REG);
 	dwc->__hw_cfg4 = readl(hcd->regs + DWC_USER_HW_CFG4_REG);
+}
+
+static void dwc2_hcd_get_otg_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->__otg_cfg = readl(hcd->regs + DWC_OTG_CTL_REG);
+}
+
+static void dwc2_hcd_set_otg_cfg(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	u32 value = dwc->__otg_cfg;
+	writel(dwc->__otg_cfg, hcd->regs + DWC_OTG_CTL_REG);
+	dwc->__otg_cfg = readl(hcd->regs + DWC_OTG_CTL_REG);
+	WARN(dwc->__otg_cfg != value, "%s: write %08x, read %08x\n",
+		__func__, value, dwc->__otg_cfg);
 }
 
 static void dwc2_hcd_get_ahb_cfg(struct usb_hcd *hcd)
