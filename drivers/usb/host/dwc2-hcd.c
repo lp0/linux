@@ -279,11 +279,13 @@ static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 	/* Wait for it to complete */
 	for (i = 0; i < DWC_SOFT_RESET_TIMEOUT; i++) {
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
-				& BIT(DWC_CORE_SOFT_RESET)))
+				& BIT(DWC_CORE_SOFT_RESET))) {
+			dev_dbg(dwc->dev, "%s: soft reset in %d\n",
+				__func__, i+1);
 			break;
+		}
 		udelay(1);
 	}
-	dev_dbg(dwc->dev, "%s: soft reset in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
 		dev_err(dwc->dev, "%s: soft reset did not complete", __func__);
 		return -ETIMEDOUT;
@@ -292,11 +294,13 @@ static int dwc2_hcd_do_soft_reset(struct usb_hcd *hcd)
 	/* Wait for AHB master idle state */
 	for (i = 0; i < DWC_AHB_TIMEOUT; i++) {
 		if (readl(hcd->regs + DWC_CORE_RESET_REG)
-				& BIT(DWC_AHB_MASTER_IDLE))
+				& BIT(DWC_AHB_MASTER_IDLE)) {
+			dev_dbg(dwc->dev, "%s: master idle in %d\n",
+				__func__, i+1);
 			break;
+		}
 		udelay(1);
 	}
-	dev_dbg(dwc->dev, "%s: master idle in %d\n", __func__, i+1);
 	if (i == DWC_AHB_TIMEOUT) {
 		dev_err(dwc->dev, "%s: not in AHB master idle state", __func__);
 		return -ETIMEDOUT;
@@ -320,11 +324,13 @@ static int dwc2_hcd_do_flush_fifos(struct usb_hcd *hcd)
 	/* Wait for it to complete */
 	for (i = 0; i < DWC_FIFO_FLUSH_TIMEOUT; i++) {
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
-				& BIT(DWC_TX_FIFO_FLUSH)))
+				& BIT(DWC_TX_FIFO_FLUSH))) {
+			dev_dbg(dwc->dev, "%s: tx fifo flush in %d\n",
+				__func__, i+1);
 			break;
+		}
 		udelay(1);
 	}
-	dev_dbg(dwc->dev, "%s: tx fifo flush in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
 		dev_err(dwc->dev, "%s: tx fifo flush did not complete", __func__);
 		return -ETIMEDOUT;
@@ -336,11 +342,13 @@ static int dwc2_hcd_do_flush_fifos(struct usb_hcd *hcd)
 	/* Wait for it to complete */
 	for (i = 0; i < DWC_FIFO_FLUSH_TIMEOUT; i++) {
 		if (!(readl(hcd->regs + DWC_CORE_RESET_REG)
-				& BIT(DWC_RX_FIFO_FLUSH)))
+				& BIT(DWC_RX_FIFO_FLUSH))) {
+			dev_dbg(dwc->dev, "%s: rx fifo flush in %d\n",
+				__func__, i+1);
 			break;
+		}
 		udelay(1);
 	}
-	dev_dbg(dwc->dev, "%s: rx fifo flush in %d\n", __func__, i+1);
 	if (i == DWC_SOFT_RESET_TIMEOUT) {
 		dev_err(dwc->dev, "%s: rx fifo flush did not complete", __func__);
 		return -ETIMEDOUT;
