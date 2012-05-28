@@ -50,6 +50,7 @@
 #define DWC_AHB_TIMEOUT			10000
 #define DWC_FIFO_FLUSH_TIMEOUT		10000
 #define DWC_CHAN_HALT_TIMEOUT		10000
+#define DWC_PORT_RESET_TIMEOUT		10000
 #define DWC_RX_FIFO_SZ			20480	/* 16 to 32768 */
 #define DWC_NP_TX_FIFO_SZ		20480	/* 16 to 32768 */
 #define DWC_HP_TX_FIFO_SZ		20480	/* 16 to 32768 */
@@ -662,6 +663,24 @@ static void dwc2_hcd_set_lpm_cfg(struct usb_hcd *hcd)
 		__func__, value, dwc->__lpm_cfg);
 }
 
+static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
+{
+	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
+	dwc->hprt.connect_chg = false;
+	dwc->hprt.enable_chg = false;
+	dwc->hprt.overcurrent_chg = false;
+	
+	/* Send enable after a reset or the port will be disabled */
+	dwc->hprt.enable = !dwc->disable;
+	
+	/* Send reset until successful or the reset will be aborted */
+	dwc->hprt.reset = dwc->reset_req;
+	
+	dev_dbg(dwc->dev, "%s: e=%d r=%d\n", __func__, dwc->hprt.enable,
+		dwc->hprt.reset);
+	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
+}
+
 static void dwc2_hcd_get_hprt(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
@@ -678,32 +697,21 @@ static void dwc2_hcd_get_hprt(struct usb_hcd *hcd)
 
 		/* Clear reset */
 		dwc->hprt.reset = false;
-	} else if (dwc->reset_req) {
-		/* Send reset until successful or the reset will be aborted */
-		dwc->hprt.reset = true;
+		dwc2_hcd_set_hprt(hcd);
 	}
-}
-
-static void dwc2_hcd_set_hprt(struct usb_hcd *hcd)
-{
-	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
-	dwc->hprt.connect_chg = false;
-	dwc->hprt.enable_chg = false;
-	dwc->hprt.overcurrent_chg = false;
-	/* Send enable after a reset or the port will be disabled */
-	dwc->hprt.enable = !dwc->disable;
-	dev_dbg(dwc->dev, "%s: e=%d r=%d\n", __func__, dwc->hprt.enable,
-		dwc->hprt.reset);
-	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);
-	dwc->reset_req = dwc->hprt.reset;
 }
 
 static void dwc2_hcd_ack_hprt(struct usb_hcd *hcd)
 {
 	struct dwc2_hcd *dwc = hcd_to_dwc(hcd);
 	dwc2_hcd_get_hprt(hcd);
+	
 	/* Send enable after a reset or the port will be disabled */
 	dwc->hprt.enable = !dwc->disable;
+	
+	/* Send reset until successful or the reset will be aborted */
+	dwc->hprt.reset = dwc->reset_req;
+	
 	dev_dbg(dwc->dev, "%s: e=%d r=%d\n", __func__, dwc->hprt.enable,
 		dwc->hprt.reset);
 	writel(dwc->__hprt, hcd->regs + DWC_HOST_PORT_REG);

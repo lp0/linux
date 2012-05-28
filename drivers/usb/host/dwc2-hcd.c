@@ -221,7 +221,6 @@ static irqreturn_t dwc2_hcd_irq(struct usb_hcd *hcd)
 	if (status & DWC_RESET_DETECT_INT)
 		dev_warn(dwc->dev, "%s: DWC_RESET_DETECT_INT\n", __func__);
 
-	/* FIXME: remove this and the copy of the _chg flags */
 	if (status & DWC_PORT_INT) {
 		dev_dbg(dwc->dev, "%s: DWC_PORT_INT\n", __func__);
 
@@ -756,7 +755,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 	}
 
 	case SetPortFeature: {
-		int ret;
+		int ret, i;
 
 		if (wIndex != 1)
 			break;
@@ -777,12 +776,37 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 			dev_dbg(dwc->dev, "SetPortFeature USB_PORT_FEAT_RESET\n");
 			spin_lock_irq(&dwc->lock);
 			dwc2_hcd_get_hprt(hcd);
+			
+			/* Perform port reset */
 			dwc->disable = false;
+			dwc->reset_req = true;
 			dwc->reset_res = false;
-			dwc->hprt.reset = true;
 			dwc2_hcd_set_hprt(hcd);
+			
+			/* Wait for it to complete */
+			for (i = 0; i < DWC_PORT_RESET_TIMEOUT; i++) {
+				dwc2_hcd_get_hprt(hcd);
+				if (dwc->reset_res) {
+					dev_dbg(dwc->dev,
+						"%s: port reset in %d\n",
+						__func__, i+1);
+					break;
+				}
+				udelay(1);
+			}
+			if (i == DWC_PORT_RESET_TIMEOUT) {
+				dev_err(dwc->dev, "%s: port reset did not complete", __func__);
+				/* Cancel reset */
+				dwc->reset_req = false;
+				dwc->reset_res = false;
+				dwc2_hcd_set_hprt(hcd);
+				ret = -ETIMEDOUT;
+			} else {
+				ret = 0;
+			}
+			
 			spin_unlock_irq(&dwc->lock);
-			return 0;
+			return ret;
 		}
 		break;
 	}
@@ -852,17 +876,7 @@ static int dwc2_hcd_hub_control(struct usb_hcd *hcd,
 
 		spin_lock_irq(&dwc->lock);
 		dev_dbg(dwc->dev, "GetPortStatus:\n");
-
-		if (dwc->reset_req && !dwc->reset_res) {
-			dwc2_hcd_get_hprt(hcd);
-			if (dwc->reset_res) {
-				dwc2_hcd_set_hprt(hcd);
-				dwc2_hcd_get_hprt(hcd);
-				if (!dwc->hprt.enable)
-					dwc2_hcd_get_hprt(hcd);
-			}
-		}
-
+		
 		if (dwc->connect) {
 			dev_dbg(dwc->dev, "USB_PORT_STAT_C_CONNECTION\n");
 			status |= USB_PORT_STAT_C_CONNECTION << 16;
