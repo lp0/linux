@@ -17,13 +17,8 @@
 
 	cpus {
 		cpu@0 {
-			compatible = "broadcom,bcm2835-cpu", "broadcom,bcm2708-cpu", "arm,1176jz-f";
+			compatible = "arm,1176jz-f";
 		};
-	};
-
-	memory {
-		device_type = "memory";
-		reg = <0 0>;			/* Set by VideoCore */
 	};
 
 	display {
