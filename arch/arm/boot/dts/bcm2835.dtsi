@@ -6,8 +6,10 @@
 	#size-cells = <1>;
 	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
-	system-rev = <0>;			/* Set by VideoCore */
-	system-serial = <0 0>;			/* Set by VideoCore */
+	system {
+		revision = <0>;			/* Set by VideoCore */
+		serial = <0 0>;			/* Set by VideoCore */
+	};
 
 	chosen {
 		bootargs = "";			/* Set by VideoCore */
