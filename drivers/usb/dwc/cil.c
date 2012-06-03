@@ -399,9 +399,13 @@ void dwc_otg_core_init(struct core_if *core_if)
 	 * and HCD initialization
 	 */
 	if (dwc_otg_is_host_mode(core_if)) {
+#if 0
 		core_if->xceiv->state = OTG_STATE_A_HOST;
+#endif
 	} else {
+#if 0
 		core_if->xceiv->state = OTG_STATE_B_PERIPHERAL;
+#endif
 		if (dwc_has_feature(core_if, DWC_DEVICE_ONLY))
 			dwc_otg_core_dev_init(core_if);
 	}

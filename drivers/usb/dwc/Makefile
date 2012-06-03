@@ -5,9 +5,9 @@ obj-$(CONFIG_USB_DWC_OTG)	+= dwc.o
 
 dwc-objs := cil.o cil_intr.o param.o
 
-ifeq ($(CONFIG_4xx_SOC),y)
+#ifeq ($(CONFIG_4xx_SOC),y)
 dwc-objs += apmppc.o
-endif
+#endif
 
 ifneq ($(CONFIG_DWC_DEVICE_ONLY),y)
 dwc-objs += hcd.o hcd_intr.o \

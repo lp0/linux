@@ -162,10 +162,14 @@ static int dwc_otg_handle_otg_intr(struct core_if *core_if)
 	gotgint = dwc_reg_read(global_regs, DWC_GOTGINT);
 	if (gotgint & DWC_GINT_SES_ENDDET) {
 		gotgctl = dwc_reg_read(global_regs, DWC_GOTGCTL);
+#if 0
 		if (core_if->xceiv->state == OTG_STATE_B_HOST) {
 			pcd_start(core_if);
 			core_if->xceiv->state = OTG_STATE_B_PERIPHERAL;
 		} else {
+#else
+		{
+#endif
 			/*
 			 * If not B_HOST and Device HNP still set. HNP did not
 			 * succeed
@@ -207,6 +211,8 @@ static int dwc_otg_handle_otg_intr(struct core_if *core_if)
 		gotgctl = dwc_reg_read(global_regs, DWC_GOTGCTL);
 		if (gotgctl & DWC_GCTL_HOST_NEG_SUCCES) {
 			if (dwc_otg_is_host_mode(core_if)) {
+				BUG();
+#if 0
 				core_if->xceiv->state = OTG_STATE_B_HOST;
 				/*
 				 * Need to disable SOF interrupt immediately.
@@ -224,6 +230,7 @@ static int dwc_otg_handle_otg_intr(struct core_if *core_if)
 				/* Initialize the Core for Host mode. */
 				hcd_start(core_if);
 				core_if->xceiv->state = OTG_STATE_B_HOST;
+#endif
 			}
 		} else {
 			gotgctl = 0;
@@ -242,9 +249,12 @@ static int dwc_otg_handle_otg_intr(struct core_if *core_if)
 		 * interrupt handler will not get executed.
 		 */
 		if (dwc_otg_is_device_mode(core_if)) {
+			BUG();
 			hcd_disconnect(core_if);
 			pcd_start(core_if);
+#if 0
 			core_if->xceiv->state = OTG_STATE_A_PERIPHERAL;
+#endif
 		} else {
 			/*
 			 * Need to disable SOF interrupt immediately. When
@@ -259,7 +269,9 @@ static int dwc_otg_handle_otg_intr(struct core_if *core_if)
 					DWC_INTMSK_STRT_OF_FRM, 0);
 			pcd_stop(core_if);
 			hcd_start(core_if);
+#if 0
 			core_if->xceiv->state = OTG_STATE_A_HOST;
+#endif
 		}
 	}
 	if (gotgint & DWC_GINT_DEVTOUT)
@@ -287,6 +299,7 @@ static void port_otg_wqfunc(struct work_struct *work)
 
 	gotgctl = dwc_reg_read(global_regs, DWC_GOTGCTL);
 	if (gotgctl & DWC_GCTL_CONN_ID_STATUS) {
+		BUG();
 		/*
 		 * B-Device connector (device mode) wait for switch to device
 		 * mode.
@@ -298,7 +311,9 @@ static void port_otg_wqfunc(struct work_struct *work)
 			msleep(100);
 		}
 		BUG_ON(count > 10000);
+#if 0
 		core_if->xceiv->state = OTG_STATE_B_PERIPHERAL;
+#endif
 		dwc_otg_core_init(core_if);
 		dwc_otg_enable_global_interrupts(core_if);
 		pcd_start(core_if);
@@ -314,7 +329,9 @@ static void port_otg_wqfunc(struct work_struct *work)
 			msleep(100);
 		}
 		BUG_ON(count > 10000);
+#if 0
 		core_if->xceiv->state = OTG_STATE_A_HOST;
+#endif
 		dwc_otg_core_init(core_if);
 		dwc_otg_enable_global_interrupts(core_if);
 		hcd_start(core_if);
@@ -431,6 +448,7 @@ static int dwc_otg_handle_disconnect_intr(struct core_if *core_if)
 	ulong global_regs = core_if->core_global_regs;
 
 	if (!dwc_has_feature(core_if, DWC_HOST_ONLY)) {
+#if 0
 		if (core_if->xceiv->state == OTG_STATE_B_HOST) {
 			hcd_disconnect(core_if);
 			pcd_start(core_if);
@@ -454,6 +472,11 @@ static int dwc_otg_handle_disconnect_intr(struct core_if *core_if)
 				core_if->xceiv->state = OTG_STATE_B_PERIPHERAL;
 			}
 		} else if (core_if->xceiv->state == OTG_STATE_A_HOST) {
+#else
+		if (dwc_otg_is_device_mode(core_if)) {
+			BUG();
+		} else {
+#endif
 			/* A-Cable still connected but device disconnected. */
 			hcd_disconnect(core_if);
 		}
@@ -487,12 +510,16 @@ static int dwc_otg_handle_usb_suspend_intr(struct core_if *core_if)
 		/* PCD callback for suspend. */
 		pcd_suspend(core_if);
 	} else {
+#if 0
 		if (core_if->xceiv->state == OTG_STATE_A_PERIPHERAL) {
+#endif
 			/* Clear the a_peripheral flag, back to a_host. */
 			pcd_stop(core_if);
 			hcd_start(core_if);
+#if 0
 			core_if->xceiv->state = OTG_STATE_A_HOST;
 		}
+#endif
 	}
 
 	/* Clear interrupt */

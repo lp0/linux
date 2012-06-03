@@ -55,21 +55,12 @@
  */
 static inline u32 dwc_reg_read(ulong reg , u32 offset)
 {
-
-#ifdef CONFIG_DWC_OTG_REG_LE
-	return in_le32((void __iomem *)(reg + offset));
-#else
-	return in_be32((void __iomem *)(reg + offset));
-#endif
+	return readl((void __iomem *)(reg + offset));
 }
 
 static inline void dwc_reg_write(ulong reg, u32 offset, const u32 value)
 {
-#ifdef CONFIG_DWC_OTG_REG_LE
-	out_le32((void __iomem *)(reg + offset), value);
-#else
-	out_be32((void __iomem *)(reg + offset), value);
-#endif
+	writel(value, (void __iomem *)(reg + offset));
 };
 /**
  * This function modifies bit values in a register.  Using the
@@ -78,33 +69,18 @@ static inline void dwc_reg_write(ulong reg, u32 offset, const u32 value)
 static inline void dwc_reg_modify(ulong reg, u32 offset, const u32 _clear_mask,
 		const u32 _set_mask)
 {
-#ifdef CONFIG_DWC_OTG_REG_LE
-	out_le32((void __iomem *)(reg + offset),
-			(in_le32((void __iomem *)(reg + offset))
-			& ~_clear_mask) | _set_mask);
-#else
-	out_be32((void __iomem *)(reg + offset),
-			(in_be32(((void __iomem *))(reg + offset))
-			& ~_clear_mask) | _set_mask);
-#endif
+	writel((readl((void __iomem *)(reg + offset))
+		& ~_clear_mask) | _set_mask, (void __iomem *)(reg + offset));
 };
 
 static inline void dwc_write_fifo32(ulong reg, const u32 _value)
 {
-#ifdef CONFIG_DWC_OTG_FIFO_LE
-	out_le32((void __iomem *)reg, _value);
-#else
-	out_be32((void __iomem *)reg, _value);
-#endif
+	writel(_value, (void __iomem *)reg);
 };
 
 static inline u32 dwc_read_fifo32(ulong _reg)
 {
-#ifdef CONFIG_DWC_OTG_FIFO_LE
-	return in_le32((void __iomem *) _reg);
-#else
-	return in_be32((void __iomem *) _reg);
-#endif
+	return readl((void __iomem *) _reg);
 };
 
 /*
@@ -1002,7 +978,9 @@ struct core_if {
 
 	struct delayed_work usb_port_wakeup;
 	struct work_struct usb_port_otg;
+#if 0
 	struct otg_transceiver *xceiv;
+#endif
 };
 
 /*

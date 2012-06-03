@@ -195,10 +195,14 @@ static void dwc_otg_core_host_init(struct core_if *core_if)
 	}
 
 	/* Turn on the vbus power. */
+#if 0
 	pr_info("Init: Port Power? op_state=%s\n",
 		otg_state_string(core_if->xceiv->state));
 
 	if (core_if->xceiv->state == OTG_STATE_A_HOST) {
+#else
+	{
+#endif
 		hprt0 = dwc_otg_read_hprt0(core_if);
 		pr_info("Init: Power Port (%d)\n", DWC_HPRT0_PRT_PWR_RD(hprt0));
 		if (DWC_HPRT0_PRT_PWR_RD(hprt0) == 0) {
@@ -291,6 +295,7 @@ static void hcd_start_func(struct work_struct *work)
 static int dwc_otg_hcd_start_cb(void *_p)
 {
 	struct dwc_hcd *dwc_hcd = hcd_to_dwc_otg_hcd(_p);
+#if 0
 	struct core_if *core_if = dwc_hcd->core_if;
 	u32 hprt0;
 
@@ -305,6 +310,9 @@ static int dwc_otg_hcd_start_cb(void *_p)
 		dwc_reg_write(core_if->host_if->hprt0, 0, hprt0);
 		((struct usb_hcd *)_p)->self.is_b_host = 1;
 	} else {
+#else
+	{
+#endif
 		((struct usb_hcd *)_p)->self.is_b_host = 0;
 	}
 
@@ -450,6 +458,7 @@ static int dwc_otg_hcd_disconnect_cb(void *_p)
 	 * reconnection.
 	 */
 	if (dwc_otg_is_device_mode(core_if)) {
+#if 0
 		if (core_if->xceiv->state != OTG_STATE_A_SUSPEND) {
 			u32 hprt0 = 0;
 
@@ -457,6 +466,9 @@ static int dwc_otg_hcd_disconnect_cb(void *_p)
 			hprt0 = DWC_HPRT0_PRT_PWR_RW(hprt0, 0);
 			dwc_reg_write(core_if->host_if->hprt0, 0, hprt0);
 		}
+#else
+		BUG();
+#endif
 		dwc_otg_disable_host_interrupts(core_if);
 	}
 
@@ -889,10 +901,11 @@ static void dwc_otg_hcd_endpoint_disable(struct usb_hcd *hcd,
  * change indicator is 1, otherwise returns 0.
  */
 
-static int dwc_otg_hcd_hub_status_data(struct dwc_hcd *hcd, char *buf)
+static int dwc_otg_hcd_hub_status_data(struct usb_hcd *hcd, char *buf)
 {
+	struct dwc_hcd *dwc_hcd = hcd_to_dwc_otg_hcd(hcd);
 	u32 hprt0;
-	hprt0 = dwc_reg_read(hcd->core_if->host_if->hprt0, 0);
+	hprt0 = dwc_reg_read(dwc_hcd->core_if->host_if->hprt0, 0);
 	buf[0] = 0;
 	buf[0] |= (DWC_HPRT0_PRT_STS_RD(hprt0)\
 		   || DWC_HPRT0_PRT_RES_RD(hprt0)\
@@ -998,7 +1011,9 @@ static int do_set_port_feature(struct usb_hcd *hcd, u16 val, u16 index)
 			gotgctl |= DWC_GCTL_HOST_HNP_ENA;
 			dwc_reg_modify(core_if->core_global_regs,
 				     DWC_GOTGCTL, 0, gotgctl);
+#if 0
 			core_if->xceiv->state = OTG_STATE_A_SUSPEND;
+#endif
 		}
 
 		hprt0 = dwc_otg_read_hprt0(core_if);

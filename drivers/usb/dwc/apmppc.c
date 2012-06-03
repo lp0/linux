@@ -52,6 +52,8 @@
  */
 #include <linux/module.h>
 
+#include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/of_platform.h>
 
 #include "driver.h"
@@ -73,6 +75,7 @@ static irqreturn_t dwc_otg_common_irq(int _irq, void *dev)
 	return IRQ_RETVAL(retval);
 }
 
+#if 0
 static irqreturn_t dwc_otg_externalchgpump_irq(int _irq, void *dev)
 {
 	struct dwc_otg_device *dwc_dev = dev;
@@ -93,6 +96,7 @@ static irqreturn_t dwc_otg_externalchgpump_irq(int _irq, void *dev)
 
 	return IRQ_HANDLED;
 }
+#endif
 
 static int __devexit dwc_otg_driver_remove(struct platform_device *ofdev)
 {
@@ -105,8 +109,10 @@ static int __devexit dwc_otg_driver_remove(struct platform_device *ofdev)
 
 	/* Free the IRQ */
 	free_irq(dwc_dev->irq, dwc_dev);
+#if 0
 	/* Free external charge pump irq */
 	free_irq(dwc_dev->hcd->cp_irq, dwc_dev);
+#endif
 
 	if (dwc_dev->hcd)
 		dwc_otg_hcd_remove(dev);
@@ -124,8 +130,10 @@ static int __devexit dwc_otg_driver_remove(struct platform_device *ofdev)
 	if (dwc_dev->phys_addr)
 		release_mem_region(dwc_dev->phys_addr, dwc_dev->base_len);
 
+#if 0
 	otg_put_transceiver(dwc_dev->core_if->xceiv);
 	dwc_dev->core_if->xceiv = NULL;
+#endif
 
 	kfree(dwc_dev);
 
@@ -205,12 +213,14 @@ static int __devinit dwc_otg_driver_probe(struct platform_device *ofdev)
 		goto fail_check_param;
 	}
 
+#if 0
 	usb_nop_xceiv_register();
 	dwc_dev->core_if->xceiv = otg_get_transceiver();
 	if (!dwc_dev->core_if->xceiv) {
 		retval = -ENODEV;
 		goto fail_xceiv;
 	}
+#endif
 	dwc_set_feature(dwc_dev->core_if);
 
 	/* Initialize the DWC_otg core. */
@@ -220,9 +230,13 @@ static int __devinit dwc_otg_driver_probe(struct platform_device *ofdev)
 	 * Disable the global interrupt until all the interrupt
 	 * handlers are installed.
 	 */
+#if 0
 	spin_lock(&dwc_dev->hcd->lock);
+#endif
 	dwc_otg_disable_global_interrupts(dwc_dev->core_if);
+#if 0
 	spin_unlock(&dwc_dev->hcd->lock);
+#endif
 
 	/*
 	 * Install the interrupt handler for the common interrupts before
@@ -264,6 +278,7 @@ static int __devinit dwc_otg_driver_probe(struct platform_device *ofdev)
 			dwc_dev->hcd = NULL;
 			goto fail_hcd;
 		}
+#if 0
 		/* configure chargepump interrupt */
 		dwc_dev->hcd->cp_irq = irq_of_parse_and_map(ofdev->dev.of_node,
 							    3);
@@ -283,6 +298,7 @@ static int __devinit dwc_otg_driver_probe(struct platform_device *ofdev)
 					"IRQ registered\n", dwc_driver_name);
 			}
 		}
+#endif
 	}
 	/*
 	 * Enable the global interrupt after all the interrupt
@@ -297,9 +313,11 @@ fail_hcd:
 			dwc_otg_pcd_remove(dev);
 	}
 fail_req_irq:
+#if 0
 	otg_put_transceiver(dwc_dev->core_if->xceiv);
 fail_xceiv:
 	usb_nop_xceiv_unregister();
+#endif
 fail_check_param:
 	dwc_otg_cil_remove(dwc_dev->core_if);
 fail_cil_init:
