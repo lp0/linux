@@ -1,5 +1,5 @@
 /dts-v1/;
-/memreserve/ 0x08000000 0x08000000;      /* Set by VideoCore */
+/memreserve/ 0x08000000 0x08000000;	/* Set by VideoCore */
 /include/ "bcm2835.dtsi"
 
 / {

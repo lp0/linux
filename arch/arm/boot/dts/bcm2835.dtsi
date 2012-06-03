@@ -2,8 +2,6 @@
 
 / {
 	model = "BCM2835";
-	#address-cells = <1>;
-	#size-cells = <1>;
 	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
 
 	system {
@@ -23,8 +21,6 @@
 
 	display {
 		compatible = "broadcom,bcm2835-fb", "broadcom,bcm2708-fb";
-		#address-cells = <0>;
-		#size-cells = <0>;
 
 		vc_mailbox = <&vc_mbox>;
 		vc_channel = <1>;
@@ -51,24 +47,6 @@
 		default-off = <0x9>;
 	};
 
-	leds {
-		compatible = "gpio-leds";
-
-		ok {
-			label = "ok";
-			gpios = <&gpio 16 1>;
-
-			/* Don't change this - it configures
-			 * how the led driver determines if
-			 * the led is on or off when it loads.
-			 */
-			default-state = "keep";
-
-			/* This is the real default state. */
-			linux,default-trigger = "default-on";
-		};
-	};
-
 	axi {
 		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
 		#address-cells = <1>;
@@ -77,72 +55,64 @@
 		ranges = <0 0x20000000 0x01000000>;
 		interrupt-parent = <&intc>;
 
-		st {
-			compatible = "simple-bus";
+		stc {
+			compatible = "broadcom,bcm2835-clock", "broadcom,bcm2708-clock", "mmio-clock", "simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			reg = <0x3000 0x1000>;
-			ranges = <0 0x3000 0x1000>;
+			reg = <0x3004 0x4 0x3000 0x4>;
+			reg-names = "counter", "control";
+			ranges;
 
-			stc {
-				compatible = "broadcom,bcm2835-clock", "broadcom,bcm2708-clock", "mmio-clock", "simple-bus";
-				#address-cells = <1>;
-				#size-cells = <1>;
-				reg = <0x004 0x4 0x000 0x4>;
-				reg-names = "counter", "control";
-				ranges;
+			clock-outputs = "sys";
+			clock-frequency = <1000000>;
+			rating = <300>;
 
-				clock-outputs = "sys";
-				clock-frequency = <1000000>;
+			/* DO NOT USE (it doesn't work) */
+			timer0 {
+				compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+				reg = <0x300c 0x4>;
+				reg-names = "compare";
+				interrupts = <1 0>;
+
+				index = <0>;
+				rating = <0>;
+				min-delta = <0xf>;
+			};
+
+			/* Usable system timer */
+			timer1 {
+				compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+				reg = <0x3010 0x4>;
+				reg-names = "compare";
+				interrupts = <1 1>;
+
+				index = <1>;
+				rating = <200>;
+				min-delta = <0xf>;
+			};
+
+			/* DO NOT USE (generates extra interrupts) */
+			timer2 {
+				compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+				reg = <0x3014 0x4>;
+				reg-names = "compare";
+				interrupts = <1 2>;
+
+				index = <2>;
+				rating = <0>;
+				min-delta = <0xf>;
+			};
+
+			/* Usable system timer */
+			timer3 {
+				compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
+				reg = <0x3018 0x4>;
+				reg-names = "compare";
+				interrupts = <1 3>;
+
+				index = <3>;
 				rating = <300>;
-
-				/* DO NOT USE (it doesn't work) */
-				timer0 {
-					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
-					reg = <0x00c 0x4>;
-					reg-names = "compare";
-					interrupts = <1 0>;
-
-					index = <0>;
-					rating = <0>;
-					min-delta = <0xf>;
-				};
-
-				/* Usable system timer */
-				timer1 {
-					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
-					reg = <0x010 0x4>;
-					reg-names = "compare";
-					interrupts = <1 1>;
-
-					index = <1>;
-					rating = <200>;
-					min-delta = <0xf>;
-				};
-
-				/* DO NOT USE (generates extra interrupts) */
-				timer2 {
-					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
-					reg = <0x014 0x4>;
-					reg-names = "compare";
-					interrupts = <1 2>;
-
-					index = <2>;
-					rating = <0>;
-					min-delta = <0xf>;
-				};
-
-				/* Usable system timer */
-				timer3 {
-					compatible = "broadcom,bcm2835-timer", "broadcom,bcm2708-clock", "mmio-timer";
-					reg = <0x018 0x4>;
-					reg-names = "compare";
-					interrupts = <1 3>;
-
-					index = <3>;
-					rating = <300>;
-					min-delta = <0xf>;
-				};
+				min-delta = <0xf>;
 			};
 		};
 
@@ -154,122 +124,114 @@
 			channels = <0x10>;	/* Set by VideoCore */
 		};
 
-		armctrl {
-			compatible = "simple-bus";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			reg = <0xB000 0x1000>;
-			ranges = <0 0xB000 0x1000>;
+		intc: interrupt-controller {
+			compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
+			reg = <0xB200 0x200>;
 
-			intc: interrupt-controller {
-				compatible = "broadcom,bcm2835-armctrl-ic", "broadcom,bcm2708-armctrl-ic";
-				reg = <0x200 0x200>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
 
-				interrupt-controller;
-				#interrupt-cells = <2>;
+			/* Bank 0
+			 * 0: ARM_TIMER
+			 * 1: ARM_MAILBOX
+			 * 2: ARM_DOORBELL_0
+			 * 3: ARM_DOORBELL_1
+			 * 4: VPU0_HALTED
+			 * 5: VPU1_HALTED
+			 * 6: ILLEGAL_TYPE0
+			 * 7: ILLEGAL_TYPE1
+			 */
 
-				/* Bank 0
-				 * 0: ARM_TIMER
-				 * 1: ARM_MAILBOX
-				 * 2: ARM_DOORBELL_0
-				 * 3: ARM_DOORBELL_1
-				 * 4: VPU0_HALTED
-				 * 5: VPU1_HALTED
-				 * 6: ILLEGAL_TYPE0
-				 * 7: ILLEGAL_TYPE1
-				 */
+			/* Bank 1
+			 * 0: TIMER0		16: DMA0
+			 * 1: TIMER1		17: DMA1
+			 * 2: TIMER2		18: VC_DMA2
+			 * 3: TIMER3		19: VC_DMA3
+			 * 4: CODEC0		20: DMA4
+			 * 5: CODEC1		21: DMA5
+			 * 6: CODEC2		22: DMA6
+			 * 7: VC_JPEG		23: DMA7
+			 * 8: ISP		24: DMA8
+			 * 9: VC_USB		25: DMA9
+			 * 10: VC_3D		26: DMA10
+			 * 11: TRANSPOSER	27: DMA11
+			 * 12: MULTICORESYNC0	28: DMA12
+			 * 13: MULTICORESYNC1	29: AUX
+			 * 14: MULTICORESYNC2	30: ARM
+			 * 15: MULTICORESYNC3	31: VPUDMA
+			 */
 
-				/* Bank 1
-				 * 0: TIMER0		16: DMA0
-				 * 1: TIMER1		17: DMA1
-				 * 2: TIMER2		18: VC_DMA2
-				 * 3: TIMER3		19: VC_DMA3
-				 * 4: CODEC0		20: DMA4
-				 * 5: CODEC1		21: DMA5
-				 * 6: CODEC2		22: DMA6
-				 * 7: VC_JPEG		23: DMA7
-				 * 8: ISP		24: DMA8
-				 * 9: VC_USB		25: DMA9
-				 * 10: VC_3D		26: DMA10
-				 * 11: TRANSPOSER	27: DMA11
-				 * 12: MULTICORESYNC0	28: DMA12
-				 * 13: MULTICORESYNC1	29: AUX
-				 * 14: MULTICORESYNC2	30: ARM
-				 * 15: MULTICORESYNC3	31: VPUDMA
-				 */
+			/* Bank 2
+			 * 0: HOSTPORT		16: SMI
+			 * 1: VIDEOSCALER	17: GPIO0
+			 * 2: CCP2TX		18: GPIO1
+			 * 3: SDC		19: GPIO2
+			 * 4: DSI0		20: GPIO3
+			 * 5: AVE		21: VC_I2C
+			 * 6: CAM0		22: VC_SPI
+			 * 7: CAM1		23: VC_I2SPCM
+			 * 8: HDMI0		24: VC_SDIO
+			 * 9: HDMI1		25: VC_UART
+			 * 10: PIXELVALVE1	26: SLIMBUS
+			 * 11: I2CSPISLV	27: VEC
+			 * 12: DSI1		28: CPG
+			 * 13: PWA0		29: RNG
+			 * 14: PWA1		30: VC_ARASANSDIO
+			 * 15: CPR		31: AVSPMON
+			 */
+		};
 
-				/* Bank 2
-				 * 0: HOSTPORT		16: SMI
-				 * 1: VIDEOSCALER	17: GPIO0
-				 * 2: CCP2TX		18: GPIO1
-				 * 3: SDC		19: GPIO2
-				 * 4: DSI0		20: GPIO3
-				 * 5: AVE		21: VC_I2C
-				 * 6: CAM0		22: VC_SPI
-				 * 7: CAM1		23: VC_I2SPCM
-				 * 8: HDMI0		24: VC_SDIO
-				 * 9: HDMI1		25: VC_UART
-				 * 10: PIXELVALVE1	26: SLIMBUS
-				 * 11: I2CSPISLV	27: VEC
-				 * 12: DSI1		28: CPG
-				 * 13: PWA0		29: RNG
-				 * 14: PWA1		30: VC_ARASANSDIO
-				 * 15: CPR		31: AVSPMON
-				 */
-			};
+		armtimer {
+			/* Not AMBA compatible */
+			compatible = "broadcom,bcm2835-sp804", "arm,sp804";
+			reg = <0xB400 0x24>;
+			interrupts = <0 0>;
+		};
 
-			armtimer {
-				/* Not AMBA compatible */
-				compatible = "broadcom,bcm2835-sp804", "arm,sp804";
-				reg = <0x400 0x24>;
-				interrupts = <0 0>;
-			};
+		vc_bell0: bell0 {
+			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+			reg = <0xB840 0x4>;
+			interrupts = <0 2>;
 
-			vc_bell0: bell0 {
-				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-				reg = <0x840 0x4>;
-				interrupts = <0 2>;
+			access = "r-";
+		};
 
-				access = "r-";
-			};
+		vc_bell1: bell1 {
+			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+			reg = <0xB844 0x4>;
+			interrupts = <0 3>;
 
-			vc_bell1: bell1 {
-				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-				reg = <0x844 0x4>;
-				interrupts = <0 3>;
+			access = "r-";
+		};
 
-				access = "r-";
-			};
+		vc_bell2: bell2 {
+			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+			reg = <0xB848 0x4>;
 
-			vc_bell2: bell2 {
-				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-				reg = <0x848 0x4>;
+			access = "-w";
+		};
 
-				access = "-w";
-			};
+		vc_bell3: bell3 {
+			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
+			reg = <0xB84c 0x4>;
 
-			vc_bell3: bell3 {
-				compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-				reg = <0x84c 0x4>;
+			access = "-w";
+		};
 
-				access = "-w";
-			};
+		vc_mbox: mbox0 {
+			compatible = "broadcom,bcm2835-mbox", "broadcom,bcm2708-mbox";
+			reg = <0xB880 0x40>;
+			interrupts = <0 1>;
 
-			vc_mbox: mbox0 {
-				compatible = "broadcom,bcm2835-mbox", "broadcom,bcm2708-mbox";
-				reg = <0x880 0x40>;
-				interrupts = <0 1>;
+			/* Read from 0x00..0x1f, Write to 0x20..3f */
+			access = "rw";
 
-				/* Read from 0x00..0x1f, Write to 0x20..3f */
-				access = "rw";
-
-				/* Channels
-				 * 0: power
-				 * 1: fb
-				 * 3: vchiq
-				 */
-				channels = <0x000b>;
-			};
+			/* Channels
+			 * 0: power
+			 * 1: fb
+			 * 3: vchiq
+			 */
+			channels = <0x000b>;
 		};
 
 		watchdog {
@@ -398,26 +360,19 @@
 			pinctrl = <&pins>;
 		};
 
-		amba {
-			compatible = "arm,amba-bus";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges;
+		uart0 {
+			compatible = "broadcom,bcm2835-uart", "broadcom,bcm2708-uart", "arm,pl011", "arm,primecell", "broadcom,bcm2835-pinctrl-device", "broadcom,bcm2708-pinctrl-device";
+			reg = <0x201000 0x1000>;
+			interrupts = <2 25>;
 
-			uart0 {
-				compatible = "broadcom,bcm2835-uart", "broadcom,bcm2708-uart", "arm,pl011", "arm,primecell", "broadcom,bcm2835-pinctrl-device", "broadcom,bcm2708-pinctrl-device";
-				reg = <0x201000 0x1000>;
-				interrupts = <2 25>;
-
-				pinctrl = <&pins>;
-				pinmap = "UART0";
-			};
+			pinctrl = <&pins>;
+			pinmap = "UART0";
 		};
 
 		spi {
+			compatible = "broadcom,bcm2835-spi", "broadcom,bcm2708-spi";
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "broadcom,bcm2835-spi", "broadcom,bcm2708-spi";
 			reg = <0x204000 0x18>;
 			interrupts = <2 22>;
 
@@ -426,9 +381,9 @@
 		};
 
 		bsc0 {
+			compatible = "broadcom,bcm2835-i2c", "broadcom,bcm2708-i2c";
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "broadcom,bcm2835-i2c", "broadcom,bcm2708-i2c";
 			reg = <0x205000 0x18>;
 			interrupts = <2 21>;
 
