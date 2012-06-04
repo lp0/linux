@@ -421,13 +421,14 @@
 			};
 
 			/* BSCSL */
-			pins_bscsl_bscspi: bscsl_bscspi {
+			pins_bscsl: bscsl {
 				broadcom,pins = <18>, <19>;
 				broadcom,function = "ALT3";
 			};
 
-			pins_bscsl_spi: bscsl_spi {
-				broadcom,pins = <20>, <21>;
+			/* SPISL */
+			pins_spisl: spisl {
+				broadcom,pins = <18>, <19>, <20>, <21>;
 				broadcom,function = "ALT3";
 			};
 
