@@ -862,7 +862,6 @@ static int bcm2708_pmx_gpio_request_enable(struct pinctrl_dev *pctldev,
 		unsigned offset)
 {
 	struct bcm2708_pinctrl *pc = pinctrl_dev_get_drvdata(pctldev);
-	enum bcm2708_fsel cur;
 
 	struct pin_desc *desc = pin_desc_get(pctldev, offset);
 	if (desc->mux_usecount)
