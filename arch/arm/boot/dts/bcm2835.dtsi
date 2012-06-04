@@ -133,7 +133,7 @@
 			interrupts = <0 0>;
 		};
 
-		vc_bell0: bell {
+		vc_bell0: bell@0 {
 			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 			reg = <0xB840 0x4>;
 			interrupts = <0 2>;
@@ -141,7 +141,7 @@
 			access = "r-";
 		};
 
-		vc_bell1: bell {
+		vc_bell1: bell@1 {
 			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 			reg = <0xB844 0x4>;
 			interrupts = <0 3>;
@@ -149,14 +149,14 @@
 			access = "r-";
 		};
 
-		vc_bell2: bell {
+		vc_bell2: bell@2 {
 			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 			reg = <0xB848 0x4>;
 
 			access = "-w";
 		};
 
-		vc_bell3: bell {
+		vc_bell3: bell@3 {
 			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
 			reg = <0xB84c 0x4>;
 
