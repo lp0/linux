@@ -119,6 +119,10 @@
 			/* 53 */	"",		"",	"",			"",		"",		"",		"",		"";
 		};
 
+		uart1 {
+			status = "disable";
+		};
+
 		usb {
 			hub {
 				compatible = "usb,hub", "usb,device";

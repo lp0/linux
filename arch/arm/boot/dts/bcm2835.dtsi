@@ -391,8 +391,6 @@
 			pinmap = "BSC0";
 		};
 
-		/* Auxiliary device disabled by default */
-		/*
 		uart1 {
 			compatible = "broadcom,bcm2835-miniuart", "broadcom,bcm2708-miniuart", "ns16550", "broadcom,bcm2835-pinctrl-device", "broadcom,bcm2708-pinctrl-device";
 			reg = <0x215040 0x38>;
@@ -401,7 +399,6 @@
 			pinctrl = <&pins>;
 			pinmap = "UART1";
 		};
-		*/
 
 		bsc1 {
 			#address-cells = <1>;
