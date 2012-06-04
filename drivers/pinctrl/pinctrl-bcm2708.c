@@ -80,6 +80,7 @@ struct bcm2708_pinctrl {
 	int irq[BCM2708_NUM_BANKS];
 
 	unsigned long readonly_map[BCM2708_PIN_BITMAP_SZ];
+	/* note: locking assumes each bank will have its own unsigned long */
 	unsigned long masked_irq_map[BCM2708_PIN_BITMAP_SZ];
 	unsigned int irq_type[BCM2708_NUM_GPIOS];
 
