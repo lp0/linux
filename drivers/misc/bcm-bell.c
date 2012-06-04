@@ -47,7 +47,6 @@ struct bcm_bell {
 
 static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
 {
-	unsigned long flags;
 	struct bcm_bell *bell = dev_id;
 	int status = readl(bell->base);
 
@@ -55,10 +54,10 @@ static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
 		void (*handler)(struct bcm_bell *, void *);
 		void *data;
 
-		spin_lock_irqsave(&bell->lock, flags);
+		spin_lock(&bell->lock);
 		handler = bell->handler;
 		data = bell->data;
-		spin_unlock_irqrestore(&bell->lock, flags);
+		spin_unlock(&bell->lock);
 
 		if (handler)
 			handler(bell, data);
@@ -193,6 +192,7 @@ struct bcm_bell *bcm_bell_get(struct device_node *node, const char *pbell)
 	struct platform_device *pdev;
 	struct bcm_bell *bell;
 	int ret;
+	unsigned long flags;
 
 	if (node == NULL || pbell == NULL)
 		return ERR_PTR(-EINVAL);
@@ -223,15 +223,15 @@ struct bcm_bell *bcm_bell_get(struct device_node *node, const char *pbell)
 		goto put_dev;
 	}
 
-	spin_lock_irq(&bell->lock);
+	spin_lock_irqsave(&bell->lock, flags);
 	if (bell->open) {
-		spin_unlock_irq(&bell->lock);
+		spin_unlock_irqrestore(&bell->lock, flags);
 		ret = -EBUSY;
 		goto put_dev;
 	} else {
 		bell->open = true;
 	}
-	spin_unlock_irq(&bell->lock);
+	spin_unlock_irqrestore(&bell->lock, flags);
 	return bell;
 
 put_dev:
@@ -243,16 +243,18 @@ EXPORT_SYMBOL_GPL(bcm_bell_get);
 int bcm_bell_read(struct bcm_bell *bell,
 	void (*handler)(struct bcm_bell *bell, void *data), void *data)
 {
+	unsigned long flags;
+
 	if (bell == NULL || handler == NULL)
 		return -EINVAL;
 
 	if (!bell->read)
 		return -EPERM;
 
-	spin_lock_irq(&bell->lock);
+	spin_lock_irqsave(&bell->lock, flags);
 	bell->handler = handler;
 	bell->data = data;
-	spin_unlock_irq(&bell->lock);
+	spin_unlock_irqrestore(&bell->lock, flags);
 
 	if (handler == NULL)
 		synchronize_irq(bell->irq);
@@ -262,12 +264,14 @@ EXPORT_SYMBOL_GPL(bcm_bell_read);
 
 void bcm_bell_put(struct bcm_bell *bell)
 {
+	unsigned long flags;
+
 	if (bell != NULL) {
-		spin_lock_irq(&bell->lock);
+		spin_lock_irqsave(&bell->lock, flags);
 		if (bell->read)
 			bell->handler = NULL;
 		bell->open = false;
-		spin_unlock_irq(&bell->lock);
+		spin_unlock_irqrestore(&bell->lock, flags);
 
 		if (bell->read)
 			synchronize_irq(bell->irq);
