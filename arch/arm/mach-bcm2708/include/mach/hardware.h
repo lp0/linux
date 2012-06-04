@@ -18,12 +18,9 @@
 #ifndef __ASM_ARCH_HARDWARE_H
 #define __ASM_ARCH_HARDWARE_H
 
-/* macros to get at IO space when running virtually */
-#define IO_ADDRESS(x)		(((x) & 0x0fffffff) + (((x) >> 4) & 0x0f000000) + 0xf0000000)
-
-#define BCM2708_PERIPH_BASE	0x20000000
-#define BCM2708_PERIPH_SIZE	SZ_16M
-#define BCM2708_DEBUG_BASE	0x20201000
+#define BCM2708_DEBUG_PHYS	0x20201000
+#define BCM2708_DEBUG_VIRT	0xf2000000
 #define BCM2708_DEBUG_CLOCK	3000000
+#define BCM2708_DEBUG_SIZE	SZ_4K
 
 #endif

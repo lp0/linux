@@ -39,9 +39,9 @@ module_param_named(serial, system_serial_low, uint, 0);
 
 static struct map_desc bcm2708_io_desc[] __initdata = {
 	{
-		.virtual = IO_ADDRESS(BCM2708_PERIPH_BASE),
-		.pfn = __phys_to_pfn(BCM2708_PERIPH_BASE),
-		.length = BCM2708_PERIPH_SIZE,
+		.virtual = BCM2708_DEBUG_VIRT,
+		.pfn = __phys_to_pfn(BCM2708_DEBUG_PHYS),
+		.length = BCM2708_DEBUG_SIZE,
 		.type = MT_DEVICE
 	}
 };
