@@ -63,10 +63,26 @@
 
 		dma: dma {
 			compatible = "broadcom,bcm2835-dma", "broadcom,bcm2708-dma";
-			reg = <0x7000 0x1000>;
-			interrupts = <1 16>, <1 17>, <1 18>, <1 19>, <1 20>, <1 21>, <1 22>, <1 23>, <1 24>, <1 25>, <1 26>, <1 27>, <1 28>;
+			reg = <0x7000 0x1000>, <0xE05000 0x1000>;
+			interrupts =
+				/*  0 */ <1 16>,
+				/*  1 */ <1 17>,
+				/*  2 */ <1 18>,
+				/*  3 */ <1 19>,
+				/*  4 */ <1 20>,
+				/*  5 */ <1 21>,
+				/*  6 */ <1 22>,
+				/*  7 */ <1 23>,
+				/*  8 */ <1 24>,
+				/*  9 */ <1 25>,
+				/* 10 */ <1 26>,
+				/* 11 */ <1 27>,
+				/* 12 */ <1 27>, /* also on <1 28> */
+				/* 13 */ <1 27>, /* also on <1 28> */
+				/* 14 */ <1 27>, /* also on <1 28> */
+				/* 15 */ <1 31>; /* Used by VideoCore */
 
-			channels = <0x10>;	/* Set by VideoCore */
+			broadcom,channels = <0>;	/* Set by VideoCore */
 		};
 
 		intc: interrupt-controller {
