@@ -13,6 +13,8 @@
 #include <linux/device.h>
 #include <linux/dmaengine.h>
 #include <linux/dmapool.h>
+#include <linux/dma-direction.h>
+#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -84,7 +86,7 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 }
 
 static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
-	struct bcm2708_dmachan *bcmchan, int count)
+	struct bcm2708_dmachan *bcmchan, unsigned long flags, int count)
 {
 	struct bcm2708_dmatx *bcmtx = kzalloc(sizeof(*bcmtx)
 			+ count * sizeof(bcmtx->desc[0]), GFP_KERNEL);
@@ -107,7 +109,22 @@ static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
 		}
 	}
 
+	/**
+	 * Ignored flags:
+	 *   DMA_PREP_INTERRUPT	(this is always done)
+	 *   DMA_CTRL_ACK	(descriptors aren't reused)
+	 *   DMA_PREP_CONTINUE	(operations are executed in order)
+	 *   DMA_PREP_FENCE	(operations are executed in order)
+	 *
+	 * Handled flags:
+	 *   DMA_COMPL_SKIP_SRC_UNMAP
+	 *   DMA_COMPL_SKIP_DEST_UNMAP
+	 *   DMA_COMPL_SRC_UNMAP_SINGLE
+	 *   DMA_COMPL_DEST_UNMAP_SINGLE
+	 */
+
 	bcmtx->dmatx.cookie = -EBUSY;
+	bcmtx->dmatx.flags = flags;
 	bcmtx->dmatx.chan = &bcmchan->dmachan;
 	bcmtx->dmatx.phys = bcmtx->desc[0].phys;
 	bcmtx->dmatx.tx_submit = bcm2708_dma_submit;
@@ -138,7 +155,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 	if (len < 0 || len > (bcmchan->lite ? 0xffff : 0xffffffff))
 		return NULL;
 
-	bcmtx = bcm2708_dma_alloc_tx(bcmchan, 1);
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
 	if (!bcmtx)
 		return NULL;
 
@@ -323,6 +340,48 @@ done:
 	spin_unlock(&bcmchan->lock);
 }
 
+static inline void __bcm2708_dma_cleanup_dst(struct bcm2708_dmachan *bcmchan,
+	struct bcm2708_dmatx *bcmtx, int i)
+{
+	if (bcmtx->dmatx.flags & DMA_COMPL_DEST_UNMAP_SINGLE)
+		dma_unmap_single(bcmchan->dev, bcmtx->desc[i].cb->dst,
+			bcmtx->desc[i].cb->len, DMA_FROM_DEVICE);
+	else
+		dma_unmap_page(bcmchan->dev, bcmtx->desc[i].cb->dst,
+			bcmtx->desc[i].cb->len, DMA_FROM_DEVICE);
+}
+
+static inline void __bcm2708_dma_cleanup_src(struct bcm2708_dmachan *bcmchan,
+	struct bcm2708_dmatx *bcmtx, int i)
+{
+	if (bcmtx->dmatx.flags & DMA_COMPL_SRC_UNMAP_SINGLE)
+		dma_unmap_single(bcmchan->dev, bcmtx->desc[i].cb->src,
+			bcmtx->desc[i].cb->len, DMA_TO_DEVICE);
+	else
+		dma_unmap_page(bcmchan->dev, bcmtx->desc[i].cb->src,
+			bcmtx->desc[i].cb->len, DMA_TO_DEVICE);
+}
+
+static void __bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan,
+	struct bcm2708_dmatx *bcmtx)
+{
+	int i;
+
+	dev_dbg(bcmtx->chan->dev, "%s: %d: %08x\n", __func__,
+		bcmtx->chan->id, bcmtx->dmatx.cookie);
+
+	if (bcmtx->dmatx.callback)
+		bcmtx->dmatx.callback(bcmtx->dmatx.callback_param);
+
+	if (!(bcmtx->dmatx.flags & DMA_COMPL_SKIP_DEST_UNMAP))
+		for (i = 0; i < bcmtx->count; i++)
+			__bcm2708_dma_cleanup_dst(bcmchan, bcmtx, i);
+
+	if (!(bcmtx->dmatx.flags & DMA_COMPL_SKIP_SRC_UNMAP))
+		for (i = 0; i < bcmtx->count; i++)
+			__bcm2708_dma_cleanup_src(bcmchan, bcmtx, i);
+}
+
 static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
 {
 	LIST_HEAD(completed);
@@ -335,12 +394,7 @@ static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
 	spin_unlock_irqrestore(&bcmchan->lock, flags);
 
 	list_for_each_entry_safe(bcmtx, tmp, &completed, list) {
-		dev_dbg(bcmtx->chan->dev, "%s: %d: %08x\n", __func__,
-			bcmtx->chan->id, bcmtx->dmatx.cookie);
-
-		if (bcmtx->dmatx.callback)
-			bcmtx->dmatx.callback(bcmtx->dmatx.callback_param);
-
+		__bcm2708_dma_cleanup(bcmchan, bcmtx);
 		list_del(&bcmtx->list);
 		bcm2708_dma_free_tx(bcmtx);
 	}
