@@ -257,46 +257,32 @@ static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
 	return ret;
 }
 
+static void __bcm2708_dma_issue_pending(struct bcm2708_dmachan *bcmchan)
+{
+	struct bcm2708_dmatx *bcmtx;
+
+	if (bcmchan->active || list_empty(&bcmchan->pending))
+		return;
+
+	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+
+	list_splice_tail_init(&bcmchan->pending, &bcmchan->running);
+	bcmtx = list_first_entry(&bcmchan->running, struct bcm2708_dmatx, list);
+
+	dsb();
+	writel(bcmtx->dmatx.phys, bcmchan->base + REG_CONBLK_AD);
+	writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+
+	bcmchan->active = true;
+}
+
 static void bcm2708_dma_issue_pending(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	unsigned long flags;
 
 	spin_lock_irqsave(&bcmchan->lock, flags);
-	if (list_empty(&bcmchan->pending))
-		goto out;
-
-	dev_dbg(bcmchan->dev, "%s: %d %d\n", __func__, bcmchan->id,
-		bcmchan->active);
-
-	if (bcmchan->active) {
-		// Pause
-		writel(0, bcmchan->base + REG_CS);
-
-		bcm2708_dma_chain_cb(
-			list_last_entry(&bcmchan->running,
-				struct bcm2708_dmatx, list),
-			list_first_entry(&bcmchan->pending,
-				struct bcm2708_dmatx, list));
-		list_splice_tail_init(&bcmchan->pending, &bcmchan->running);
-
-		// Resume
-		dsb();
-		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
-	} else {
-		struct bcm2708_dmatx *bcmtx = list_first_entry(
-				&bcmchan->pending, struct bcm2708_dmatx, list);
-		list_splice_tail_init(&bcmchan->pending, &bcmchan->running);
-
-		// Start
-		dsb();
-		writel(bcmtx->dmatx.phys,
-				bcmchan->base + REG_CONBLK_AD);
-		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
-		bcmchan->active = true;
-	}
-
-out:
+	__bcm2708_dma_issue_pending(bcmchan);
 	spin_unlock_irqrestore(&bcmchan->lock, flags);
 }
 
@@ -333,6 +319,7 @@ done:
 		list_cut_position(&completed, &bcmchan->running, &last->list);
 		list_splice_tail(&completed, &bcmchan->completed);
 	}
+	__bcm2708_dma_issue_pending(bcmchan);
 	spin_unlock(&bcmchan->lock);
 }
 
