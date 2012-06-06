@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Broadcom
+ * Copyright 2010 Broadcom
  * Copyright 2012 Simon Arlott
  *
  * This program is free software; you can redistribute it and/or modify
@@ -10,7 +10,9 @@
  */
 
 #include <linux/bitops.h>
+#include <linux/device.h>
 #include <linux/dmaengine.h>
+#include <linux/dmapool.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -24,72 +26,27 @@
 #include <linux/spinlock.h>
 #include <asm/sizes.h>
 #include "dmaengine.h"
+#include "bcm2708_dma.h"
 
 #define MODULE_NAME "bcm2708_dma"
-
-#define CACHE_LINE_MASK		31
-#define MAX_CHANS		16
-
-#define REG_CS			0x00	/* Control and Status */
-#define REG_CONBLK_AD		0x04	/* Control Block Address */
-#define REG_CB			0x08	/* Control Block */
-
-#define REG_DEBUG		0x20
-#define BCM_DEBUG_RLSN_ERR(n)	(n & BIT(0))		/* Read Last Not Set Error */
-#define BCM_DEBUG_FIFO_ERR(n)	(n & BIT(1))
-#define BCM_DEBUG_READ_ERR(n)	(n & BIT(2))
-#define BCM_DEBUG_OUT_WR(n)	((n >> 4) & 0xF)	/* Outstanding Writes Count */
-#define BCM_DEBUG_DMA_ID(n)	((n >> 8) & 0xFF)	/* DMA AXI ID */
-#define BCM_DEBUG_DMA_STATE(n)	((n >> 16) & 0x1FF)	/* State Machine State */
-#define BCM_DEBUG_VERSION(n)	((n >> 25) & 0x7)
-#define BCM_DEBUG_LITE(n)	(n & BIT(28))
-
-enum dmadev_idx {
-	D_FULL,
-	D_LITE,
-	D_MAX
-};
-
-struct bcm2708_dmachan {
-	struct device *dev;
-	void __iomem *base;
-	int irq;
-	bool in_use;
-
-	int id;
-	int axi_id;
-	bool lite;
-	int version;
-
-	struct dma_chan dmachan;
-};
-
-struct bcm2708_dmadev {
-	struct device *dev;
-
-	/* Channels 0-14, 15 */
-	struct resource res[2];
-	void __iomem *base[2];
-
-	/* Full/lite devices */
-	struct dma_device dmadev[2];
-};
 
 static inline struct bcm2708_dmachan *to_bcmchan(struct dma_chan *dmachan)
 {
 	return container_of(dmachan, struct bcm2708_dmachan, dmachan);
 }
 
+static inline struct bcm2708_dmatx *to_bcmtx(
+	struct dma_async_tx_descriptor *dmatx)
+{
+	return container_of(dmatx, struct bcm2708_dmatx, dmatx);
+}
+
 static int bcm2708_dma_alloc_chan(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
-	if (bcmchan->in_use)
-		return -EBUSY;
-
-	bcmchan->in_use = true;
 	return 0;
 }
 
@@ -97,9 +54,75 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+}
 
-	bcmchan->in_use = false;
+static inline void bcm2708_dma_chain_cb(struct bcm2708_dmatx *prev,
+	struct bcm2708_dmatx *next)
+{
+	BUG_ON(prev->desc[prev->count - 1].cb->next);
+	prev->desc[prev->count - 1].cb->next = next->dmatx.phys;
+}
+
+static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
+{
+	struct bcm2708_dmatx *bcmtx = to_bcmtx(dmatx);
+	struct bcm2708_dmachan *bcmchan = bcmtx->chan;
+	unsigned long flags;
+	
+	spin_lock_irqsave(&bcmchan->lock, flags);
+	if (!list_empty(&bcmchan->pending))
+		bcm2708_dma_chain_cb(list_last_entry(&bcmchan->pending,
+				struct bcm2708_dmatx, list), bcmtx);
+	list_add_tail(&bcmtx->list, &bcmchan->pending);
+	dma_cookie_assign(&bcmtx->dmatx);
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
+
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x\n", __func__, bcmchan->id,
+		bcmtx->dmatx.cookie);
+	return bcmtx->dmatx.cookie;
+}
+
+static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
+	struct bcm2708_dmachan *bcmchan, int count)
+{
+	struct bcm2708_dmatx *bcmtx = kzalloc(sizeof(*bcmtx)
+			+ count * sizeof(bcmtx->desc[0]), GFP_KERNEL);
+	int i;
+
+	if (!bcmtx || count < 1)
+		return NULL;
+
+	bcmtx->chan = bcmchan;
+	bcmtx->count = count;
+	for (i = 0; i < count; i++) {
+		bcmtx->desc[i].cb = dma_pool_alloc(bcmchan->pool, GFP_KERNEL,
+				&bcmtx->desc[i].phys);
+		if (!bcmtx->desc[i].cb) {
+			while (--i >= 0)
+				dma_pool_free(bcmchan->pool, bcmtx->desc[i].cb,
+						bcmtx->desc[i].phys);
+			kfree(bcmtx);
+			return NULL;
+		}
+	}
+
+	bcmtx->dmatx.cookie = -EBUSY;
+	bcmtx->dmatx.chan = &bcmchan->dmachan;
+	bcmtx->dmatx.phys = bcmtx->desc[0].phys;
+	bcmtx->dmatx.tx_submit = bcm2708_dma_submit;
+
+	return bcmtx;
+}
+
+static void bcm2708_dma_free_tx(struct bcm2708_dmatx *bcmtx)
+{
+
+	int i;
+	for (i = 0; i < bcmtx->count; i++)
+		dma_pool_free(bcmtx->chan->pool, bcmtx->desc[i].cb,
+			bcmtx->desc[i].phys);
+	kfree(bcmtx);
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
@@ -107,9 +130,39 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 	size_t len, unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmatx *bcmtx;
 
-	dev_dbg(bcmchan->dev, "%s: %d: %08x(+%d)=>%08x [%lu]\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x(+%d)=>%08x [%lu]\n", __func__,
 		bcmchan->id, src, len, dst, flags);
+
+	if (len < 0 || len > (bcmchan->lite ? 0xffff : 0xffffffff))
+		return NULL;
+
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, 1);
+	if (!bcmtx)
+		return NULL;
+
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
+		| BCM_TI_DST_INC | BCM_TI_SRC_INC
+		| BCM_TI_BURST_LEN_SET(bcmchan->lite ? 4 : 8);
+	bcmtx->desc[0].cb->src = src;
+	bcmtx->desc[0].cb->dst = dst;
+	bcmtx->desc[0].cb->len = len;
+	bcmtx->desc[0].cb->stride = 0;
+	bcmtx->desc[0].cb->next = 0;
+	bcmtx->desc[0].cb->pad = 0;
+
+	return &bcmtx->dmatx;
+}
+
+static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
+	struct dma_chan *dmachan, dma_addr_t dst, int value, size_t len,
+	unsigned long flags)
+{
+	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x=>%08x(+%d) [%lu]\n", __func__,
+		bcmchan->id, value, len, dst, flags);
 
 	return NULL;
 }
@@ -119,7 +172,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d: %lu\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %lu\n", __func__,
 		bcmchan->id, flags);
 
 	return NULL;
@@ -133,7 +186,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d: %d=>%d [%lu]\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %d=>%d [%lu]\n", __func__,
 		bcmchan->id, src_nents, dst_nents, flags);
 
 	return NULL;
@@ -146,7 +199,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d: %p+%d [%d,%lu] %p\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %p+%d [%d,%lu] %p\n", __func__,
 		bcmchan->id, sgl, sg_len, direction, flags, context);
 
 	return NULL;
@@ -159,7 +212,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_cyclic(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d: %08x+%d [%d,%d] %p\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x+%d [%d,%d] %p\n", __func__,
 		bcmchan->id, buf_addr, buf_len, period_len, direction, context);
 
 	return NULL;
@@ -171,7 +224,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);	
 
-	dev_dbg(bcmchan->dev, "%s: %d: %p [%lu]\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %p [%lu]\n", __func__,
 		bcmchan->id, xt, flags);
 
 	return NULL;
@@ -182,7 +235,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 
-	dev_dbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
 		bcmchan->id, cmd, arg);
 
 	return -ENOSYS;
@@ -192,27 +245,157 @@ static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
 	dma_cookie_t cookie, struct dma_tx_state *txstate)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
+	enum dma_status ret;
 
-	dev_dbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
-	return DMA_ERROR;
+	spin_lock_irqsave(&bcmchan->lock, flags);
+	ret = dma_cookie_status(dmachan, cookie, txstate);
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
+
+	return ret;
 }
 
 static void bcm2708_dma_issue_pending(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
 
-	dev_dbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+	spin_lock_irqsave(&bcmchan->lock, flags);
+	if (list_empty(&bcmchan->pending))
+		goto out;
 
-	WARN_ON(1);
+	dev_dbg(bcmchan->dev, "%s: %d %d\n", __func__, bcmchan->id,
+		bcmchan->active);
+
+	if (bcmchan->active) {
+		// Pause
+		writel(0, bcmchan->base + REG_CS);
+
+		bcm2708_dma_chain_cb(
+			list_last_entry(&bcmchan->running,
+				struct bcm2708_dmatx, list),
+			list_first_entry(&bcmchan->pending,
+				struct bcm2708_dmatx, list));
+		list_splice_tail_init(&bcmchan->pending, &bcmchan->running);
+
+		// Resume
+		dsb();
+		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+	} else {
+		struct bcm2708_dmatx *bcmtx = list_first_entry(
+				&bcmchan->pending, struct bcm2708_dmatx, list);
+		list_splice_tail_init(&bcmchan->pending, &bcmchan->running);
+
+		// Start
+		dsb();
+		writel(bcmtx->dmatx.phys,
+				bcmchan->base + REG_CONBLK_AD);
+		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+		bcmchan->active = true;
+	}
+
+out:
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
+}
+
+static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
+	u32 status, u32 block)
+{
+	struct bcm2708_dmatx *bcmtx;
+	struct bcm2708_dmatx *last = NULL;
+	LIST_HEAD(completed);
+	int i;
+
+	spin_lock(&bcmchan->lock);
+	if (block == 0) {
+		if (status & BCM_CS_END)
+			writel(status & BCM_CS_END, bcmchan->base + REG_CS);
+
+		if (!(status & BCM_CS_ACTIVE))
+			bcmchan->active = false;
+	}
+
+	list_for_each_entry(bcmtx, &bcmchan->running, list) {
+		if (block != 0) {
+			for (i = 0; i < bcmtx->count; i++)
+				if (block == bcmtx->desc[i].phys)
+					goto done;
+		}
+
+		dma_cookie_complete(&bcmtx->dmatx);
+		last = bcmtx;
+	}
+
+done:
+	if (last != NULL) {
+		list_cut_position(&completed, &bcmchan->running, &last->list);
+		list_splice_tail(&completed, &bcmchan->completed);
+	}
+	spin_unlock(&bcmchan->lock);
+}
+
+static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
+{
+	LIST_HEAD(completed);
+	struct bcm2708_dmatx *bcmtx;
+	struct bcm2708_dmatx *tmp;
+	unsigned long flags;
+
+	spin_lock_irqsave(&bcmchan->lock, flags);
+	list_splice_tail_init(&bcmchan->completed, &completed);
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
+
+	list_for_each_entry_safe(bcmtx, tmp, &completed, list) {
+		dev_dbg(bcmtx->chan->dev, "%s: %d: %08x\n", __func__,
+			bcmtx->chan->id, bcmtx->dmatx.cookie);
+
+		if (bcmtx->dmatx.callback)
+			bcmtx->dmatx.callback(bcmtx->dmatx.callback_param);
+
+		list_del(&bcmtx->list);
+		bcm2708_dma_free_tx(bcmtx);
+	}
+}
+
+static void bcm2708_dma_tasklet(unsigned long data)
+{
+	bcm2708_dma_cleanup((struct bcm2708_dmachan *)data);
 }
 
 static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 {
 	struct dma_chan *dmachan = dev_id;
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	u32 status = readl(bcmchan->base + REG_CS);
+	u32 block = readl(bcmchan->base + REG_CONBLK_AD);
 
-	dev_dbg(bcmchan->dev, "irq for %d\n", bcmchan->id);
+	dev_vdbg(bcmchan->dev, "%s: %d: status %08x block %08x\n",
+		__func__, bcmchan->id, status, block);
+	if (status & BCM_CS_ERROR) {
+		u32 debug = readl(bcmchan->base + REG_DEBUG);
+
+		dev_warn(bcmchan->dev, "error on chan %d:%s%s%s %08x\n",
+			bcmchan->id,
+			BCM_DEBUG_RLSN_ERR(debug) ? " rlsn" : "",
+			BCM_DEBUG_FIFO_ERR(debug) ? " fifo" : "",
+			BCM_DEBUG_READ_ERR(debug) ? " read" : "",
+			BCM_DEBUG_DMA_STATE(debug));
+
+		writel(BCM_DEBUG_RLSN_ERR(debug)
+			| BCM_DEBUG_FIFO_ERR(debug)
+			| BCM_DEBUG_READ_ERR(debug),
+			bcmchan->base + REG_DEBUG);
+	}
+
+	bcm2708_dma_update_progress(bcmchan, status, block);
+	tasklet_schedule(&bcmchan->tasklet);
+
+	if (status & BCM_CS_INT) {
+		writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
+		return IRQ_HANDLED;
+	}
 	return IRQ_NONE;
 }
 
@@ -225,11 +408,19 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	struct bcm2708_dmachan *bcmchan;
 	struct dma_chan *dmachan;
 	unsigned int nr_chans;
+	u32 channels;
 	int ret, i;
 
 	if (bcmdev == NULL)
 		return -ENOMEM;
 	bcmdev->dev = &pdev->dev;
+	bcmdev->pool = dmam_pool_create(dev_name(bcmdev->dev), bcmdev->dev,
+		sizeof(struct bcm2708_dmacb),
+		sizeof(struct bcm2708_dmacb), 32);
+	if (!bcmdev->pool) {
+		dev_err(bcmdev->dev, "unable to create dma pool\n");
+		return -ENOMEM;
+	}
 
 	for (i = 0; i < 2; i++) {
 		if (of_address_to_resource(np, i, &bcmdev->res[i])) {
@@ -253,6 +444,11 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		}
 	}
 
+	if (of_property_read_u32(np, "broadcom,channels", &channels)) {
+		dev_err(bcmdev->dev, "missing channels mask\n");
+		return -EINVAL;
+	}
+
 	for (i = 0; i < D_MAX; i++) {
 		dmadev[i].dev = bcmdev->dev;
 		dmadev[i].chancnt = 0;
@@ -264,13 +460,23 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		char *tmp;
 		int type, len;
 
+		if (!(channels & BIT(i)))
+			continue;
+
 		bcmchan = devm_kzalloc(bcmdev->dev,
 			sizeof(*bcmchan), GFP_KERNEL);
 		if (bcmchan == NULL)
 			return -ENOMEM;
 		dmachan = &bcmchan->dmachan;
 		bcmchan->dev = bcmdev->dev;
+		bcmchan->pool = bcmdev->pool;
 		bcmchan->id = i;
+		spin_lock_init(&bcmchan->lock);
+		INIT_LIST_HEAD(&bcmchan->pending);
+		INIT_LIST_HEAD(&bcmchan->running);
+		INIT_LIST_HEAD(&bcmchan->completed);
+		tasklet_init(&bcmchan->tasklet, bcm2708_dma_tasklet,
+			(unsigned long)bcmchan);
 
 		/* valid only for channels 0 - 14
 		 * 15 has its own base address
@@ -284,6 +490,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		bcmchan->axi_id = BCM_DEBUG_DMA_ID(debug);
 		bcmchan->version = BCM_DEBUG_VERSION(debug);
 		bcmchan->lite = BCM_DEBUG_LITE(debug);
+		writel(BCM_CS_RESET, bcmchan->base + REG_CS);
 
 		bcmchan->irq = irq_of_parse_and_map(np, i);
 		if (!bcmchan->irq) {
@@ -322,6 +529,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	}
 
 	dma_cap_set(DMA_MEMCPY, dmadev[D_FULL].cap_mask);
+	dma_cap_set(DMA_MEMSET, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_FULL].cap_mask);
@@ -335,12 +543,17 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
 
 	for (i = 0; i < D_MAX; i++) {
-		dmadev[i].copy_align = 0;
+		if (list_empty(&dmadev[i].channels))
+			continue;
+
+		dmadev[i].copy_align = 4;
+		dmadev[i].fill_align = 4;
 
 		dmadev[i].device_alloc_chan_resources = bcm2708_dma_alloc_chan;
 		dmadev[i].device_free_chan_resources = bcm2708_dma_free_chan;
 
 		dmadev[i].device_prep_dma_memcpy = bcm2708_dma_prep_memcpy;
+		dmadev[i].device_prep_dma_memset = bcm2708_dma_prep_memset;
 		dmadev[i].device_prep_dma_interrupt = bcm2708_dma_prep_interrupt;
 		dmadev[i].device_prep_dma_sg = bcm2708_dma_prep_dma_sg;
 		dmadev[i].device_prep_slave_sg = bcm2708_dma_prep_slave_sg;
@@ -386,10 +599,22 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 static int bcm2708_dma_remove(struct platform_device *pdev)
 {
 	struct bcm2708_dmadev *bcmdev = platform_get_drvdata(pdev);
+	struct dma_chan *dmachan;
+	struct bcm2708_dmachan *bcmchan;
 	int i;
 
-	for (i = 0; i < D_MAX; i++)
+	for (i = 0; i < D_MAX; i++) {
+		if (list_empty(&bcmdev->dmadev[i].channels))
+			continue;
+
+		list_for_each_entry(dmachan,
+				&bcmdev->dmadev[i].channels, device_node) {
+			bcmchan = to_bcmchan(dmachan);
+			tasklet_kill(&bcmchan->tasklet);
+		}
+
 		dma_async_device_unregister(&bcmdev->dmadev[i]);
+	}
 	platform_set_drvdata(pdev, NULL);
 	return 0;
 }
@@ -411,6 +636,6 @@ static struct platform_driver bcm2708_dma_driver = {
 };
 module_platform_driver(bcm2708_dma_driver);
 
-MODULE_AUTHOR("Gray Girling, Simon Arlott");
-MODULE_DESCRIPTION("Broadcom BCM2708 DMA channel manager driver");
+MODULE_AUTHOR("Simon Arlott");
+MODULE_DESCRIPTION("Broadcom BCM2708 DMA engine driver");
 MODULE_LICENSE("GPL");
