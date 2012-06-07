@@ -752,16 +752,16 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_MEMCPY, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_MEMSET, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_FULL].cap_mask);
-	dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
+	//TODO dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_FULL].cap_mask);
-	dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
-	dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
+	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
+	//TODO dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
 
 	dma_cap_set(DMA_MEMCPY, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_LITE].cap_mask);
-	dma_cap_set(DMA_SLAVE, dmadev[D_LITE].cap_mask);
+	//TODO dma_cap_set(DMA_SLAVE, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_LITE].cap_mask);
-	dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
+	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
 
 	for (i = 0; i < D_MAX; i++) {
 		if (list_empty(&dmadev[i].channels))
