@@ -289,7 +289,8 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 	if (unlikely(!bcmtx))
 		return NULL;
 
-	bcmtx->desc[0].cb->ti = BCM_TI_INTEN;
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_SRC_IGNORE
+		| BCM_TI_DST_IGNORE;
 	bcmtx->desc[0].cb->src = 0;
 	bcmtx->desc[0].cb->dst = 0;
 	bcmtx->desc[0].cb->len = 0;
