@@ -42,7 +42,6 @@ struct bcm_bell {
 	void *data;
 
 	u32 irq;
-	struct irqaction irqaction;
 };
 
 static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
@@ -70,7 +69,8 @@ static irqreturn_t bcm_bell_irq_handler(int irq, void *dev_id)
 static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
-	struct bcm_bell *bell = kzalloc(sizeof(*bell), GFP_KERNEL);
+	struct bcm_bell *bell = devm_kzalloc(&of_dev->dev,
+		sizeof(*bell), GFP_KERNEL);
 	const char *access;
 	int ret;
 
@@ -80,38 +80,25 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	bell->dev = &of_dev->dev;
 	spin_lock_init(&bell->lock);
 
-	if (of_address_to_resource(node, 0, &bell->res)) {
-		ret = -EINVAL;
-		goto err;
-	}
+	if (of_address_to_resource(node, 0, &bell->res))
+		return -EINVAL;
 
 	if (resource_size(&bell->res) < sizeof(u32)) {
 		dev_err(bell->dev, "resource too small (%#x)\n",
 			resource_size(&bell->res));
-		ret = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
-	if (!request_region(bell->res.start, resource_size(&bell->res),
-			node->full_name)) {
-		dev_err(bell->dev, "resource %#lx unavailable\n",
-			(unsigned long)bell->res.start);
-		ret = -EBUSY;
-		goto err;
-	}
-
-	bell->base = ioremap(bell->res.start, resource_size(&bell->res));
+	bell->base = devm_request_and_ioremap(bell->dev, &bell->res);
 	if (!bell->base) {
 		dev_err(bell->dev, "error mapping io at %#lx\n",
 			(unsigned long)bell->res.start);
-		ret = -EIO;
-		goto err_release;
+		return -EIO;
 	}
 
 	if (of_property_read_string(node, "access", &access)) {
 		dev_err(bell->dev, "unable to read access configuration\n");
-		ret = -EINVAL;
-		goto err_unmap;
+		return -EINVAL;
 	}
 
 	/* read this carefully so that the device tree format
@@ -127,8 +114,7 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		access = "w/o";
 	} else {
 		dev_err(bell->dev, "invalid access configuration: %s\n", access);
-		ret = -EINVAL;
-		goto err_unmap;
+		return -EINVAL;
 	}
 
 	/* register the interrupt handler */
@@ -137,20 +123,17 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		if (bell->irq <= 0) {
 			dev_err(bell->dev, "no IRQ");
 			spin_unlock_irq(&bell->lock);
-			ret = -ENXIO;
-			goto err_unmap;
+			return -ENXIO;
 		}
-		bell->irqaction.name = dev_name(bell->dev);
-		bell->irqaction.flags = IRQF_SHARED | IRQF_IRQPOLL;
-		bell->irqaction.dev_id = bell;
-		bell->irqaction.handler = bcm_bell_irq_handler;
 		bell->handler = NULL;
 
-		ret = setup_irq(bell->irq, &bell->irqaction);
+		ret = devm_request_irq(bell->dev, bell->irq,
+			bcm_bell_irq_handler, IRQF_SHARED,
+			dev_name(bell->dev), bell);
 		if (ret) {
-			dev_err(bell->dev, "unable to setup irq %d", bell->irq);
+			dev_err(bell->dev, "unable to request irq %d", bell->irq);
 			spin_unlock_irq(&bell->lock);
-			goto err_unmap;
+			return ret;
 		}
 
 		dev_info(bell->dev, "doorbell at MMIO %#lx (irq = %d, %s)\n",
@@ -160,29 +143,11 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 			(unsigned long)bell->res.start, access);
 	}
 
-
-	platform_set_drvdata(of_dev, bell);
 	return 0;
-
-err_unmap:
-	iounmap(bell->base);
-err_release:
-	release_region(bell->res.start, resource_size(&bell->res));
-err:
-	kfree(bell);
-	return ret;
 }
 
 static int bcm_bell_remove(struct platform_device *of_dev)
 {
-	struct bcm_bell *bell = platform_get_drvdata(of_dev);
-
-	if (bell->read)
-		remove_irq(bell->irq, &bell->irqaction);
-	iounmap(bell->base);
-	release_region(bell->res.start, resource_size(&bell->res));
-	kfree(bell);
-	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
 
