@@ -224,11 +224,21 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 	struct dma_chan *dmachan, unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmatx *bcmtx;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %lu\n", __func__,
 		bcmchan->id, flags);
 
-	return NULL;
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
+	if (unlikely(!bcmtx))
+		return NULL;
+
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN;
+	bcmtx->desc[0].cb->src = 0;
+	bcmtx->desc[0].cb->dst = 0;
+	bcmtx->desc[0].cb->len = 0;
+	bcmtx->desc[0].cb->stride = 0;
+	return &bcmtx->dmatx;
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
