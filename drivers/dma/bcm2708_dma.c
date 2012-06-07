@@ -95,11 +95,31 @@ static void bcm2708_dma_free_tx(struct bcm2708_dmatx *bcmtx)
 	kfree(bcmtx);
 }
 
+static struct bcm2708_dmatx *bcm2708_dma_alloc_cb(struct bcm2708_dmatx *bcmtx,
+	int count)
+{
+	int i;
+
+	for (i = bcmtx->count; i < count; i++) {
+		bcmtx->desc[i].cb = dma_pool_alloc(bcmtx->chan->pool,
+				GFP_KERNEL, &bcmtx->desc[i].phys);
+		if (unlikely(!bcmtx->desc[i].cb)) {
+			bcm2708_dma_free_tx(bcmtx);
+			return NULL;
+		}
+		if (i > 0)
+			bcmtx->desc[i - 1].cb->next = bcmtx->desc[i].phys;
+		bcmtx->desc[i].cb->pad = 0;
+		bcmtx->count++;
+	}
+	bcmtx->desc[bcmtx->count - 1].cb->next = 0;
+	return bcmtx;
+}
+
 static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
 	struct bcm2708_dmachan *bcmchan, unsigned long flags, int count)
 {
 	struct bcm2708_dmatx *bcmtx;
-	int i;
 
 	if (unlikely(count <= 0))
 		return NULL;
@@ -111,15 +131,9 @@ static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
 
 	bcmtx->chan = bcmchan;
 	bcmtx->count = 0;
-	for (i = 0; i < count; i++) {
-		bcmtx->desc[i].cb = dma_pool_alloc(bcmchan->pool, GFP_KERNEL,
-				&bcmtx->desc[i].phys);
-		if (unlikely(!bcmtx->desc[i].cb)) {
-			bcm2708_dma_free_tx(bcmtx);
-			return NULL;
-		}
-		bcmtx->count++;
-	}
+	bcmtx = bcm2708_dma_alloc_cb(bcmtx, count);
+	if (unlikely(!bcmtx))
+		return NULL;
 
 	/**
 	 * Ignored flags:
@@ -140,7 +154,6 @@ static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
 	bcmtx->dmatx.chan = &bcmchan->dmachan;
 	bcmtx->dmatx.phys = bcmtx->desc[0].phys;
 	bcmtx->dmatx.tx_submit = bcm2708_dma_submit;
-
 	return bcmtx;
 }
 
@@ -148,10 +161,8 @@ static struct bcm2708_dmatx *bcm2708_dma_realloc_tx(struct bcm2708_dmatx *bcmtx,
 	int count)
 {
 	struct bcm2708_dmatx *tmp;
-	int i;
 
 	BUG_ON(unlikely(count <= 0));
-
 	if (unlikely(count <= bcmtx->count)) {
 		while (bcmtx->count > count) {
 			bcmtx->count--;
@@ -167,19 +178,7 @@ static struct bcm2708_dmatx *bcm2708_dma_realloc_tx(struct bcm2708_dmatx *bcmtx,
 		bcm2708_dma_free_tx(bcmtx);
 		return NULL;
 	}
-	bcmtx = tmp;
-
-	for (i = bcmtx->count; i < count; i++) {
-		bcmtx->desc[i].cb = dma_pool_alloc(bcmtx->chan->pool,
-				GFP_KERNEL, &bcmtx->desc[i].phys);
-		if (unlikely(!bcmtx->desc[i].cb)) {
-			bcm2708_dma_free_tx(bcmtx);
-			return NULL;
-		}
-		bcmtx->count++;
-	}
-
-	return bcmtx;
+	return bcm2708_dma_alloc_cb(tmp, count);
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
@@ -196,7 +195,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 		return NULL;
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
-	if (!bcmtx)
+	if (unlikely(!bcmtx))
 		return NULL;
 
 	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
@@ -206,9 +205,6 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 	bcmtx->desc[0].cb->dst = dst;
 	bcmtx->desc[0].cb->len = len;
 	bcmtx->desc[0].cb->stride = 0;
-	bcmtx->desc[0].cb->next = 0;
-	bcmtx->desc[0].cb->pad = 0;
-
 	return &bcmtx->dmatx;
 }
 
