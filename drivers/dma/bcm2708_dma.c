@@ -305,11 +305,87 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
 	unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmatx *bcmtx;
+	int max_count = max(src_nents, dst_nents);
+	size_t src_avail, dst_avail;
+	dma_addr_t src, dst;
+	size_t len;
+	int i = -1;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %d=>%d [%lu]\n", __func__,
 		bcmchan->id, src_nents, dst_nents, flags);
 
-	return NULL;
+	if (unlikely(src_sg == NULL || dst_sg == NULL || max_count <= 0
+			|| src_nents <= 0 || dst_nents <= 0))
+		return NULL;
+
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, max_count);
+	if (unlikely(!bcmtx))
+		return NULL;
+
+	src_avail = sg_dma_len(src_sg);
+	dst_avail = sg_dma_len(dst_sg);
+
+	while (true) {
+		/* create the largest transaction possible */
+		len = min_t(size_t, src_avail, dst_avail);
+		len = min_t(size_t, len, MAX_LEN(bcmchan));
+		if (len == 0)
+			goto fetch;
+
+		src = sg_dma_address(src_sg) + sg_dma_len(src_sg) - src_avail;
+		dst = sg_dma_address(dst_sg) + sg_dma_len(dst_sg) - dst_avail;
+
+		/* allocate and populate the descriptor */
+		bcmtx = bcm2708_dma_realloc_tx(bcmtx, ++i + 1);
+		if (unlikely(!bcmtx))
+			return NULL;
+
+		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC | BCM_TI_SRC_INC
+			| BCM_TI_BURST_CHAN(bcmchan);
+		bcmtx->desc[i].cb->src = src;
+		bcmtx->desc[i].cb->dst = dst;
+		bcmtx->desc[i].cb->len = len;
+		bcmtx->desc[i].cb->stride = 0;
+
+		/* update metadata */
+		src_avail -= len;
+		dst_avail -= len;
+
+fetch:
+		/* fetch the next dst scatterlist entry */
+		if (dst_avail == 0) {
+			/* no more entries: we're done */
+			if (dst_nents == 0)
+				break;
+
+			/* fetch the next entry: if there are no more: done */
+			dst_sg = sg_next(dst_sg);
+			if (dst_sg == NULL)
+				break;
+
+			dst_nents--;
+			dst_avail = sg_dma_len(dst_sg);
+		}
+
+		/* fetch the next src scatterlist entry */
+		if (src_avail == 0) {
+			/* no more entries: we're done */
+			if (src_nents == 0)
+				break;
+
+			/* fetch the next entry: if there are no more: done */
+			src_sg = sg_next(src_sg);
+			if (src_sg == NULL)
+				break;
+
+			src_nents--;
+			src_avail = sg_dma_len(src_sg);
+		}
+	}
+
+	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
+	return &bcmtx->dmatx;
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
