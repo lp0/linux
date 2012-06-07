@@ -291,7 +291,7 @@ static int bcm2708_fb_register(struct bcm2708_fb *fb)
 {
 	int ret;
 	dma_addr_t dma;
-	void *mem = dma_alloc_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), &dma,
+	void *mem = dmam_alloc_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), &dma,
 			       GFP_KERNEL);
 
 	if (!mem) {
@@ -357,7 +357,8 @@ static void bcm2708_fb_of_prop(struct device_node *node, char *name,
 static int bcm2708_fb_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
-	struct bcm2708_fb *fb = kzalloc(sizeof(*fb), GFP_KERNEL);
+	struct bcm2708_fb *fb = devm_kzalloc(&of_dev->dev,
+		sizeof(*fb), GFP_KERNEL);
 	int ret;
 
 	if (!fb)
@@ -369,7 +370,6 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 	if (IS_ERR(fb->mbox)) {
 		dev_err(fb->dev, "unable to find VideoCore mailbox (%ld)",
 			PTR_ERR(fb->mbox));
-		kfree(fb);
 		return PTR_ERR(fb->mbox);
 	}
 
@@ -380,7 +380,6 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 	ret = bcm2708_fb_register(fb);
 	if (ret) {
 		bcm_mbox_put(fb->mbox);
-		kfree(fb);
 		return ret;
 	}
 
@@ -395,10 +394,8 @@ static int bcm2708_fb_remove(struct platform_device *of_dev)
 	unregister_framebuffer(&fb->fb);
 	if (fb->fb.screen_base)
 		iounmap(fb->fb.screen_base);
-	dma_free_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), fb->info, fb->dma);
 
 	bcm_mbox_put(fb->mbox);
-	kfree(fb);
 	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
