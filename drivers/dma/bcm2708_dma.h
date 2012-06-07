@@ -12,7 +12,8 @@
 #ifndef _BCM2708_DMA_H
 #define _BCM2708_DMA_H
 
-#define CACHE_LINE_MASK		31
+#define CACHE_LINE_SIZE		32
+#define CACHE_LINE_MASK		(CACHE_LINE_SIZE - 1)
 #define MAX_CHANS		16
 
 #define REG_CS			0x00	/* Control and Status */

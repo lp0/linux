@@ -587,8 +587,8 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		if (list_empty(&dmadev[i].channels))
 			continue;
 
-		dmadev[i].copy_align = 4;
-		dmadev[i].fill_align = 4;
+		dmadev[i].copy_align = CACHE_LINE_SIZE;
+		dmadev[i].fill_align = CACHE_LINE_SIZE;
 
 		dmadev[i].device_alloc_chan_resources = bcm2708_dma_alloc_chan;
 		dmadev[i].device_free_chan_resources = bcm2708_dma_free_chan;
