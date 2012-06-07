@@ -5,8 +5,6 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *
- * TODO: describe Lite differences
  */
 
 #ifndef _BCM2708_DMA_H
@@ -15,6 +13,7 @@
 #define CACHE_LINE_SIZE		32
 #define CACHE_LINE_MASK		(CACHE_LINE_SIZE - 1)
 #define MAX_CHANS		16
+#define MAX_LEN(n)		((n)->lite ? 0x8000 : 0x80000000)
 
 #define REG_CS			0x00	/* Control and Status */
 #define BCM_CS_ACTIVE		BIT(0)	/* Activate (rw) */
@@ -50,6 +49,7 @@
 #define BCM_TI_SRC_IGNORE	BIT(11)	/* Ignore (do not perform) Reads */
 #define BCM_TI_BURST_LEN_GET(n)	((n >> 12) & 0xF)	/* Burst Transfer Length (words) */
 #define BCM_TI_BURST_LEN_SET(n)	((n & 0xF) << 12)	/* Burst Transfer Length (words) */
+#define BCM_TI_BURST_CHAN(n)	BCM_TI_BURST_LEN_SET((n)->lite ? 4 : 8)
 #define BCM_TI_PERMAP_GET(n)	((n >> 16) & 0x1F)	/* Periphal Mapping */
 #define BCM_TI_PERMAP_SET(n)	((n & 0x1F) << 16)	/* Periphal Mapping */
 #define BCM_TI_WAITS_GET(n)	((n >> 21) & 0x1F)	/* Add Wait Cycles */
@@ -132,7 +132,7 @@ struct bcm2708_dmadesc {
 
 struct bcm2708_dmatx {
 	struct bcm2708_dmachan *chan;
-	int count;
+	unsigned int count;
 
 	struct dma_async_tx_descriptor dmatx;
 	struct list_head list;

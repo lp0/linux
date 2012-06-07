@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * TODO: describe Lite differences
+ * CB creation loops copied from fsldma.c (Freescale Semiconductor, Inc.)
  */
 
 #include <linux/bitops.h>
@@ -190,24 +190,39 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	struct bcm2708_dmatx *bcmtx;
+	size_t copy;
+	int i = -1;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x(+%d)=>%08x [%lu]\n", __func__,
 		bcmchan->id, src, len, dst, flags);
 
-	if (len < 0 || len > (bcmchan->lite ? 0xffff : 0xffffffff))
+	if (unlikely(len < 0))
 		return NULL;
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
 	if (unlikely(!bcmtx))
 		return NULL;
 
-	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
-		| BCM_TI_DST_INC | BCM_TI_SRC_INC
-		| BCM_TI_BURST_LEN_SET(bcmchan->lite ? 4 : 8);
-	bcmtx->desc[0].cb->src = src;
-	bcmtx->desc[0].cb->dst = dst;
-	bcmtx->desc[0].cb->len = len;
-	bcmtx->desc[0].cb->stride = 0;
+	do {
+		copy = min(len, MAX_LEN(bcmchan));
+
+		bcmtx = bcm2708_dma_realloc_tx(bcmtx, ++i + 1);
+		if (unlikely(!bcmtx))
+			return NULL;
+
+		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC | BCM_TI_SRC_INC
+			| BCM_TI_BURST_CHAN(bcmchan);
+		bcmtx->desc[i].cb->src = src;
+		bcmtx->desc[i].cb->dst = dst;
+		bcmtx->desc[i].cb->len = copy;
+		bcmtx->desc[i].cb->stride = 0;
+
+		len -= copy;
+		src += copy;
+		dst += copy;
+	} while (len);
+
+	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 	return &bcmtx->dmatx;
 }
 
@@ -217,11 +232,13 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	struct bcm2708_dmatx *bcmtx;
+	size_t copy;
+	int i = -1;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x=>%08x(+%d) [%lu]\n", __func__,
 		bcmchan->id, value, len, dst, flags);
 
-	if (len < 0 || len > (bcmchan->lite ? 0xffff : 0xffffffff))
+	if (unlikely(len < 0))
 		return NULL;
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
@@ -236,13 +253,25 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 		return NULL;
 	}
 
-	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
-		| BCM_TI_DST_INC
-		| BCM_TI_BURST_LEN_SET(bcmchan->lite ? 4 : 8);
-	bcmtx->desc[0].cb->src = bcmtx->memset_phys;
-	bcmtx->desc[0].cb->dst = dst;
-	bcmtx->desc[0].cb->len = len;
-	bcmtx->desc[0].cb->stride = 0;
+	do {
+		copy = min(len, MAX_LEN(bcmchan));
+
+		bcmtx = bcm2708_dma_realloc_tx(bcmtx, ++i + 1);
+		if (unlikely(!bcmtx))
+			return NULL;
+
+		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC
+			| BCM_TI_BURST_CHAN(bcmchan);
+		bcmtx->desc[i].cb->src = bcmtx->memset_phys;
+		bcmtx->desc[i].cb->dst = dst;
+		bcmtx->desc[i].cb->len = copy;
+		bcmtx->desc[i].cb->stride = 0;
+
+		len -= copy;
+		dst += copy;
+	} while (len);
+
+	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 	*bcmtx->memset_value = value;
 	return NULL;
 }
