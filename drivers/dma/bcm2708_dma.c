@@ -412,8 +412,8 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	u32 status = readl(bcmchan->base + REG_CS);
 	u32 block = readl(bcmchan->base + REG_CONBLK_AD);
 
-	dev_vdbg(bcmchan->dev, "%s: %d: status %08x block %08x\n",
-		__func__, bcmchan->id, status, block);
+	dev_vdbg(bcmchan->dev, "%s: %d: irq %d status %08x block %08x\n",
+		__func__, irq, bcmchan->id, status, block);
 	if (status & BCM_CS_ERROR) {
 		u32 debug = readl(bcmchan->base + REG_DEBUG);
 
@@ -496,6 +496,8 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		INIT_LIST_HEAD(&dmadev[i].channels);
 	}
 
+	channels &= readl(bcmdev->base[0] + REG_ENABLE);
+
 	for (i = 0; i < MAX_CHANS; i++) {
 		u32 debug;
 		char *tmp;
@@ -548,7 +550,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		snprintf(tmp, len, "%s:chan%d", dev_name(bcmdev->dev), i);
 
 		ret = devm_request_irq(bcmdev->dev, bcmchan->irq,
-			bcm2708_dma_irq_handler, 0, tmp, dmachan);
+			bcm2708_dma_irq_handler, IRQF_SHARED, tmp, dmachan);
 		if (ret) {
 			devm_kfree(bcmdev->dev, tmp);
 			devm_kfree(bcmdev->dev, bcmchan);

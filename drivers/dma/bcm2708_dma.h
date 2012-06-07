@@ -72,6 +72,9 @@
 #define BCM_DEBUG_VERSION(n)	((n >> 25) & 0x7)
 #define BCM_DEBUG_LITE(n)	(n & BIT(28))
 
+#define REG_INT_STATUS		0xfe0	/* Interrupt status of each DMA channel */
+#define REG_ENABLE		0xff0	/* Global enable bits for each DMA channel */
+
 enum dmadev_idx {
 	D_FULL,
 	D_LITE,
