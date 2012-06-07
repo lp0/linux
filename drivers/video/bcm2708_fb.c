@@ -290,17 +290,14 @@ static struct fb_ops bcm2708_fb_ops = {
 static int bcm2708_fb_register(struct bcm2708_fb *fb)
 {
 	int ret;
-	dma_addr_t dma;
-	void *mem = dmam_alloc_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)), &dma,
-			       GFP_KERNEL);
 
-	if (!mem) {
+	fb->info = dmam_alloc_coherent(fb->dev, PAGE_ALIGN(sizeof(*fb->info)),
+		&fb->dma, GFP_KERNEL);
+	if (!fb->info) {
 		dev_err(fb->dev, "unable to allocate fbinfo buffer\n");
-		ret = -ENOMEM;
-	} else {
-		fb->info = (struct fbinfo_s *)mem;
-		fb->dma = dma;
+		return -ENOMEM;
 	}
+
 	fb->fb.fbops = &bcm2708_fb_ops;
 	fb->fb.flags = FBINFO_FLAG_DEFAULT;
 	fb->fb.pseudo_palette = fb->cmap;
