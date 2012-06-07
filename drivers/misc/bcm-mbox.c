@@ -126,7 +126,6 @@ struct bcm_mbox {
 	struct list_head outbox;
 
 	u32 irq;
-	struct irqaction irqaction;
 };
 
 static inline struct bcm_mbox_store *to_mbox_store(struct bcm_mbox_chan *chan)
@@ -151,8 +150,6 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 		list_del(&msg->list);
 		kfree(msg);
 	}
-
-	kfree(mbox);
 }
 
 static void bcm_mbox_irq_error(struct bcm_mbox *mbox, int error)
@@ -279,7 +276,8 @@ static irqreturn_t bcm_mbox_irq_handler(int irq, void *dev_id)
 static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
-	struct bcm_mbox *mbox = kzalloc(sizeof(*mbox), GFP_KERNEL);
+	struct bcm_mbox *mbox = devm_kzalloc(&of_dev->dev,
+		sizeof(*mbox), GFP_KERNEL);
 	const char *access;
 	void __iomem *r_off;
 	void __iomem *w_off;
@@ -299,38 +297,25 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 		INIT_LIST_HEAD(&mbox->store[i].inbox);
 	}
 
-	if (of_address_to_resource(node, 0, &mbox->res)) {
-		ret = -EINVAL;
-		goto err;
-	}
+	if (of_address_to_resource(node, 0, &mbox->res))
+		return -EINVAL;
 
 	if (resource_size(&mbox->res) < MBOX_REGSZ) {
 		dev_err(mbox->dev, "resource too small (%#x)\n",
 			resource_size(&mbox->res));
-		ret = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
-	if (!request_region(mbox->res.start, resource_size(&mbox->res),
-			node->full_name)) {
-		dev_err(mbox->dev, "resource %#lx unavailable\n",
-			(unsigned long)mbox->res.start);
-		ret = -EBUSY;
-		goto err;
-	}
-
-	mbox->base = ioremap(mbox->res.start, resource_size(&mbox->res));
+	mbox->base = devm_request_and_ioremap(mbox->dev, &mbox->res);
 	if (!mbox->base) {
 		dev_err(mbox->dev, "error mapping io at %#lx\n",
 			(unsigned long)mbox->res.start);
-		ret = -EIO;
-		goto err_release;
+		return -EIO;
 	}
 
 	if (of_property_read_string(node, "access", &access)) {
 		dev_err(mbox->dev, "unable to read access configuration\n");
-		ret = -EINVAL;
-		goto err_unmap;
+		return -EINVAL;
 	}
 
 	/* read this carefully so that the device tree format
@@ -344,8 +329,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 		r_off = mbox->base + MBOX_OFF1;
 	} else {
 		dev_err(mbox->dev, "invalid access configuration: %s\n", access);
-		ret = -EINVAL;
-		goto err_unmap;
+		return -EINVAL;
 	}
 
 	mbox->status = r_off + MBOX_STA;
@@ -359,8 +343,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 
 	if (!mbox->channels) {
 		dev_err(mbox->dev, "mailbox has no channels\n");
-		ret = -EINVAL;
-		goto err_unmap;
+		return -EINVAL;
 	}
 
 	/* disable interrupts and clear the mailbox */
@@ -373,22 +356,18 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	if (mbox->irq <= 0) {
 		dev_err(mbox->dev, "no IRQ");
 		spin_unlock_irq(&mbox->lock);
-		ret = -ENXIO;
-		goto err_unmap;
+		return -ENXIO;
 	}
-	mbox->irqaction.name = dev_name(mbox->dev);
-	mbox->irqaction.flags = IRQF_SHARED | IRQF_IRQPOLL;
-	mbox->irqaction.dev_id = mbox;
-	mbox->irqaction.handler = bcm_mbox_irq_handler;
 
 	mbox->running = false;
 	mbox->waiting = false;
 
-	ret = setup_irq(mbox->irq, &mbox->irqaction);
+	ret = devm_request_irq(mbox->dev, mbox->irq, bcm_mbox_irq_handler,
+		IRQF_SHARED, dev_name(mbox->dev), mbox);
 	if (ret) {
-		dev_err(mbox->dev, "unable to setup irq %d", mbox->irq);
+		dev_err(mbox->dev, "unable to request irq %d", mbox->irq);
 		spin_unlock_irq(&mbox->lock);
-		goto err_unmap;
+		return ret;
 	}
 
 	/* enable the interrupt on data reception */
@@ -402,14 +381,6 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 
 	platform_set_drvdata(of_dev, mbox);
 	return 0;
-
-err_unmap:
-	iounmap(mbox->base);
-err_release:
-	release_region(mbox->res.start, resource_size(&mbox->res));
-err:
-	bcm_mbox_free(mbox);
-	return ret;
 }
 
 static int bcm_mbox_remove(struct platform_device *of_dev)
@@ -423,16 +394,14 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 	writel(0, mbox->config);
 	spin_unlock_irqrestore(&mbox->lock, flags);
 
-	/* remove the interrupt handler */
-	remove_irq(mbox->irq, &mbox->irqaction);
+	/* wait for the interrupt handler to finish */
+	synchronize_irq(mbox->irq);
 
 	/* clear the mailbox */
 	writel(MBOX_STA_CLEAR_MSGS, mbox->config);
 	writel(0, mbox->config);
-
-	iounmap(mbox->base);
-	release_region(mbox->res.start, resource_size(&mbox->res));
 	bcm_mbox_free(mbox);
+
 	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
