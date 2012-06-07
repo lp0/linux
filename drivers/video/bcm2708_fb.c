@@ -222,8 +222,14 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	/* ensure GPU writes are visible to us */
 	rmb();
 
-	if (ret != 0 || val != 0)
-		return -EIO;
+	if (ret != 0 || val != 0) {
+		/* the console may currently be locked */
+		console_trylock();
+		console_unlock();
+
+		/* fbcon_init can't handle errors */
+		panic(DRIVER_NAME ": VideoCore fatal error ret=%d val=%d\n", ret, val);
+	}
 
 	fb->fb.fix.line_length = fbinfo->pitch;
 
@@ -243,8 +249,8 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 		console_trylock();
 		console_unlock();
 
-		/* what else can we do here? */
-		BUG();
+		/* fbcon_init can't handle errors */
+		panic(DRIVER_NAME ": ioremap_wc failed at 0x%08lx+0x%08lx\n", fb->fb.fix.smem_start, fb->fb.screen_size);
 	}
 	return 0;
 }
