@@ -55,7 +55,8 @@ struct bcm_vc_power_dev {
 static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 {
 	struct device_node *node = of_dev->dev.of_node;
-	struct bcm_vc_power_mgr *mgr = kzalloc(sizeof(*mgr), GFP_KERNEL);
+	struct bcm_vc_power_mgr *mgr = devm_kzalloc(&of_dev->dev,
+		sizeof(*mgr), GFP_KERNEL);
 	u32 default_on;
 	u32 default_off;
 	char *name;
@@ -68,10 +69,10 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	mutex_init(&mgr->lock);
 	mgr->mbox = bcm_mbox_get(node, "broadcom,vc-mailbox", "broadcom,vc-channel");
 
-	if (!mgr->mbox) {
-		dev_err(mgr->dev, "unable to find mailbox channel\n");
-		ret = -ENOENT;
-		goto err;
+	if (IS_ERR(mgr->mbox)) {
+		dev_err(mgr->dev, "unable to find mailbox channel (%ld)\n",
+			PTR_ERR(mgr->mbox));
+		return -ENOENT;
 	}
 
 	mgr->valid = ~0;
@@ -127,7 +128,7 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	return 0;
 
 err:
-	kfree(mgr);
+	bcm_mbox_put(mgr->mbox);
 	return ret;
 }
 
@@ -136,7 +137,6 @@ static int bcm_vc_power_mgr_remove(struct platform_device *of_dev)
 	struct bcm_vc_power_mgr *mgr = platform_get_drvdata(of_dev);
 
 	bcm_mbox_put(mgr->mbox);
-	kfree(mgr);
 	platform_set_drvdata(of_dev, NULL);
 	return 0;
 }
