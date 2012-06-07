@@ -304,7 +304,7 @@ static void bcm2708_dma_issue_pending(struct dma_chan *dmachan)
 }
 
 static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
-	u32 status, u32 block)
+	u32 block)
 {
 	struct bcm2708_dmatx *bcmtx;
 	struct bcm2708_dmatx *last = NULL;
@@ -312,13 +312,8 @@ static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
 	int i;
 
 	spin_lock(&bcmchan->lock);
-	if (block == 0) {
-		if (status & BCM_CS_END)
-			writel(status & BCM_CS_END, bcmchan->base + REG_CS);
-
-		if (!(status & BCM_CS_ACTIVE))
-			bcmchan->active = false;
-	}
+	if (block == 0)
+		bcmchan->active = false;
 
 	list_for_each_entry(bcmtx, &bcmchan->running, list) {
 		if (block != 0) {
@@ -410,10 +405,18 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	struct dma_chan *dmachan = dev_id;
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	u32 status = readl(bcmchan->base + REG_CS);
-	u32 block = readl(bcmchan->base + REG_CONBLK_AD);
+	u32 block;
 
-	dev_vdbg(bcmchan->dev, "%s: %d: irq %d status %08x block %08x\n",
-		__func__, irq, bcmchan->id, status, block);
+	if (!(status & BCM_CS_INT))
+		return IRQ_NONE;
+
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+	if (status & BCM_CS_END)
+		writel(status & BCM_CS_END, bcmchan->base + REG_CS);
+
+	bcm2708_dma_update_progress(bcmchan, block);
+	tasklet_schedule(&bcmchan->tasklet);
+
 	if (status & BCM_CS_ERROR) {
 		u32 debug = readl(bcmchan->base + REG_DEBUG);
 
@@ -428,16 +431,12 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 			| BCM_DEBUG_FIFO_ERR(debug)
 			| BCM_DEBUG_READ_ERR(debug),
 			bcmchan->base + REG_DEBUG);
+
+		// FIXME handle error
 	}
 
-	bcm2708_dma_update_progress(bcmchan, status, block);
-	tasklet_schedule(&bcmchan->tasklet);
-
-	if (status & BCM_CS_INT) {
-		writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
-		return IRQ_HANDLED;
-	}
-	return IRQ_NONE;
+	writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
+	return IRQ_HANDLED;
 }
 
 static int bcm2708_dma_probe(struct platform_device *pdev)
