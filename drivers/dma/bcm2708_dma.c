@@ -92,6 +92,9 @@ static void bcm2708_dma_free_tx(struct bcm2708_dmatx *bcmtx)
 	for (i = 0; i < bcmtx->count; i++)
 		dma_pool_free(bcmtx->chan->pool, bcmtx->desc[i].cb,
 				bcmtx->desc[i].phys);
+	if (bcmtx->memset_value)
+		dma_pool_free(bcmtx->chan->pool, bcmtx->memset_value,
+				bcmtx->memset_phys);
 	kfree(bcmtx);
 }
 
@@ -213,10 +216,34 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 	unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmatx *bcmtx;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x=>%08x(+%d) [%lu]\n", __func__,
 		bcmchan->id, value, len, dst, flags);
 
+	if (len < 0 || len > (bcmchan->lite ? 0xffff : 0xffffffff))
+		return NULL;
+
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
+	if (unlikely(!bcmtx))
+		return NULL;
+
+	/* this wastes 4 bytes but avoids using a second pool */
+	bcmtx->memset_value = dma_pool_alloc(bcmtx->chan->pool,
+				GFP_KERNEL, &bcmtx->memset_phys);
+	if (unlikely(!bcmtx->memset_value)) {
+		bcm2708_dma_free_tx(bcmtx);
+		return NULL;
+	}
+
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
+		| BCM_TI_DST_INC
+		| BCM_TI_BURST_LEN_SET(bcmchan->lite ? 4 : 8);
+	bcmtx->desc[0].cb->src = bcmtx->memset_phys;
+	bcmtx->desc[0].cb->dst = dst;
+	bcmtx->desc[0].cb->len = len;
+	bcmtx->desc[0].cb->stride = 0;
+	*bcmtx->memset_value = value;
 	return NULL;
 }
 

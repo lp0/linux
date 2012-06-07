@@ -137,6 +137,9 @@ struct bcm2708_dmatx {
 	struct dma_async_tx_descriptor dmatx;
 	struct list_head list;
 
+	int *memset_value;
+	dma_addr_t memset_phys;
+
 	struct bcm2708_dmadesc desc[0];
 };
 
