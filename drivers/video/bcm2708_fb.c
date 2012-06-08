@@ -217,7 +217,8 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	bcm_mbox_clear(fb->mbox);
 	ret = bcm_mbox_call_timeout(fb->mbox, fb->dma, &val, 2 * HZ);
 	if (ret)
-		dev_err(fb->dev, "error communicating with VideoCore (%d)", ret);
+		dev_err(fb->dev, "error communicating with VideoCore (%d)",
+				ret);
 
 	/* ensure GPU writes are visible to us */
 	rmb();
@@ -228,7 +229,8 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 		console_unlock();
 
 		/* fbcon_init can't handle errors */
-		panic(DRIVER_NAME ": VideoCore fatal error ret=%d val=%d\n", ret, val);
+		panic(DRIVER_NAME ": VideoCore fatal error ret=%d val=%d\n",
+				ret, val);
 	}
 
 	fb->fb.fix.line_length = fbinfo->pitch;
@@ -238,19 +240,36 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	else
 		fb->fb.fix.visual = FB_VISUAL_TRUECOLOR;
 
+	if (fb->fb.screen_base) {
+		iounmap(fb->fb.screen_base);
+		release_mem_region(fb->fb.fix.smem_start,
+				fb->fb.fix.smem_len);
+	}
+
 	fb->fb.fix.smem_start = fbinfo->base;
 	fb->fb.fix.smem_len = fbinfo->pitch * fbinfo->yres_virtual;
+	if (!request_mem_region(fb->fb.fix.smem_start, fb->fb.fix.smem_len,
+			dev_name(fb->dev))) {
+		/* the console may currently be locked */
+		console_trylock();
+		console_unlock();
+
+		/* fbcon_init can't handle errors */
+		panic(DRIVER_NAME ": request_region failed for 0x%08lx+0x%08x\n",
+				fb->fb.fix.smem_start, fb->fb.fix.smem_len);
+	}
+
 	fb->fb.screen_size = fbinfo->screen_size;
-	if (fb->fb.screen_base)
-		iounmap(fb->fb.screen_base);
-	fb->fb.screen_base = ioremap_wc(fb->fb.fix.smem_start, fb->fb.screen_size);
+	fb->fb.screen_base = ioremap_wc(fb->fb.fix.smem_start,
+			fb->fb.screen_size);
 	if (!fb->fb.screen_base) {
 		/* the console may currently be locked */
 		console_trylock();
 		console_unlock();
 
 		/* fbcon_init can't handle errors */
-		panic(DRIVER_NAME ": ioremap_wc failed at 0x%08lx+0x%08lx\n", fb->fb.fix.smem_start, fb->fb.screen_size);
+		panic(DRIVER_NAME ": ioremap_wc failed at 0x%08lx+0x%08lx\n",
+				fb->fb.fix.smem_start, fb->fb.screen_size);
 	}
 	return 0;
 }
@@ -395,8 +414,11 @@ static int bcm2708_fb_remove(struct platform_device *of_dev)
 	struct bcm2708_fb *fb = platform_get_drvdata(of_dev);
 
 	unregister_framebuffer(&fb->fb);
-	if (fb->fb.screen_base)
+	if (fb->fb.screen_base) {
+		release_mem_region(fb->fb.fix.smem_start,
+				fb->fb.fix.smem_len);
 		iounmap(fb->fb.screen_base);
+	}
 
 	bcm_mbox_put(fb->mbox);
 	platform_set_drvdata(of_dev, NULL);
