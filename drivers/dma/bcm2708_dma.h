@@ -13,7 +13,13 @@
 #define CACHE_LINE_SIZE		32
 #define CACHE_LINE_MASK		(CACHE_LINE_SIZE - 1)
 #define MAX_CHANS		16
-#define MAX_LEN(n)		((n)->lite ? 0x8000 : 0x80000000)
+#define MAX_LEN(n)		((n)->lite ? (size_t)((1 << 16) - 1) : (size_t)((1 << 30) - 1))
+
+/* 2D mode */
+#define MAX_XLENGTH		((1 << 16) - 1)
+#define MAX_YLENGTH		((1 << 14) - 1)
+#define MIN_STRIDE		(-(1 << 15))
+#define MAX_STRIDE		((1 << 15) - 1)
 
 #define REG_CS			0x00	/* Control and Status */
 #define BCM_CS_ACTIVE		BIT(0)	/* Activate (rw) */

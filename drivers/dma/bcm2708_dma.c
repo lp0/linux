@@ -419,11 +419,43 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 	unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);	
+	struct bcm2708_dmatx *bcmtx;
+	u16 src_stride;
+	u16 dst_stride;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %p [%lu]\n", __func__,
 		bcmchan->id, xt, flags);
 
-	return NULL;
+	if (xt == NULL)
+		return NULL;
+
+	/* just use SG instead, it'll be easier */
+	if (xt->frame_size != 1)
+		return NULL;
+
+	/* the engine also supports a negative icg, but this API doesn't */
+	if (xt->sgl[0].size + xt->sgl[0].icg > MAX_STRIDE
+			|| xt->sgl[0].size > MAX_XLENGTH
+			|| xt->numf > MAX_YLENGTH
+			|| xt->sgl[0].size < 0)
+			return NULL;
+
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
+	if (unlikely(!bcmtx))
+		return NULL;
+
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
+		| BCM_TI_SRC_INC | BCM_TI_DST_INC | BCM_TI_TDMODE
+		| BCM_TI_BURST_CHAN(bcmchan);
+	bcmtx->desc[0].cb->src = xt->src_start;
+	bcmtx->desc[0].cb->dst = xt->dst_start;
+	bcmtx->desc[0].cb->len = (xt->numf << 16) | xt->sgl[0].size;
+	src_stride = !xt->src_inc ? 0 : (xt->sgl[0].size
+		+ xt->src_sgl ? xt->sgl[0].icg : 0);
+	dst_stride = !xt->dst_inc ? 0 : (xt->sgl[0].size
+		+ xt->dst_sgl ? xt->sgl[0].icg : 0);
+	bcmtx->desc[0].cb->stride = src_stride | (dst_stride << 16);
+	return &bcmtx->dmatx;
 }
 
 static int bcm2708_dma_control(struct dma_chan *dmachan,
@@ -755,7 +787,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	//TODO dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_FULL].cap_mask);
 	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
-	//TODO dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
+	dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
 
 	dma_cap_set(DMA_MEMCPY, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_LITE].cap_mask);
