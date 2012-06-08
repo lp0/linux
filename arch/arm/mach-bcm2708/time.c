@@ -115,15 +115,15 @@ void __init bcm2708_time_init(void)
 		if (of_address_to_resource(node, 0, &res))
 			continue;
 
-		base = ioremap(res.start, resource_size(&res));
-		if (!base) {
-			printk(KERN_ERR "bcm2708: unable to map timer device\n");
-			continue;
-		}
-
 		if (!request_mem_region(res.start, resource_size(&res),
 				node->full_name)) {
 			printk(KERN_ERR "bcm2708: unable to request timer IO\n");
+			continue;
+		}
+
+		base = ioremap(res.start, resource_size(&res));
+		if (!base) {
+			printk(KERN_ERR "bcm2708: unable to map timer device\n");
 			continue;
 		}
 
