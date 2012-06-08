@@ -961,7 +961,6 @@ config ARCH_BCM2708
 	select CPU_V6
 	select ARM_AMBA
 	select NEED_MACH_MEMORY_H
-	select NEED_MACH_IO_H
 	select COMMON_CLK
 	select CLKDEV_LOOKUP
 	select CLKSRC_MMIO_OF

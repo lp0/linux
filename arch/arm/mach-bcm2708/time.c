@@ -121,7 +121,7 @@ void __init bcm2708_time_init(void)
 			continue;
 		}
 
-		if (!request_region(res.start, resource_size(&res),
+		if (!request_mem_region(res.start, resource_size(&res),
 				node->full_name)) {
 			printk(KERN_ERR "bcm2708: unable to request timer IO\n");
 			continue;

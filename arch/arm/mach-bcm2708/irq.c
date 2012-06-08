@@ -166,7 +166,8 @@ int __init armctrl_of_init(struct device_node *node,
 		panic("%s: unable to map IC registers\n",
 			node->full_name);
 
-	if (!request_region(res.start, resource_size(&res), node->full_name))
+	if (!request_mem_region(res.start, resource_size(&res),
+			node->full_name))
 		panic("%s: unable to request resources for IC registers\n",
 			node->full_name);
 
