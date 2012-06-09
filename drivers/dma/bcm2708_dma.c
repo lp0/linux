@@ -508,11 +508,44 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_cyclic(
 	void *context)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmatx *bcmtx;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x+%d [%d,%d] %p\n", __func__,
 		bcmchan->id, buf_addr, buf_len, period_len, direction, context);
 
-	return NULL;
+	/* could resort to a chain of (period_len / buf_len) CBs... */
+	if (buf_len == 0 || buf_len > MAX_XLENGTH || buf_len > MAX_STRIDE
+			|| period_len == 0 || (period_len % buf_len) != 0
+			|| (period_len / buf_len) > MAX_YLENGTH)
+		return NULL;
+
+	if (direction != DMA_MEM_TO_DEV && direction != DMA_DEV_TO_MEM)
+		return NULL;
+
+	bcmtx = bcm2708_dma_alloc_tx(bcmchan,
+		DMA_COMPL_SKIP_SRC_UNMAP | DMA_COMPL_SKIP_DEST_UNMAP, 1);
+	if (unlikely(!bcmtx))
+		return NULL;
+
+	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
+		| BCM_TI_SRC_INC | BCM_TI_DST_INC | BCM_TI_TDMODE
+		| BCM_TI_BURST_CHAN(bcmchan);
+	if (direction == DMA_MEM_TO_DEV) {
+		bcmtx->desc[0].cb->ti |= bcmchan->slave_cfg_to;
+		bcmtx->desc[0].cb->src = buf_addr;
+		bcmtx->desc[0].cb->dst = bcmchan->slave_addr_to;
+	} else if (direction == DMA_DEV_TO_MEM) {
+		bcmtx->desc[0].cb->ti |= bcmchan->slave_cfg_from;
+		bcmtx->desc[0].cb->src = bcmchan->slave_addr_from;
+		bcmtx->desc[0].cb->dst = buf_addr;
+	}
+	bcmtx->desc[0].cb->len = ((period_len / buf_len) << 16) | buf_len;
+	/* stride defaults to 0 */
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
+	return &bcmtx->dmatx;
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
@@ -603,30 +636,39 @@ static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
 	u32 block, bool issue)
 {
 	struct bcm2708_dmatx *bcmtx;
+	struct bcm2708_dmatx *tmp;
 	struct bcm2708_dmatx *last = NULL;
-	LIST_HEAD(completed);
+	LIST_HEAD(cyclic);
 	int i;
 
 	spin_lock(&bcmchan->lock);
 	if (block == 0)
 		bcmchan->active = false;
 
-	list_for_each_entry(bcmtx, &bcmchan->running, list) {
+	list_for_each_entry_safe(bcmtx, tmp, &bcmchan->running, list) {
 		if (block != 0) {
 			for (i = 0; i < bcmtx->count; i++)
 				if (block == bcmtx->desc[i].phys)
 					goto done;
 		}
 
-		dma_cookie_complete(&bcmtx->dmatx);
-		last = bcmtx;
+		if (bcmtx->cyclic) {
+			list_del(&bcmtx->list);
+			list_add_tail(&bcmtx->list, &bcmchan->pending);
+			list_add_tail(&bcmtx->list, &cyclic);
+		} else {
+			dma_cookie_complete(&bcmtx->dmatx);
+			last = bcmtx;
+		}
 	}
 
 done:
 	if (last != NULL) {
+		LIST_HEAD(completed);
 		list_cut_position(&completed, &bcmchan->running, &last->list);
 		list_splice_tail(&completed, &bcmchan->completed);
 	}
+	list_splice_tail(&cyclic, &bcmchan->completed);
 	if (issue)
 		__bcm2708_dma_issue_pending(bcmchan);
 	spin_unlock(&bcmchan->lock);
@@ -688,7 +730,8 @@ static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
 	list_for_each_entry_safe(bcmtx, tmp, &completed, list) {
 		__bcm2708_dma_cleanup(bcmchan, bcmtx);
 		list_del(&bcmtx->list);
-		bcm2708_dma_free_tx(bcmtx);
+		if (!bcmtx->cyclic)
+			bcm2708_dma_free_tx(bcmtx);
 	}
 }
 
@@ -982,14 +1025,14 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_FULL].cap_mask);
-	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
+	dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
 
 	dma_cap_set(DMA_MEMCPY, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_SLAVE, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_LITE].cap_mask);
-	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
+	dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
 
 	for (i = 0; i < D_MAX; i++) {
 		if (list_empty(&dmadev[i].channels))

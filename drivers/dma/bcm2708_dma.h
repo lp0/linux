@@ -205,6 +205,7 @@ struct bcm2708_dmatx {
 
 	int *memset_value;
 	dma_addr_t memset_phys;
+	bool cyclic;
 
 	struct bcm2708_dmadesc desc[0];
 };
