@@ -137,6 +137,8 @@ struct bcm2708_dmachan {
 	int version;
 
 	struct dma_chan dmachan;
+	struct mutex prep_lock;
+	struct list_head prep_list;
 	struct spinlock lock;
 	struct list_head pending;
 	struct list_head running;

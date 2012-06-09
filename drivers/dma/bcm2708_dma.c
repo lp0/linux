@@ -88,7 +88,13 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
+	mutex_lock(&bcmchan->prep_lock);
+	bcm2708_dma_delete(&bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
+
 	spin_lock_irqsave(&bcmchan->lock, flags);
+	bcm2708_dma_delete(&bcmchan->pending);
+
 	if (bcmchan->active) {
 		writel(0, bcmchan->base + REG_CS);
 		writel(0, bcmchan->base + REG_CONBLK_AD);
@@ -98,7 +104,6 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 	}
 	bcmchan->paused = false;
 
-	bcm2708_dma_delete(&bcmchan->pending);
 	bcm2708_dma_delete(&bcmchan->running);
 	bcm2708_dma_delete(&bcmchan->completed);
 	spin_unlock_irqrestore(&bcmchan->lock, flags);
@@ -116,6 +121,10 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 	struct bcm2708_dmatx *bcmtx = to_bcmtx(dmatx);
 	struct bcm2708_dmachan *bcmchan = bcmtx->chan;
 	unsigned long flags;
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_del(&bcmtx->list);
+	mutex_unlock(&bcmchan->prep_lock);
 	
 	spin_lock_irqsave(&bcmchan->lock, flags);
 	if (!list_empty(&bcmchan->pending))
@@ -255,6 +264,10 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 	} while (len);
 
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
 	return &bcmtx->dmatx;
 }
 
@@ -305,7 +318,11 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 	*bcmtx->memset_value = value;
-	return NULL;
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
+	return &bcmtx->dmatx;
 }
 
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
@@ -327,6 +344,10 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 	bcmtx->desc[0].cb->dst = 0;
 	bcmtx->desc[0].cb->len = 0;
 	bcmtx->desc[0].cb->stride = 0;
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
 	return &bcmtx->dmatx;
 }
 
@@ -417,6 +438,10 @@ fetch:
 	}
 
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
 	return &bcmtx->dmatx;
 }
 
@@ -476,9 +501,6 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 	dev_vdbg(bcmchan->dev, "%s: %d: %p [%lu]\n", __func__,
 		bcmchan->id, xt, flags);
 
-	if (xt == NULL)
-		return NULL;
-
 	/* just use SG instead, it'll be easier */
 	if (xt->frame_size != 1)
 		return NULL;
@@ -505,6 +527,10 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 	dst_stride = !xt->dst_inc ? 0 : (xt->sgl[0].size
 		+ xt->dst_sgl ? xt->sgl[0].icg : 0);
 	bcmtx->desc[0].cb->stride = src_stride | (dst_stride << 16);
+
+	mutex_lock(&bcmchan->prep_lock);
+	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
+	mutex_unlock(&bcmchan->prep_lock);
 	return &bcmtx->dmatx;
 }
 
@@ -857,6 +883,8 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		bcmchan->dev = bcmdev->dev;
 		bcmchan->pool = bcmdev->pool;
 		bcmchan->id = i;
+		mutex_init(&bcmchan->prep_lock);
+		INIT_LIST_HEAD(&bcmchan->prep_list);
 		spin_lock_init(&bcmchan->lock);
 		INIT_LIST_HEAD(&bcmchan->pending);
 		INIT_LIST_HEAD(&bcmchan->running);
