@@ -975,6 +975,7 @@ config ARCH_BCM2708
 	select PINCTRL_BCM2708
 	select GENERIC_GPIO
 	select ARCH_REQUIRE_GPIOLIB
+	select HAS_DMA
 	select MACH_BCM2708
 	help
 	  This enables support for Broadcom BCM2708 boards.
