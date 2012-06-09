@@ -15,7 +15,7 @@
 
 	cpus {
 		cpu@0 {
-			compatible = "arm,1176jz-f";
+			compatible = "arm,1176jzf-s";
 		};
 	};
 

@@ -957,7 +957,7 @@ config PLAT_SPEAR
 
 config ARCH_BCM2708
 	bool "Broadcom BCM2708 family"
-	select CPU_V6
+	select CPU_V6K
 	select ARM_AMBA
 	select NEED_MACH_MEMORY_H
 	select COMMON_CLK
