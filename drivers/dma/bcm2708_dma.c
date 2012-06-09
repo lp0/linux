@@ -89,6 +89,15 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
 	spin_lock_irqsave(&bcmchan->lock, flags);
+	if (bcmchan->active) {
+		writel(0, bcmchan->base + REG_CS);
+		writel(0, bcmchan->base + REG_CONBLK_AD);
+		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+		writel(0, bcmchan->base + REG_CONBLK_AD);
+		bcmchan->active = false;
+	}
+	bcmchan->paused = false;
+
 	bcm2708_dma_delete(&bcmchan->pending);
 	bcm2708_dma_delete(&bcmchan->running);
 	bcm2708_dma_delete(&bcmchan->completed);
@@ -740,6 +749,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			block = readl(bcmchan->base + REG_CONBLK_AD);
 			writel(0, bcmchan->base + REG_CONBLK_AD);
 			writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+			writel(0, bcmchan->base + REG_CONBLK_AD);
 			bcmchan->active = false;
 
 			bcm2708_dma_update_progress(bcmchan, block, false);
