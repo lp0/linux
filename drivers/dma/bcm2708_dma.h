@@ -143,6 +143,7 @@ struct bcm2708_dmachan {
 	struct list_head completed;
 	bool active;
 	u32 cfg;
+	dma_addr_t slave_addr;
 
 	struct tasklet_struct tasklet;
 };
@@ -179,6 +180,8 @@ struct bcm2708_dmacfg {
 	bool src_dreq;
 	bool dst_dreq;
 	enum bcm2708_dma_peripheral per;
+
+	dma_addr_t dev_addr;
 };
 
 struct bcm2708_dmatx {

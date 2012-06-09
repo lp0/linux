@@ -50,6 +50,7 @@ static int bcm2708_dma_alloc_chan(struct dma_chan *dmachan)
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
 	bcmchan->cfg = 0;
+	bcmchan->slave_addr = 0;
 	return 0;
 }
 
@@ -471,6 +472,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 	switch (cmd) {
 	case DMA_SLAVE_CONFIG: {
 		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
+
 		if (cfg == NULL || cfg->waits > MAX_WAITS)
 			return -EINVAL;
 
@@ -478,6 +480,8 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
 			| BCM_TI_PERMAP_SET(cfg->per)
 			| BCM_TI_WAITS_SET(cfg->waits);
+
+		bcmchan->slave_addr = cfg->dev_addr;
 		return 0;
 	}
 
