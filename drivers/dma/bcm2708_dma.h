@@ -142,6 +142,7 @@ struct bcm2708_dmachan {
 	struct list_head running;
 	struct list_head completed;
 	bool active;
+	bool paused;
 	u32 cfg;
 	dma_addr_t slave_addr;
 

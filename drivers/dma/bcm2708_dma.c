@@ -752,15 +752,19 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 
 	case DMA_PAUSE:
 		spin_lock_irqsave(&bcmchan->lock, flags);
-		if (bcmchan->active)
-			writel(0,  bcmchan->base + REG_CS);
+		if (bcmchan->active && !bcmchan->paused) {
+			writel(0, bcmchan->base + REG_CS);
+			bcmchan->paused = true;
+		}
 		spin_unlock_irqrestore(&bcmchan->lock, flags);
 		return 0;
 
 	case DMA_RESUME:
 		spin_lock_irqsave(&bcmchan->lock, flags);
-		if (bcmchan->active)
-			writel(BCM_CS_ACTIVE,  bcmchan->base + REG_CS);
+		if (bcmchan->active && bcmchan->paused) {
+			bcmchan->paused = false;
+			writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+		}
 		spin_unlock_irqrestore(&bcmchan->lock, flags);
 		return 0;
 
