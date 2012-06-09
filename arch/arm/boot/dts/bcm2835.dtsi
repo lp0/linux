@@ -82,7 +82,7 @@
 				/* 14 */ <1 27>; /* also on <1 28> */
 				/* 15 may be <1 31> but it can't be enabled */
 
-			channels = <0x10>;	/* Set by VideoCore */
+			broadcom,channels = <0x10>;	/* Set by VideoCore */
 		};
 
 		intc: interrupt-controller {
