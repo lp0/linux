@@ -491,12 +491,12 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 
 	if (direction == DMA_MEM_TO_DEV) {
 		sg_dma_address(&dev_sg) = bcmchan->slave_addr_to;
-		return __bcm2708_dma_prep_dma_sg(dmachan, sgl, sg_len,
-			&dev_sg, 1, flags, bcmchan->slave_cfg_to);
+		return __bcm2708_dma_prep_dma_sg(dmachan, &dev_sg, 1,
+			sgl, sg_len, flags, bcmchan->slave_cfg_to);
 	} else if (direction == DMA_DEV_TO_MEM) {
 		sg_dma_address(&dev_sg) = bcmchan->slave_addr_from;
-		return __bcm2708_dma_prep_dma_sg(dmachan, &dev_sg, 1,
-			sgl, sg_len, flags, bcmchan->slave_cfg_from);
+		return __bcm2708_dma_prep_dma_sg(dmachan, sgl, sg_len,
+			&dev_sg, 1, flags, bcmchan->slave_cfg_from);
 	}
 
 	return NULL;
