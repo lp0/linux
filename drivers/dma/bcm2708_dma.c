@@ -908,12 +908,14 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 		if (bcmchan->active) {
 			u32 block;
 
-			writel(0, bcmchan->base + REG_CS);
+			if (!bcmchan->paused)
+				writel(0, bcmchan->base + REG_CS);
 			block = readl(bcmchan->base + REG_CONBLK_AD);
 			writel(0, bcmchan->base + REG_CONBLK_AD);
 			writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 			writel(0, bcmchan->base + REG_CONBLK_AD);
 			bcmchan->active = false;
+			bcmchan->paused = false;
 
 			bcm2708_dma_update_progress(bcmchan, block, false);
 			tasklet_schedule(&bcmchan->tasklet);
