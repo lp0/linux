@@ -186,14 +186,11 @@ struct bcm2708_dmacfg {
 	bool src_dreq;
 	bool dst_dreq;
 	enum bcm2708_dma_peripheral per;
-
-	dma_addr_t dev_addr;
 };
 
 struct bcm2708_dmaslcfg {
-	struct bcm2708_dmacfg other;
-	struct bcm2708_dmacfg from;
-	struct bcm2708_dmacfg to;
+	struct bcm2708_dmacfg cfg;
+	dma_addr_t dev_addr;
 };
 
 struct bcm2708_dmatx {
