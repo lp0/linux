@@ -99,7 +99,15 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 	bcm2708_dma_delete(&bcmchan->pending);
 
 	if (bcmchan->active) {
+		WARN_ON(1);
+
 		writel(0, bcmchan->base + REG_CS);
+		bcmchan->paused = true;
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+
+		synchronize_irq(bcmchan->irq);
+
+		spin_lock_irqsave(&bcmchan->lock, flags);
 		writel(0, bcmchan->base + REG_CONBLK_AD);
 		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 		writel(0, bcmchan->base + REG_CONBLK_AD);
