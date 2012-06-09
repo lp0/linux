@@ -396,9 +396,27 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 	unsigned long flags, void *context)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct scatterlist dev_sg;
+	size_t len = 0;
+	int i;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %p+%d [%d,%lu] %p\n", __func__,
 		bcmchan->id, sgl, sg_len, direction, flags, context);
+
+	for (i = 0; i < sg_len; i++)
+		len += sg_dma_len(&sgl[i]);
+
+	sg_init_table(&dev_sg, 1);
+	sg_dma_address(&dev_sg) = bcmchan->slave_addr;
+	sg_dma_len(&dev_sg) = len;
+
+	if (direction == DMA_MEM_TO_DEV) {
+		return bcm2708_dma_prep_dma_sg(dmachan, sgl, sg_len,
+			&dev_sg, 1, flags);
+	} else if (direction == DMA_DEV_TO_MEM) {
+		return bcm2708_dma_prep_dma_sg(dmachan, &dev_sg, 1,
+			sgl, sg_len, flags);
+	}
 
 	return NULL;
 }
@@ -824,14 +842,14 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_MEMCPY, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_MEMSET, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_FULL].cap_mask);
-	//TODO dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
+	dma_cap_set(DMA_SLAVE, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_FULL].cap_mask);
 	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_FULL].cap_mask);
 	dma_cap_set(DMA_INTERLEAVE, dmadev[D_FULL].cap_mask);
 
 	dma_cap_set(DMA_MEMCPY, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_INTERRUPT, dmadev[D_LITE].cap_mask);
-	//TODO dma_cap_set(DMA_SLAVE, dmadev[D_LITE].cap_mask);
+	dma_cap_set(DMA_SLAVE, dmadev[D_LITE].cap_mask);
 	dma_cap_set(DMA_SG, dmadev[D_LITE].cap_mask);
 	//TODO dma_cap_set(DMA_CYCLIC, dmadev[D_LITE].cap_mask);
 
