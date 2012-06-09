@@ -30,6 +30,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
+#include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <asm/sizes.h>
@@ -564,6 +565,55 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_cyclic(
 	return &bcmtx->dmatx;
 }
 
+static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved_as_sg(
+	struct dma_chan *dmachan, struct dma_interleaved_template *xt,
+	unsigned long flags)
+{
+	struct scatterlist dst_sg;
+	struct scatterlist src_sg;
+	struct scatterlist *dst_tmp;
+	struct scatterlist *src_tmp;
+	unsigned int dst_nents = xt->numf * xt->frame_size;
+	unsigned int src_nents = xt->numf * xt->frame_size;
+	dma_addr_t src_addr = xt->src_start;
+	dma_addr_t dst_addr = xt->dst_start;
+	int i, j;
+
+	sg_init_table(&dst_sg, dst_nents);
+	sg_init_table(&src_sg, src_nents);
+	dst_tmp = &dst_sg;
+	src_tmp = &src_sg;
+
+	for (i = 0; i < xt->numf; i++) {
+		for (j = 0; j < xt->frame_size; j++) {
+			if (i != 0 || j != 0) {
+				dst_tmp = sg_next(dst_tmp);
+				src_tmp = sg_next(src_tmp);
+			}
+
+			sg_dma_address(dst_tmp) = dst_addr;
+			sg_dma_len(dst_tmp) = xt->sgl[j].size;
+
+			sg_dma_address(src_tmp) = src_addr;
+			sg_dma_len(src_tmp) = xt->sgl[j].size;
+
+			dst_addr += (xt->sgl[j].size
+				+ (xt->dst_sgl ? xt->sgl[j].icg : 0));
+			src_addr += (xt->sgl[j].size
+				+ (xt->src_sgl ? xt->sgl[j].icg : 0));
+		}
+
+		if (!xt->dst_inc)
+			dst_addr = xt->dst_start;
+		if (!xt->src_inc)
+			src_addr = xt->src_start;
+	}
+
+	return bcm2708_dma_prep_dma_sg(dmachan,
+		&dst_sg, dst_nents,
+		&src_sg, src_nents, flags);
+}
+
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 	struct dma_chan *dmachan, struct dma_interleaved_template *xt,
 	unsigned long flags)
@@ -577,15 +627,19 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 		bcmchan->id, xt, flags);
 
 	/* just use SG instead, it'll be easier */
-	if (xt->frame_size != 1)
+	if (xt->frame_size == 0)
 		return NULL;
+	else if (xt->frame_size > 1)
+		return bcm2708_dma_prep_interleaved_as_sg(dmachan, xt, flags);
+
+	if (xt->sgl[0].size + xt->sgl[0].icg > MAX_STRIDE
+			|| xt->numf > MAX_YLENGTH
+			|| xt->sgl[0].size > MAX_XLENGTH)
+		return bcm2708_dma_prep_interleaved_as_sg(dmachan, xt, flags);
 
 	/* the engine also supports a negative icg, but this API doesn't */
-	if (xt->sgl[0].size + xt->sgl[0].icg > MAX_STRIDE
-				|| xt->sgl[0].size > MAX_XLENGTH
-				|| xt->numf > MAX_YLENGTH
-				|| xt->sgl[0].size < 0)
-			return NULL;
+	if (xt->sgl[0].size < 0)
+		return NULL;
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
 	if (unlikely(!bcmtx))
@@ -598,9 +652,9 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 	bcmtx->desc[0].cb->dst = xt->dst_start;
 	bcmtx->desc[0].cb->len = (xt->numf << 16) | xt->sgl[0].size;
 	src_stride = !xt->src_inc ? 0 : (xt->sgl[0].size
-		+ xt->src_sgl ? xt->sgl[0].icg : 0);
+		+ (xt->src_sgl ? xt->sgl[0].icg : 0));
 	dst_stride = !xt->dst_inc ? 0 : (xt->sgl[0].size
-		+ xt->dst_sgl ? xt->sgl[0].icg : 0);
+		+ (xt->dst_sgl ? xt->sgl[0].icg : 0));
 	bcmtx->desc[0].cb->stride = src_stride | (dst_stride << 16);
 
 	mutex_lock(&bcmchan->prep_lock);
