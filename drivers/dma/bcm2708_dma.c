@@ -146,6 +146,7 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 	struct bcm2708_dmatx *bcmtx = to_bcmtx(dmatx);
 	struct bcm2708_dmachan *bcmchan = bcmtx->chan;
 	unsigned long flags;
+	dma_cookie_t cookie;
 
 	mutex_lock(&bcmchan->prep_lock);
 	list_del(&bcmtx->list);
@@ -156,12 +157,12 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 		bcm2708_dma_chain_cb(list_last_entry(&bcmchan->pending,
 				struct bcm2708_dmatx, list), bcmtx);
 	list_add_tail(&bcmtx->list, &bcmchan->pending);
-	dma_cookie_assign(&bcmtx->dmatx);
+	cookie = dma_cookie_assign(&bcmtx->dmatx);
 	spin_unlock_irqrestore(&bcmchan->lock, flags);
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x\n", __func__, bcmchan->id,
-		bcmtx->dmatx.cookie);
-	return bcmtx->dmatx.cookie;
+		cookie);
+	return cookie;
 }
 
 static struct bcm2708_dmatx *bcm2708_dma_alloc_cb(struct bcm2708_dmatx *bcmtx,
