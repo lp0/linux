@@ -79,10 +79,10 @@
 				/* 11 */ <1 27>,
 				/* 12 */ <1 27>, /* also on <1 28> */
 				/* 13 */ <1 27>, /* also on <1 28> */
-				/* 14 */ <1 27>; /* also on <1 28> */
-				/* 15 may be <1 31> but it can't be enabled */
+				/* 14 */ <1 27>, /* also on <1 28> */
+				/* 15 */ <1 31>; /* Used by VideoCore */
 
-			broadcom,channels = <0x10>;	/* Set by VideoCore */
+			broadcom,channels = <0>;	/* Set by VideoCore */
 		};
 
 		intc: interrupt-controller {
