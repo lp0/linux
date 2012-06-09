@@ -145,23 +145,32 @@ static inline void bcm2708_dma_debug_cb(struct bcm2708_dmatx *bcmtx)
 	int i;
 
 	for (i = 0; i < bcmtx->count; i++) {
-		dev_vdbg(bcmchan->dev, "CB %d:\n", i);
-		dev_vdbg(bcmchan->dev, " TI = %08x\n", bcmtx->desc[i].cb->ti);
-		dev_vdbg(bcmchan->dev, " SRC = %08x\n", bcmtx->desc[i].cb->src);
-		dev_vdbg(bcmchan->dev, " DST = %08x\n", bcmtx->desc[i].cb->dst);
+		dev_vdbg(bcmchan->dev, "%d: CB %d:\n", bcmchan->id, i);
+		dev_vdbg(bcmchan->dev, "%d:  TI = %08x\n", bcmchan->id,
+			bcmtx->desc[i].cb->ti);
+		dev_vdbg(bcmchan->dev, "%d:  SRC = %08x\n", bcmchan->id,
+			bcmtx->desc[i].cb->src);
+		dev_vdbg(bcmchan->dev, "%d:  DST = %08x\n", bcmchan->id,
+			bcmtx->desc[i].cb->dst);
 		if (bcmtx->desc[i].cb->ti & BCM_TI_TDMODE) {
-			dev_vdbg(bcmchan->dev, " XLEN = %04x\n",
+			dev_vdbg(bcmchan->dev, "%d:  XLEN = %04x\n",
+				bcmchan->id,
 				bcmtx->desc[i].cb->len & 0xFFFF);
-			dev_vdbg(bcmchan->dev, " YLEN = %04x\n",
+			dev_vdbg(bcmchan->dev, "%d:  YLEN = %04x\n",
+				bcmchan->id,
 				(bcmtx->desc[i].cb->len >> 16) & 0xFFFF);
-			dev_vdbg(bcmchan->dev, " S_STRIDE = %04x\n",
+			dev_vdbg(bcmchan->dev, "%d:  S_STRIDE = %04x\n",
+				bcmchan->id,
 				bcmtx->desc[i].cb->stride & 0xFFFF);
-			dev_vdbg(bcmchan->dev, " D_STRIDE = %04x\n",
+			dev_vdbg(bcmchan->dev, "%d:  D_STRIDE = %04x\n",
+				bcmchan->id,
 				(bcmtx->desc[i].cb->stride >> 16) & 0xFFFF);
 		} else {
-			dev_vdbg(bcmchan->dev, " LEN = %08x\n", bcmtx->desc[i].cb->len);
+			dev_vdbg(bcmchan->dev, "%d:  LEN = %08x\n", bcmchan->id,
+				bcmtx->desc[i].cb->len);
 		}
-		dev_vdbg(bcmchan->dev, " NEXT = %08x\n", bcmtx->desc[i].cb->next);
+		dev_vdbg(bcmchan->dev, "%d:  NEXT = %08x\n", bcmchan->id,
+			bcmtx->desc[i].cb->next);
 	}
 }
 
@@ -1120,8 +1129,8 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		if (list_empty(&dmadev[i].channels))
 			continue;
 
-		dmadev[i].copy_align = CACHE_LINE_SIZE;
-		dmadev[i].fill_align = CACHE_LINE_SIZE;
+		dmadev[i].copy_align = 1;
+		dmadev[i].fill_align = 1;
 
 		dmadev[i].device_alloc_chan_resources = bcm2708_dma_alloc_chan;
 		dmadev[i].device_free_chan_resources = bcm2708_dma_free_chan;
