@@ -46,19 +46,53 @@ static inline struct bcm2708_dmatx *to_bcmtx(
 static int bcm2708_dma_alloc_chan(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
+	spin_lock_irqsave(&bcmchan->lock, flags);
 	bcmchan->cfg = 0;
 	bcmchan->slave_addr = 0;
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
 	return 0;
+}
+
+static void bcm2708_dma_free_tx(struct bcm2708_dmatx *bcmtx)
+{
+	int i;
+
+	for (i = 0; i < bcmtx->count; i++)
+		dma_pool_free(bcmtx->chan->pool, bcmtx->desc[i].cb,
+				bcmtx->desc[i].phys);
+	if (bcmtx->memset_value)
+		dma_pool_free(bcmtx->chan->pool, bcmtx->memset_value,
+				bcmtx->memset_phys);
+	kfree(bcmtx);
+}
+
+static void bcm2708_dma_delete(struct list_head *list)
+{
+	struct bcm2708_dmatx *bcmtx;
+	struct bcm2708_dmatx *tmp;
+
+	list_for_each_entry_safe(bcmtx, tmp, list, list) {
+		list_del(&bcmtx->list);
+		bcm2708_dma_free_tx(bcmtx);
+	}
 }
 
 static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+
+	spin_lock_irqsave(&bcmchan->lock, flags);
+	bcm2708_dma_delete(&bcmchan->pending);
+	bcm2708_dma_delete(&bcmchan->running);
+	bcm2708_dma_delete(&bcmchan->completed);
+	spin_unlock_irqrestore(&bcmchan->lock, flags);
 }
 
 static inline void bcm2708_dma_chain_cb(struct bcm2708_dmatx *prev,
@@ -85,19 +119,6 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x\n", __func__, bcmchan->id,
 		bcmtx->dmatx.cookie);
 	return bcmtx->dmatx.cookie;
-}
-
-static void bcm2708_dma_free_tx(struct bcm2708_dmatx *bcmtx)
-{
-	int i;
-
-	for (i = 0; i < bcmtx->count; i++)
-		dma_pool_free(bcmtx->chan->pool, bcmtx->desc[i].cb,
-				bcmtx->desc[i].phys);
-	if (bcmtx->memset_value)
-		dma_pool_free(bcmtx->chan->pool, bcmtx->memset_value,
-				bcmtx->memset_phys);
-	kfree(bcmtx);
 }
 
 static struct bcm2708_dmatx *bcm2708_dma_alloc_cb(struct bcm2708_dmatx *bcmtx,
@@ -455,9 +476,9 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 
 	/* the engine also supports a negative icg, but this API doesn't */
 	if (xt->sgl[0].size + xt->sgl[0].icg > MAX_STRIDE
-			|| xt->sgl[0].size > MAX_XLENGTH
-			|| xt->numf > MAX_YLENGTH
-			|| xt->sgl[0].size < 0)
+				|| xt->sgl[0].size > MAX_XLENGTH
+				|| xt->numf > MAX_YLENGTH
+				|| xt->sgl[0].size < 0)
 			return NULL;
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, 1);
@@ -476,55 +497,6 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 		+ xt->dst_sgl ? xt->sgl[0].icg : 0);
 	bcmtx->desc[0].cb->stride = src_stride | (dst_stride << 16);
 	return &bcmtx->dmatx;
-}
-
-static int bcm2708_dma_control(struct dma_chan *dmachan,
-		enum dma_ctrl_cmd cmd, unsigned long arg)
-{
-	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
-	unsigned long flags;
-
-	dev_vdbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
-		bcmchan->id, cmd, arg);
-
-	switch (cmd) {
-	case DMA_SLAVE_CONFIG: {
-		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
-
-		if (cfg == NULL || cfg->waits > MAX_WAITS)
-			return -EINVAL;
-
-		bcmchan->cfg = (cfg->src_dreq ? BCM_TI_SRC_DREQ : 0)
-			| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
-			| BCM_TI_PERMAP_SET(cfg->per)
-			| BCM_TI_WAITS_SET(cfg->waits);
-
-		bcmchan->slave_addr = cfg->dev_addr;
-		return 0;
-	}
-
-	case DMA_TERMINATE_ALL:
-		// TODO
-
-		return -ENOSYS;
-
-	case DMA_PAUSE:
-		spin_lock_irqsave(&bcmchan->lock, flags);
-		if (bcmchan->active)
-			writel(0,  bcmchan->base + REG_CS);
-		spin_unlock_irqrestore(&bcmchan->lock, flags);
-		return 0;
-
-	case DMA_RESUME:
-		spin_lock_irqsave(&bcmchan->lock, flags);
-		if (bcmchan->active)
-			writel(BCM_CS_ACTIVE,  bcmchan->base + REG_CS);
-		spin_unlock_irqrestore(&bcmchan->lock, flags);
-		return 0;
-
-	default:
-		return -ENOSYS;
-	}
 }
 
 static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
@@ -573,7 +545,7 @@ static void bcm2708_dma_issue_pending(struct dma_chan *dmachan)
 }
 
 static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
-	u32 block)
+	u32 block, bool issue)
 {
 	struct bcm2708_dmatx *bcmtx;
 	struct bcm2708_dmatx *last = NULL;
@@ -600,7 +572,8 @@ done:
 		list_cut_position(&completed, &bcmchan->running, &last->list);
 		list_splice_tail(&completed, &bcmchan->completed);
 	}
-	__bcm2708_dma_issue_pending(bcmchan);
+	if (issue)
+		__bcm2708_dma_issue_pending(bcmchan);
 	spin_unlock(&bcmchan->lock);
 }
 
@@ -683,7 +656,7 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	if (status & BCM_CS_END)
 		writel(status & BCM_CS_END, bcmchan->base + REG_CS);
 
-	bcm2708_dma_update_progress(bcmchan, block);
+	bcm2708_dma_update_progress(bcmchan, block, true);
 	tasklet_schedule(&bcmchan->tasklet);
 
 	if (status & BCM_CS_ERROR) {
@@ -706,6 +679,69 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 
 	writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
 	return IRQ_HANDLED;
+}
+
+static int bcm2708_dma_control(struct dma_chan *dmachan,
+		enum dma_ctrl_cmd cmd, unsigned long arg)
+{
+	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
+
+	dev_vdbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
+		bcmchan->id, cmd, arg);
+
+	switch (cmd) {
+	case DMA_SLAVE_CONFIG: {
+		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
+
+		if (cfg == NULL || cfg->waits > MAX_WAITS)
+			return -EINVAL;
+
+		bcmchan->cfg = (cfg->src_dreq ? BCM_TI_SRC_DREQ : 0)
+			| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
+			| BCM_TI_PERMAP_SET(cfg->per)
+			| BCM_TI_WAITS_SET(cfg->waits);
+
+		bcmchan->slave_addr = cfg->dev_addr;
+		return 0;
+	}
+
+	case DMA_TERMINATE_ALL:
+		spin_lock_irqsave(&bcmchan->lock, flags);
+		if (bcmchan->active) {
+			u32 block;
+
+			writel(0, bcmchan->base + REG_CS);
+			block = readl(bcmchan->base + REG_CONBLK_AD);
+			writel(0, bcmchan->base + REG_CONBLK_AD);
+			writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+			bcmchan->active = false;
+
+			bcm2708_dma_update_progress(bcmchan, block, false);
+			tasklet_schedule(&bcmchan->tasklet);
+		}
+		bcm2708_dma_delete(&bcmchan->pending);
+		bcm2708_dma_delete(&bcmchan->running);
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+		return 0;
+
+	case DMA_PAUSE:
+		spin_lock_irqsave(&bcmchan->lock, flags);
+		if (bcmchan->active)
+			writel(0,  bcmchan->base + REG_CS);
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+		return 0;
+
+	case DMA_RESUME:
+		spin_lock_irqsave(&bcmchan->lock, flags);
+		if (bcmchan->active)
+			writel(BCM_CS_ACTIVE,  bcmchan->base + REG_CS);
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+		return 0;
+
+	default:
+		return -ENOSYS;
+	}
 }
 
 static int bcm2708_dma_probe(struct platform_device *pdev)
