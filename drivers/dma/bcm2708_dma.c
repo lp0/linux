@@ -13,6 +13,9 @@
  *
  * Slave prepare functions take a struct bcm2708_dmaslcfg and don't use
  * the config set by DMA_SLAVE_CONFIG
+ *
+ * Note: the VideoCore uses DMA channels too, so we can't safely enable or
+ * disable channels for power saving without a race condition
  */
 
 #include <linux/bitops.h>
