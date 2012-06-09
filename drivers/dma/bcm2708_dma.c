@@ -49,6 +49,7 @@ static int bcm2708_dma_alloc_chan(struct dma_chan *dmachan)
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
+	bcmchan->cfg = 0;
 	return 0;
 }
 
@@ -211,7 +212,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 			return NULL;
 
 		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC | BCM_TI_SRC_INC
-			| BCM_TI_BURST_CHAN(bcmchan);
+			| BCM_TI_BURST_CHAN(bcmchan) | bcmchan->cfg;
 		bcmtx->desc[i].cb->src = src;
 		bcmtx->desc[i].cb->dst = dst;
 		bcmtx->desc[i].cb->len = copy;
@@ -462,11 +463,46 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 		enum dma_ctrl_cmd cmd, unsigned long arg)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	unsigned long flags;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
 		bcmchan->id, cmd, arg);
 
-	return -ENOSYS;
+	switch (cmd) {
+	case DMA_SLAVE_CONFIG: {
+		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
+		if (cfg == NULL || cfg->waits > MAX_WAITS)
+			return -EINVAL;
+
+		bcmchan->cfg = (cfg->src_dreq ? BCM_TI_SRC_DREQ : 0)
+			| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
+			| BCM_TI_PERMAP_SET(cfg->per)
+			| BCM_TI_WAITS_SET(cfg->waits);
+		return 0;
+	}
+
+	case DMA_TERMINATE_ALL:
+		// TODO
+
+		return -ENOSYS;
+
+	case DMA_PAUSE:
+		spin_lock_irqsave(&bcmchan->lock, flags);
+		if (bcmchan->active)
+			writel(0,  bcmchan->base + REG_CS);
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+		return 0;
+
+	case DMA_RESUME:
+		spin_lock_irqsave(&bcmchan->lock, flags);
+		if (bcmchan->active)
+			writel(BCM_CS_ACTIVE,  bcmchan->base + REG_CS);
+		spin_unlock_irqrestore(&bcmchan->lock, flags);
+		return 0;
+
+	default:
+		return -ENOSYS;
+	}
 }
 
 static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
