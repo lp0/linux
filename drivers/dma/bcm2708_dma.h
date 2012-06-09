@@ -150,10 +150,7 @@ struct bcm2708_dmachan {
 	bool active;
 	bool paused;
 	u32 cfg;
-	u32 slave_cfg_from;
-	u32 slave_cfg_to;
-	dma_addr_t slave_addr_from;
-	dma_addr_t slave_addr_to;
+	struct dma_slave_config	slcfg;
 
 	struct tasklet_struct tasklet;
 };
@@ -192,11 +189,6 @@ struct bcm2708_dmacfg {
 	enum bcm2708_dma_peripheral per;
 };
 
-struct bcm2708_dmaslcfg {
-	struct bcm2708_dmacfg cfg;
-	dma_addr_t dev_addr;
-};
-
 struct bcm2708_dmatx {
 	struct bcm2708_dmachan *chan;
 	unsigned int count;
@@ -206,7 +198,6 @@ struct bcm2708_dmatx {
 
 	int *memset_value;
 	dma_addr_t memset_phys;
-	bool cyclic;
 
 	struct bcm2708_dmadesc desc[0];
 };
