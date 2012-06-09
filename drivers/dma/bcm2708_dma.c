@@ -52,7 +52,10 @@ static int bcm2708_dma_alloc_chan(struct dma_chan *dmachan)
 
 	spin_lock_irqsave(&bcmchan->lock, flags);
 	bcmchan->cfg = 0;
-	bcmchan->slave_addr = 0;
+	bcmchan->slave_cfg_from = 0;
+	bcmchan->slave_cfg_to = 0;
+	bcmchan->slave_addr_from = 0;
+	bcmchan->slave_addr_to = 0;
 	spin_unlock_irqrestore(&bcmchan->lock, flags);
 	return 0;
 }
@@ -306,7 +309,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 			return NULL;
 
 		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC
-			| BCM_TI_BURST_CHAN(bcmchan);
+			| BCM_TI_BURST_CHAN(bcmchan) | bcmchan->cfg;
 		bcmtx->desc[i].cb->src = bcmtx->memset_phys;
 		bcmtx->desc[i].cb->dst = dst;
 		bcmtx->desc[i].cb->len = copy;
@@ -351,11 +354,11 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 	return &bcmtx->dmatx;
 }
 
-static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
+static struct dma_async_tx_descriptor *__bcm2708_dma_prep_dma_sg(
 	struct dma_chan *dmachan,
 	struct scatterlist *dst_sg, unsigned int dst_nents,
 	struct scatterlist *src_sg, unsigned int src_nents,
-	unsigned long flags)
+	unsigned long flags, u32 cfg)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	struct bcm2708_dmatx *bcmtx;
@@ -395,7 +398,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
 			return NULL;
 
 		bcmtx->desc[i].cb->ti = BCM_TI_DST_INC | BCM_TI_SRC_INC
-			| BCM_TI_BURST_CHAN(bcmchan);
+			| BCM_TI_BURST_CHAN(bcmchan) | cfg;
 		bcmtx->desc[i].cb->src = src;
 		bcmtx->desc[i].cb->dst = dst;
 		bcmtx->desc[i].cb->len = len;
@@ -445,6 +448,19 @@ fetch:
 	return &bcmtx->dmatx;
 }
 
+static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
+	struct dma_chan *dmachan,
+	struct scatterlist *dst_sg, unsigned int dst_nents,
+	struct scatterlist *src_sg, unsigned int src_nents,
+	unsigned long flags)
+{
+	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	return __bcm2708_dma_prep_dma_sg(dmachan,
+		dst_sg, dst_nents,
+		src_sg, src_nents,
+		flags, bcmchan->cfg);
+}
+
 static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 	struct dma_chan *dmachan, struct scatterlist *sgl,
 	unsigned int sg_len, enum dma_transfer_direction direction,
@@ -462,15 +478,16 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 		len += sg_dma_len(&sgl[i]);
 
 	sg_init_table(&dev_sg, 1);
-	sg_dma_address(&dev_sg) = bcmchan->slave_addr;
 	sg_dma_len(&dev_sg) = len;
 
 	if (direction == DMA_MEM_TO_DEV) {
-		return bcm2708_dma_prep_dma_sg(dmachan, sgl, sg_len,
-			&dev_sg, 1, flags);
+		sg_dma_address(&dev_sg) = bcmchan->slave_addr_to;
+		return __bcm2708_dma_prep_dma_sg(dmachan, sgl, sg_len,
+			&dev_sg, 1, flags, bcmchan->slave_cfg_to);
 	} else if (direction == DMA_DEV_TO_MEM) {
-		return bcm2708_dma_prep_dma_sg(dmachan, &dev_sg, 1,
-			sgl, sg_len, flags);
+		sg_dma_address(&dev_sg) = bcmchan->slave_addr_from;
+		return __bcm2708_dma_prep_dma_sg(dmachan, &dev_sg, 1,
+			sgl, sg_len, flags, bcmchan->slave_cfg_from);
 	}
 
 	return NULL;
@@ -518,7 +535,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 
 	bcmtx->desc[0].cb->ti = BCM_TI_INTEN | BCM_TI_WAIT_RESP
 		| BCM_TI_SRC_INC | BCM_TI_DST_INC | BCM_TI_TDMODE
-		| BCM_TI_BURST_CHAN(bcmchan);
+		| BCM_TI_BURST_CHAN(bcmchan) | bcmchan->cfg;
 	bcmtx->desc[0].cb->src = xt->src_start;
 	bcmtx->desc[0].cb->dst = xt->dst_start;
 	bcmtx->desc[0].cb->len = (xt->numf << 16) | xt->sgl[0].size;
@@ -741,6 +758,14 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static inline u32 bcm2708_dma_make_cfg(struct bcm2708_dmacfg *cfg)
+{
+	return (cfg->src_dreq ? BCM_TI_SRC_DREQ : 0)
+		| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
+		| BCM_TI_PERMAP_SET(cfg->per)
+		| BCM_TI_WAITS_SET(cfg->waits);
+}
+
 static int bcm2708_dma_control(struct dma_chan *dmachan,
 		enum dma_ctrl_cmd cmd, unsigned long arg)
 {
@@ -752,17 +777,18 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 
 	switch (cmd) {
 	case DMA_SLAVE_CONFIG: {
-		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
+		struct bcm2708_dmaslcfg *cfg = (struct bcm2708_dmaslcfg *)arg;
 
-		if (cfg == NULL || cfg->waits > MAX_WAITS)
+		if (cfg == NULL || cfg->other.waits > MAX_WAITS
+				|| cfg->from.waits > MAX_WAITS
+				|| cfg->to.waits > MAX_WAITS)
 			return -EINVAL;
 
-		bcmchan->cfg = (cfg->src_dreq ? BCM_TI_SRC_DREQ : 0)
-			| (cfg->dst_dreq ? BCM_TI_DST_DREQ : 0)
-			| BCM_TI_PERMAP_SET(cfg->per)
-			| BCM_TI_WAITS_SET(cfg->waits);
-
-		bcmchan->slave_addr = cfg->dev_addr;
+		bcmchan->cfg = bcm2708_dma_make_cfg(&cfg->other);
+		bcmchan->slave_cfg_from = bcm2708_dma_make_cfg(&cfg->from);
+		bcmchan->slave_cfg_to = bcm2708_dma_make_cfg(&cfg->to);
+		bcmchan->slave_addr_from = cfg->from.dev_addr;
+		bcmchan->slave_addr_to = cfg->to.dev_addr;
 		return 0;
 	}
 
