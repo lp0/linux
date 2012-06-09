@@ -503,16 +503,10 @@ static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
 	dma_cookie_t cookie, struct dma_tx_state *txstate)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
-	unsigned long flags;
-	enum dma_status ret;
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
-	spin_lock_irqsave(&bcmchan->lock, flags);
-	ret = dma_cookie_status(dmachan, cookie, txstate);
-	spin_unlock_irqrestore(&bcmchan->lock, flags);
-
-	return ret;
+	return dma_cookie_status(dmachan, cookie, txstate);
 }
 
 static void __bcm2708_dma_issue_pending(struct bcm2708_dmachan *bcmchan)
@@ -642,6 +636,32 @@ static void bcm2708_dma_tasklet(unsigned long data)
 	bcm2708_dma_cleanup((struct bcm2708_dmachan *)data);
 }
 
+static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan, u32 block)
+{
+	struct bcm2708_dmatx *bcmtx;
+	bool found = false;
+	int i;
+
+	spin_lock(&bcmchan->lock);
+	if (!list_empty(&bcmchan->running)) {
+		bcmtx = list_first_entry(&bcmchan->running,
+				struct bcm2708_dmatx, list);
+
+		for (i = 0; i < bcmtx->count; i++)
+			if (block == bcmtx->desc[i].phys)
+				found = true;
+
+		if (found) {
+			list_del(&bcmtx->list);
+			list_add_tail(&bcmtx->list, &bcmchan->completed);
+		}
+	}
+	spin_unlock(&bcmchan->lock);
+
+	if (!found)
+		dev_warn(bcmchan->dev, "unable to find CB in error\n");
+}
+
 static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 {
 	struct dma_chan *dmachan = dev_id;
@@ -657,25 +677,30 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 		writel(status & BCM_CS_END, bcmchan->base + REG_CS);
 
 	bcm2708_dma_update_progress(bcmchan, block, true);
-	tasklet_schedule(&bcmchan->tasklet);
 
 	if (status & BCM_CS_ERROR) {
 		u32 debug = readl(bcmchan->base + REG_DEBUG);
 
-		dev_warn(bcmchan->dev, "error on chan %d:%s%s%s %08x\n",
+		dev_warn(bcmchan->dev, "error on chan %d:%s%s%s %08x at %08x\n",
 			bcmchan->id,
 			BCM_DEBUG_RLSN_ERR(debug) ? " rlsn" : "",
 			BCM_DEBUG_FIFO_ERR(debug) ? " fifo" : "",
 			BCM_DEBUG_READ_ERR(debug) ? " read" : "",
-			BCM_DEBUG_DMA_STATE(debug));
+			BCM_DEBUG_DMA_STATE(debug),
+			block);
 
 		writel(BCM_DEBUG_RLSN_ERR(debug)
 			| BCM_DEBUG_FIFO_ERR(debug)
 			| BCM_DEBUG_READ_ERR(debug),
 			bcmchan->base + REG_DEBUG);
 
-		// FIXME handle error
+		bcm2708_dma_abort(bcmchan, block);
+
+		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
 	}
+
+	tasklet_schedule(&bcmchan->tasklet);
 
 	writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
 	return IRQ_HANDLED;
