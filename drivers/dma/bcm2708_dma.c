@@ -98,7 +98,7 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 	spin_lock_irqsave(&bcmchan->lock, flags);
 	bcm2708_dma_delete(&bcmchan->pending);
 
-	if (bcmchan->active) {
+	if (unlikely(bcmchan->active || bcmchan->paused)) {
 		WARN_ON(1);
 
 		writel(0, bcmchan->base + REG_CS);
@@ -112,8 +112,8 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 		writel(0, bcmchan->base + REG_CONBLK_AD);
 		bcmchan->active = false;
+		bcmchan->paused = false;
 	}
-	bcmchan->paused = false;
 
 	bcm2708_dma_delete(&bcmchan->running);
 	bcm2708_dma_delete(&bcmchan->completed);
@@ -463,6 +463,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_dma_sg(
 	unsigned long flags)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+
 	return __bcm2708_dma_prep_dma_sg(dmachan,
 		dst_sg, dst_nents,
 		src_sg, src_nents,
