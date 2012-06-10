@@ -27,6 +27,7 @@
 
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/sd.h>
 
 #include "sdhci.h"
 
@@ -299,7 +300,7 @@ static void sdhci_read_block_pio(struct sdhci_host *host)
 	u32 uninitialized_var(scratch);
 	u8 *buf;
 
-	DBG("PIO reading\n");
+	DBG("PIO reading %db\n", host->data->blksz);
 
 	blksize = host->data->blksz;
 	chunk = 0;
@@ -344,7 +345,7 @@ static void sdhci_write_block_pio(struct sdhci_host *host)
 	u32 scratch;
 	u8 *buf;
 
-	DBG("PIO writing\n");
+	DBG("PIO writing %db\n", host->data->blksz);
 
 	blksize = host->data->blksz;
 	chunk = 0;
@@ -383,9 +384,10 @@ static void sdhci_write_block_pio(struct sdhci_host *host)
 	local_irq_restore(flags);
 }
 
-static void sdhci_transfer_pio(struct sdhci_host *host)
+static void sdhci_transfer_pio(struct sdhci_host *host, u32 intmask)
 {
 	u32 mask;
+	u32 avail;
 
 	BUG_ON(!host->data);
 
@@ -406,7 +408,16 @@ static void sdhci_transfer_pio(struct sdhci_host *host)
 		(host->data->blocks == 1))
 		mask = ~0;
 
-	while (sdhci_readl(host, SDHCI_PRESENT_STATE) & mask) {
+	if (host->quirks & SDHCI_QUIRK2_START_PIO_FROM_INT) {
+		if (host->data->flags & MMC_DATA_READ)
+			avail = intmask & SDHCI_INT_DATA_AVAIL;
+		else
+			avail = intmask & SDHCI_INT_SPACE_AVAIL;
+	} else {
+		avail = sdhci_readl(host, SDHCI_PRESENT_STATE) & mask;
+	}
+
+	while (avail) {
 		if (host->quirks & SDHCI_QUIRK_PIO_NEEDS_DELAY)
 			udelay(100);
 
@@ -418,9 +429,14 @@ static void sdhci_transfer_pio(struct sdhci_host *host)
 		host->blocks--;
 		if (host->blocks == 0)
 			break;
+
+		avail = sdhci_readl(host, SDHCI_PRESENT_STATE) & mask;
 	}
 
-	DBG("PIO transfer complete.\n");
+	if (host->blocks)
+		DBG("PIO transfer %db remaining\n", host->blocks);
+	else
+		DBG("PIO transfer complete\n");
 }
 
 static char *sdhci_kmap_atomic(struct scatterlist *sg, unsigned long *flags)
@@ -989,6 +1005,10 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 	mod_timer(&host->timer, jiffies + 10 * HZ);
 
 	host->cmd = cmd;
+	if (host->last_cmdop == MMC_APP_CMD)
+		host->last_cmdop = -cmd->opcode;
+	else
+		host->last_cmdop = cmd->opcode;
 
 	sdhci_prepare_data(host, cmd);
 
@@ -2203,12 +2223,21 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 
 	if (intmask & SDHCI_INT_DATA_TIMEOUT)
 		host->data->error = -ETIMEDOUT;
-	else if (intmask & SDHCI_INT_DATA_END_BIT)
-		host->data->error = -EILSEQ;
+	else if (intmask & SDHCI_INT_DATA_END_BIT) {
+		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_END_BIT)
+				&& host->last_cmdop == -SD_APP_SEND_SCR)
+			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
+		else
+			host->data->error = -EILSEQ;
+	}
 	else if ((intmask & SDHCI_INT_DATA_CRC) &&
 		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
 			!= MMC_BUS_TEST_R)
-		host->data->error = -EILSEQ;
+		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_CRC)
+				&& host->last_cmdop == -SD_APP_SEND_SCR)
+			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
+		else
+			host->data->error = -EILSEQ;
 	else if (intmask & SDHCI_INT_ADMA_ERROR) {
 		pr_err("%s: ADMA error\n", mmc_hostname(host->mmc));
 		sdhci_show_adma_error(host);
@@ -2219,7 +2248,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		sdhci_finish_data(host);
 	else {
 		if (intmask & (SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL))
-			sdhci_transfer_pio(host);
+			sdhci_transfer_pio(host, intmask);
 
 		/*
 		 * We currently don't do anything fancy with DMA
@@ -2894,6 +2923,14 @@ int sdhci_add_host(struct sdhci_host *host)
 			mmc->caps |= MMC_CAP_MAX_CURRENT_400;
 		else
 			mmc->caps |= MMC_CAP_MAX_CURRENT_200;
+	}
+
+	if (host->quirks2 & SDHCI_QUIRK2_VDD_330_ONLY) {
+		ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34;
+		/* Cannot support UHS modes if we are stuck at 3.3V */
+		mmc->caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25
+			| MMC_CAP_UHS_SDR104 | MMC_CAP_UHS_SDR50
+			| MMC_CAP_UHS_DDR50);
 	}
 
 	mmc->ocr_avail = ocr_avail;
