@@ -91,6 +91,14 @@ struct sdhci_host {
 	unsigned int quirks2;	/* More deviations from spec. */
 
 #define SDHCI_QUIRK2_HOST_OFF_CARD_ON			(1<<0)
+/* Controller only supports 3.3v */
+#define SDHCI_QUIRK2_VDD_330_ONLY			(1<<1)
+/* Data availability should use the interrupt for the first block */
+#define SDHCI_QUIRK2_START_PIO_FROM_INT			(1<<2)
+/* Ignore spurious data end bit errors on APP_SEND_SCR */
+#define SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_END_BIT	(1<<3)
+/* Ignore spurious data crc errors on APP_SEND_SCR */
+#define SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_CRC		(1<<4)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
@@ -136,6 +144,7 @@ struct sdhci_host {
 
 	struct mmc_request *mrq;	/* Current request */
 	struct mmc_command *cmd;	/* Current command */
+	int last_cmdop;			/* Opcode of last cmd sent */
 	struct mmc_data *data;	/* Current data request */
 	unsigned int data_early:1;	/* Data finished before cmd */
 
