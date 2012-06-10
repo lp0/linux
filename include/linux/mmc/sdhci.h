@@ -91,6 +91,10 @@ struct sdhci_host {
 	unsigned int quirks2;	/* More deviations from spec. */
 
 #define SDHCI_QUIRK2_HOST_OFF_CARD_ON			(1<<0)
+/* Controller doesn't specify OCR availability, use the regulator */
+#define SDHCI_QUIRK2_OCR_FROM_REGULATOR			(1<<1)
+/* Data availability should use the interrupt for the first block */
+#define SDHCI_QUIRK2_START_PIO_FROM_INT			(1<<2)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */
