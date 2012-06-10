@@ -542,6 +542,18 @@
 			interrupts = <1 29>;
 		};
 
+		sdhci {
+			compatible = "broadcom,bcm2835-sdhci", "broadcom,bcm2708-sdhci";
+			reg = <0x300000 0x100>;
+			interrupts = <2 30>;
+
+			clock-frequency = <80000000>;	/* Set by VideoCore */
+			sdhci,3.3v-only = <1>;
+
+			broadcom,vc-power = <&power>;
+			broadcom,vc-index = <0>;
+		};
+
 		bsc1 {
 			#address-cells = <1>;
 			#size-cells = <0>;
