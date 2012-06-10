@@ -973,6 +973,7 @@ config ARCH_BCM2708
 	select BCM2708_WDOG
 	select PINCTRL
 	select PINCTRL_BCM2708
+	select REGULATOR
 	select GENERIC_GPIO
 	select ARCH_REQUIRE_GPIOLIB
 	select HAS_DMA
