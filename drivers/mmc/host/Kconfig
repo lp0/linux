@@ -120,7 +120,7 @@ config MMC_SDHCI_OF_HLWD
 
 config MMC_SDHCI_OF_BCM2708
 	tristate "Broadcom BCM2708 SDHCI support"
-	depends on MMC_SDHCI_PLTFM && ARCH_BCM2708 && BCM_VC_POWER
+	depends on MMC_SDHCI_PLTFM && ARCH_BCM2708 && REGULATOR_BCM_VC
 	select MMC_SDHCI_IO_ACCESSORS
 	help
 	  This supports the Arasan SDHCI controller on the BCM2708

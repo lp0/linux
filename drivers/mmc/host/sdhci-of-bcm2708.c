@@ -25,10 +25,8 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 
-#include "../../misc/bcm-vc-power.h"
 #include "../../dma/bcm2708_dma.h"
 #include "sdhci-pltfm.h"
-#include "sdhci-of-bcm2708.h"
 
 #ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
 static bool use_dma = true;
@@ -83,11 +81,6 @@ static struct sdhci_ops bcm2708_sdhci_ops = {
 	.write_b = bcm2708_sdhci_writeb,
 
 	.get_max_clock = bcm2708_sdhci_get_max_clock,
-
-#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
-#error "TODO"
-	.enable_dma = bcm2708_sdhci_enable_dma,
-#endif
 };
 
 static struct sdhci_pltfm_data bcm2708_sdhci_pdata __devinitconst = {
@@ -105,40 +98,21 @@ static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
 {
 	struct sdhci_pltfm_data *pdata = devm_kzalloc(&pdev->dev,
 			sizeof(*pdata), GFP_KERNEL);
-	struct bcm2708_sdhci *hpriv = devm_kzalloc(&pdev->dev,
-			sizeof(*hpriv), GFP_KERNEL);
-	int ret;
-
-	if (hpriv == NULL)
-		return -ENOMEM;
 
 	*pdata = bcm2708_sdhci_pdata;
-	pdata->priv = hpriv;
 
-	hpriv->power =  bcm_vc_power_get(pdev->dev.of_node, NULL, NULL);
-	if (IS_ERR(hpriv->power))
-		return PTR_ERR(hpriv->power);
+#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
+#error "TODO"
+	if (use_dma) {
+		pdata->enable_dma = bcm2708_sdhci_enable_dma;
+	}
+#endif
 
-	/* FIXME use regulator */
-	bcm_vc_power_on(hpriv->power);
-	msleep(10);
-
-	ret = sdhci_pltfm_register(pdev, pdata);
-	if (ret)
-		bcm_vc_power_put(hpriv->power);
-
-	return ret;
+	return sdhci_pltfm_register(pdev, pdata);
 }
 
 static int __devexit bcm2708_sdhci_remove(struct platform_device *pdev)
 {
-	struct sdhci_host *host = platform_get_drvdata(pdev);
-	struct sdhci_pltfm_host *phost = sdhci_priv(host);
-	struct bcm2708_sdhci *hpriv = phost->priv;
-
-	bcm_vc_power_put(hpriv->power);
-	hpriv->power = NULL;
-
 	return sdhci_pltfm_unregister(pdev);
 }
 
