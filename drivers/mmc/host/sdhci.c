@@ -2932,7 +2932,8 @@ int sdhci_add_host(struct sdhci_host *host)
 	}
 
 #ifdef CONFIG_REGULATOR
-	if ((host->quirks2 & SDHCI_QUIRK2_NO_OCR) && host->vmmc) {
+	if (mmc->ocr_avail == 0 && host->vmmc
+			&& (host->quirks2 & SDHCI_QUIRK2_OCR_FROM_REGULATOR)) {
 		ocr_avail = mmc_regulator_get_ocrmask(host->vmmc);
 		if (ocr_avail < 0)
 			ocr_avail = 0;
