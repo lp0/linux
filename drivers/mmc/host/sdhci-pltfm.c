@@ -123,7 +123,6 @@ struct sdhci_host *sdhci_pltfm_init(struct platform_device *pdev,
 	}
 
 	pltfm_host = sdhci_priv(host);
-	pltfm_host->priv = pdata->priv;
 
 	host->hw_name = dev_name(&pdev->dev);
 	if (pdata && pdata->ops)
