@@ -30,41 +30,6 @@
 		broadcom,depth = <0>;		/* Set by VideoCore */
 	};
 
-	power: regulator {
-		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr", "simple-bus";
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		broadcom,vc-mailbox = <&vc_mbox>;
-		broadcom,vc-channel = <0>;
-
-		regulator-name = "VideoCore";
-		regulator-min-microvolt = <0>;
-		regulator-max-microvolt = <5000000>;
-		regulator-always-on = <1>;
-
-		sd_card_power: regulator@0 {
-			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
-			reg = <0>;
-
-			vin-supply = <&power>;
-			regulator-name = "SD Card";
-			regulator-min-microvolt = <0>;
-			regulator-max-microvolt = <3300000>;
-		};
-
-		/* This is for the controller itself, not the root port */
-		usb_hcd_power: regulator@3 {
-			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
-			reg = <3>;
-
-			vin-supply = <&power>;
-			regulator-name = "USB HCD";
-			regulator-min-microvolt = <0>;
-			regulator-max-microvolt = <5000000>;
-		};
-	};
-
 	axi {
 		compatible = "broadcom,bcm2835-axi", "broadcom,bcm2708-axi", "simple-bus";
 		#address-cells = <1>;
@@ -566,9 +531,6 @@
 			interrupts = <2 30>;
 
 			clock-frequency = <100000000>;	/* Set by VideoCore */
-			sdhci,3.3v-only = <1>;
-
-			vmmc-supply = <&sd_card_power>;
 		};
 
 		bsc1 {
@@ -583,8 +545,6 @@
 			compatible = "broadcom,bcm2835-usb", "broadcom,bcm2708-usb", "synopsys,designware-hs-otg2-host", "broadcom,bcm2708-power-user";
 			reg = <0x980000 0x20000>;
 			interrupts = <1 9>;
-
-			hcd-supply = <&usb_hcd_power>;
 		};
 	};
 };
