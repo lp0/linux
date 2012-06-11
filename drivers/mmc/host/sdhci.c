@@ -2224,20 +2224,12 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	if (intmask & SDHCI_INT_DATA_TIMEOUT)
 		host->data->error = -ETIMEDOUT;
 	else if (intmask & SDHCI_INT_DATA_END_BIT) {
-		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_INT_APP_SEND_SCR)
-				&& host->last_cmdop == -SD_APP_SEND_SCR)
-			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
-		else
-			host->data->error = -EILSEQ;
+		host->data->error = -EILSEQ;
 	}
 	else if ((intmask & SDHCI_INT_DATA_CRC) &&
 		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
 			!= MMC_BUS_TEST_R)
-		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_INT_APP_SEND_SCR)
-				&& host->last_cmdop == -SD_APP_SEND_SCR)
-			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
-		else
-			host->data->error = -EILSEQ;
+		host->data->error = -EILSEQ;
 	else if (intmask & SDHCI_INT_ADMA_ERROR) {
 		pr_err("%s: ADMA error\n", mmc_hostname(host->mmc));
 		sdhci_show_adma_error(host);
