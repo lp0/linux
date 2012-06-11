@@ -35,7 +35,7 @@
 
 struct bcm_vc_power_mgr {
 	struct device *dev;
-	int current_uV;
+	int fixed_uV;
 
 	/* used to lock mbox, state */
 	struct mutex lock;
@@ -47,7 +47,7 @@ struct bcm_vc_power_mgr {
 
 struct bcm_vc_power_dev {
 	struct device *dev;
-	int current_uV;
+	int fixed_uV;
 
 	struct bcm_vc_power_mgr *mgr;
 	int index;
@@ -116,49 +116,39 @@ static int bcm_vc_power_enable_time(struct regulator_dev *rdev)
 	return 10000; /* 10ms */
 }
 
+static int bcm_vc_power_list_mgr_voltage(struct regulator_dev *rdev,
+	unsigned selector)
+{
+	struct bcm_vc_power_mgr *mgr = rdev_get_drvdata(rdev);
+
+	return selector == 0 ? mgr->fixed_uV : 0;
+}
+
 static int bcm_vc_power_get_mgr_voltage(struct regulator_dev *rdev)
 {
 	struct bcm_vc_power_mgr *mgr = rdev_get_drvdata(rdev);
 
-	return mgr->current_uV;
+	return mgr->fixed_uV;
 }
 
-static int bcm_vc_power_set_mgr_voltage(struct regulator_dev *rdev,
-	int min_uV, int max_uV, unsigned *selector)
+static int bcm_vc_power_list_dev_voltage(struct regulator_dev *rdev,
+	unsigned selector)
 {
-	struct bcm_vc_power_mgr *mgr = rdev_get_drvdata(rdev);
+	struct bcm_vc_power_dev *pdev = rdev_get_drvdata(rdev);
 
-	if (min_uV != max_uV)
-		return -EINVAL;
-
-	mgr->current_uV = max_uV;
-	return 0;
+	return selector == 0 ? pdev->fixed_uV : 0;
 }
 
 static int bcm_vc_power_get_dev_voltage(struct regulator_dev *rdev)
 {
 	struct bcm_vc_power_dev *pdev = rdev_get_drvdata(rdev);
-	struct bcm_vc_power_mgr *mgr = pdev->mgr;
 
-	return bcm_vc_power_is_enabled(rdev) ? mgr->current_uV : 0;
-}
-
-static int bcm_vc_power_set_dev_voltage(struct regulator_dev *rdev,
-	int min_uV, int max_uV, unsigned *selector)
-{
-	struct bcm_vc_power_dev *pdev = rdev_get_drvdata(rdev);
-	struct bcm_vc_power_mgr *mgr = pdev->mgr;
-
-	if (min_uV != max_uV)
-		return -EINVAL;
-
-	mgr->current_uV = max_uV;
-	return 0;
+	return pdev->fixed_uV;
 }
 
 static struct regulator_ops mgr_ops = {
-	.get_voltage = bcm_vc_power_get_mgr_voltage,
-	.set_voltage = bcm_vc_power_set_mgr_voltage
+	.list_voltage = bcm_vc_power_list_mgr_voltage,
+	.get_voltage = bcm_vc_power_get_mgr_voltage
 };
 
 static const struct regulator_desc mgr_desc = {
@@ -167,6 +157,7 @@ static const struct regulator_desc mgr_desc = {
 	.type = REGULATOR_VOLTAGE,
 	.owner = THIS_MODULE,
 	.ops = &mgr_ops,
+	.n_voltages = 1
 };
 
 static struct regulator_ops dev_ops = {
@@ -175,8 +166,8 @@ static struct regulator_ops dev_ops = {
 	.is_enabled = bcm_vc_power_is_enabled,
 	.enable_time = bcm_vc_power_enable_time,
 
-	.get_voltage = bcm_vc_power_get_dev_voltage,
-	.set_voltage = bcm_vc_power_set_dev_voltage
+	.list_voltage = bcm_vc_power_list_dev_voltage,
+	.get_voltage = bcm_vc_power_get_dev_voltage
 };
 
 static const struct regulator_desc dev_desc = {
@@ -184,7 +175,8 @@ static const struct regulator_desc dev_desc = {
 	.id = -1,
 	.type = REGULATOR_VOLTAGE,
 	.owner = THIS_MODULE,
-	.ops = &dev_ops
+	.ops = &dev_ops,
+	.n_voltages = 1
 };
 
 static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
@@ -192,6 +184,7 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_vc_power_mgr *mgr = devm_kzalloc(&of_dev->dev,
 		sizeof(*mgr), GFP_KERNEL);
+	struct regulator_init_data *init_data;
 	struct regulator_config config = {
 		.dev = &of_dev->dev,
 		.of_node = node,
@@ -232,7 +225,12 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 
 	dev_dbg(mgr->dev, "current = %08x\n", mgr->state);
 
-	config.init_data = of_get_regulator_init_data(mgr->dev, node);
+	init_data = of_get_regulator_init_data(mgr->dev, node);
+	init_data->constraints.apply_uV = false;
+	WARN_ON(init_data->constraints.min_uV != init_data->constraints.max_uV);
+	mgr->fixed_uV = init_data->constraints.max_uV;
+	config.init_data = init_data;
+
 	mgr->rdev = regulator_register(&mgr_desc, &config);
 	if (IS_ERR(mgr->rdev)) {
 		ret = PTR_ERR(mgr->rdev);
@@ -264,6 +262,7 @@ static int __devinit bcm_vc_power_dev_probe(struct platform_device *of_dev)
 	struct bcm_vc_power_dev *pdev = devm_kzalloc(&of_dev->dev,
 			sizeof(*pdev), GFP_KERNEL);
 	struct platform_device *mgr;
+	struct regulator_init_data *init_data;
 	struct regulator_config config = {
 		.dev = &of_dev->dev,
 		.of_node = node,
@@ -294,7 +293,12 @@ static int __devinit bcm_vc_power_dev_probe(struct platform_device *of_dev)
 	if (pdev->index < 0 || pdev->index > MAX_POWER_DEV)
 		return -EINVAL;
 
-	config.init_data = of_get_regulator_init_data(pdev->dev, node);
+	init_data = of_get_regulator_init_data(pdev->dev, node);
+	init_data->constraints.apply_uV = false;
+	WARN_ON(init_data->constraints.min_uV != init_data->constraints.max_uV);
+	pdev->fixed_uV = init_data->constraints.max_uV;
+	config.init_data = init_data;
+
 	pdev->rdev = regulator_register(&dev_desc, &config);
 	if (IS_ERR(pdev->rdev)) {
 		int ret = PTR_ERR(pdev->rdev);
