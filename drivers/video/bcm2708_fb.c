@@ -14,6 +14,8 @@
  * Copyright 1999-2001 Jeff Garzik <jgarzik@pobox.com>
  *
  */
+
+#include <linux/bcm-mbox.h>
 #include <linux/console.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
@@ -26,8 +28,6 @@
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/string.h>
-
-#include "../misc/bcm-mbox.h"
 
 /* This is limited to 16 characters when displayed by X startup */
 static const char *bcm2708_name = "BCM2708 FB";

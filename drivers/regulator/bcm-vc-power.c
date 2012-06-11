@@ -10,6 +10,7 @@
  * of the VideoCore processor.
  */
 
+#include <linux/bcm-mbox.h>
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/module.h>
@@ -20,8 +21,6 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
-
-#include "../misc/bcm-mbox.h"
 
 #define MODULE_NAME "bcm-vc-power"
 

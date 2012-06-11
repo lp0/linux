@@ -31,6 +31,7 @@
  * messages).
  */
 
+#include <linux/bcm-mbox.h>
 #include <linux/bitops.h>
 #include <linux/device.h>
 #include <linux/err.h>
@@ -47,7 +48,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-#include "bcm-mbox.h"
 
 #define MODULE_NAME "bcm-mbox"
 
