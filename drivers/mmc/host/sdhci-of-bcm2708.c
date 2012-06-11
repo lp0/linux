@@ -10,10 +10,6 @@
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/device.h>
-#include <linux/dmaengine.h>
-#include <linux/dmapool.h>
-#include <linux/dma-direction.h>
-#include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -22,17 +18,9 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/platform_device.h>
-#include <linux/scatterlist.h>
 #include <linux/slab.h>
 
-#include "../../dma/bcm2708_dma.h"
 #include "sdhci-pltfm.h"
-
-#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
-static bool use_dma = true;
-module_param(use_dma, bool, 0400);
-MODULE_PARM_DESC(use_dma, "Use slave DMA (default=1)");
-#endif
 
 /* The Arasan has a bug whereby it may lose the content of
  * successive writes to registers that are within two SD-card clock
@@ -96,19 +84,7 @@ static struct sdhci_pltfm_data bcm2708_sdhci_pdata __devinitconst = {
 
 static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
 {
-	struct sdhci_pltfm_data *pdata = devm_kzalloc(&pdev->dev,
-			sizeof(*pdata), GFP_KERNEL);
-
-	*pdata = bcm2708_sdhci_pdata;
-
-#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
-#error "TODO"
-	if (use_dma) {
-		pdata->enable_dma = bcm2708_sdhci_enable_dma;
-	}
-#endif
-
-	return sdhci_pltfm_register(pdev, pdata);
+	return sdhci_pltfm_register(pdev, &bcm2708_sdhci_pdata);
 }
 
 static int __devexit bcm2708_sdhci_remove(struct platform_device *pdev)
