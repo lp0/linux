@@ -91,14 +91,12 @@ struct sdhci_host {
 	unsigned int quirks2;	/* More deviations from spec. */
 
 #define SDHCI_QUIRK2_HOST_OFF_CARD_ON			(1<<0)
-/* Controller only supports 3.3v */
-#define SDHCI_QUIRK2_VDD_330_ONLY			(1<<1)
+/* Controller doesn't provide ocr caps */
+#define SDHCI_QUIRK2_NO_OCR				(1<<1)
 /* Data availability should use the interrupt for the first block */
 #define SDHCI_QUIRK2_START_PIO_FROM_INT			(1<<2)
-/* Ignore spurious data end bit errors on APP_SEND_SCR */
-#define SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_END_BIT	(1<<3)
-/* Ignore spurious data crc errors on APP_SEND_SCR */
-#define SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_CRC		(1<<4)
+/* Ignore spurious data errors after APP_SEND_SCR */
+#define SDHCI_QUIRK2_SPURIOUS_INT_APP_SEND_SCR		(1<<3)
 
 	int irq;		/* Device IRQ */
 	void __iomem *ioaddr;	/* Mapped address */

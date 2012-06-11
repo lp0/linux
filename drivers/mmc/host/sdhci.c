@@ -2224,7 +2224,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	if (intmask & SDHCI_INT_DATA_TIMEOUT)
 		host->data->error = -ETIMEDOUT;
 	else if (intmask & SDHCI_INT_DATA_END_BIT) {
-		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_END_BIT)
+		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_INT_APP_SEND_SCR)
 				&& host->last_cmdop == -SD_APP_SEND_SCR)
 			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
 		else
@@ -2233,7 +2233,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	else if ((intmask & SDHCI_INT_DATA_CRC) &&
 		SDHCI_GET_CMD(sdhci_readw(host, SDHCI_COMMAND))
 			!= MMC_BUS_TEST_R)
-		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_SCR_INT_DATA_CRC)
+		if ((host->quirks2 & SDHCI_QUIRK2_SPURIOUS_INT_APP_SEND_SCR)
 				&& host->last_cmdop == -SD_APP_SEND_SCR)
 			intmask |= SDHCI_INT_DATA_AVAIL | SDHCI_INT_DATA_END;
 		else
@@ -2925,13 +2925,19 @@ int sdhci_add_host(struct sdhci_host *host)
 			mmc->caps |= MMC_CAP_MAX_CURRENT_200;
 	}
 
-	if (host->quirks2 & SDHCI_QUIRK2_VDD_330_ONLY) {
-		ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34;
-		/* Cannot support UHS modes if we are stuck at 3.3V */
-		mmc->caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25
-			| MMC_CAP_UHS_SDR104 | MMC_CAP_UHS_SDR50
-			| MMC_CAP_UHS_DDR50);
+	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
+	if (IS_ERR(host->vmmc)) {
+		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
+		host->vmmc = NULL;
 	}
+
+#ifdef CONFIG_REGULATOR
+	if ((host->quirks2 & SDHCI_QUIRK2_NO_OCR) && host->vmmc) {
+		ocr_avail = mmc_regulator_get_ocrmask(host->vmmc);
+		if (ocr_avail < 0)
+			ocr_avail = 0;
+	}
+#endif
 
 	mmc->ocr_avail = ocr_avail;
 	mmc->ocr_avail_sdio = ocr_avail;
@@ -3031,12 +3037,6 @@ int sdhci_add_host(struct sdhci_host *host)
 		mmc_hostname(mmc), host);
 	if (ret)
 		goto untasklet;
-
-	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
-	if (IS_ERR(host->vmmc)) {
-		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
-		host->vmmc = NULL;
-	}
 
 	sdhci_init(host, 0);
 

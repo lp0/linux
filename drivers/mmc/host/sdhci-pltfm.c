@@ -72,13 +72,6 @@ void sdhci_get_of_property(struct platform_device *pdev)
 		    bus_width == 1))
 			host->quirks |= SDHCI_QUIRK_FORCE_1_BIT_DATA;
 
-		if (of_get_property(np, "sdhci,3.3v-only", NULL)) {
-			host->quirks2 |= SDHCI_QUIRK2_VDD_330_ONLY;
-			host->ocr_avail_sdio |= MMC_VDD_32_33 | MMC_VDD_33_34;
-			host->ocr_avail_sd |= MMC_VDD_32_33 | MMC_VDD_33_34;
-			host->ocr_avail_mmc |= MMC_VDD_32_33 | MMC_VDD_33_34;
-		}
-
 		if (sdhci_of_wp_inverted(np))
 			host->quirks |= SDHCI_QUIRK_INVERTED_WRITE_PROTECT;
 
