@@ -7,8 +7,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef _BCM2708_DMA_H
-#define _BCM2708_DMA_H
+#ifndef _DRIVERS_DMA_BCM2708_DMA_H
+#define _DRIVERS_DMA_BCM2708_DMA_H
 
 #define CACHE_LINE_SIZE		32
 #define CACHE_LINE_MASK		(CACHE_LINE_SIZE - 1)
@@ -63,42 +63,6 @@
 #define BCM_TI_BURST_CHAN(n)	BCM_TI_BURST_LEN_SET((n)->lite ? 4 : 8)
 #define BCM_TI_PERMAP_GET(n)	((n >> 16) & 0x1F)	/* Periphal Mapping */
 #define BCM_TI_PERMAP_SET(n)	((n & 0x1F) << 16)	/* Periphal Mapping */
-
-enum bcm2708_dma_peripheral {
-	BCM2708_DMA_PER_NONE,
-	BCM2708_DMA_PER_DSI_A,
-	BCM2708_DMA_PER_PCM_TX,
-	BCM2708_DMA_PER_PCM_RX,
-	BCM2708_DMA_PER_SMI,
-	BCM2708_DMA_PER_PWM,
-	BCM2708_DMA_PER_SPI_TX,
-	BCM2708_DMA_PER_SPI_RX,
-	BCM2708_DMA_PER_BSC_SPI_SL_TX,
-	BCM2708_DMA_PER_BSC_SPI_SL_RX,
-	BCM2708_DMA_PER_UNUSED_10,
-	BCM2708_DMA_PER_EMMC,
-	BCM2708_DMA_PER_UART_TX,
-	BCM2708_DMA_PER_SD_HOST,
-	BCM2708_DMA_PER_UART_RX,
-	BCM2708_DMA_PER_DSI_B,
-	BCM2708_DMA_PER_SLIMBUS_MCTX,
-	BCM2708_DMA_PER_HDMI,
-	BCM2708_DMA_PER_SLIMBUS_MCRX,
-	BCM2708_DMA_PER_SLIMBUS_DC0,
-	BCM2708_DMA_PER_SLIMBUS_DC1,
-	BCM2708_DMA_PER_SLIMBUS_DC2,
-	BCM2708_DMA_PER_SLIMBUS_DC3,
-	BCM2708_DMA_PER_SLIMBUS_DC4,
-	BCM2708_DMA_PER_SCALER_FIFO0,
-	BCM2708_DMA_PER_SCALER_FIFO1,
-	BCM2708_DMA_PER_SCALER_FIFO2,
-	BCM2708_DMA_PER_SLIMBUS_DC5,
-	BCM2708_DMA_PER_SLIMBUS_DC6,
-	BCM2708_DMA_PER_SLIMBUS_DC7,
-	BCM2708_DMA_PER_SLIMBUS_DC8,
-	BCM2708_DMA_PER_SLIMBUS_DC9
-};
-
 #define BCM_TI_WAITS_GET(n)	((n >> 21) & MAX_WAITS)	/* Add Wait Cycles */
 #define BCM_TI_WAITS_SET(n)	((n & MAX_WAITS) << 21)	/* Add Wait Cycles */
 #define BCM_TI_NO_WIDE_BURSTS	BIT(26)	/* No wide writes as 2 beat AXI bursts */
@@ -180,13 +144,6 @@ struct bcm2708_dmacb {
 struct bcm2708_dmadesc {
 	struct bcm2708_dmacb *cb;
 	dma_addr_t phys;
-};
-
-struct bcm2708_dmacfg {
-	u8 waits;
-	bool src_dreq;
-	bool dst_dreq;
-	enum bcm2708_dma_peripheral per;
 };
 
 struct bcm2708_dmatx {

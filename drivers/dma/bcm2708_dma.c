@@ -15,6 +15,7 @@
  * disable channels for power saving without a race condition
  */
 
+#include <linux/bcm2708_dma.h>
 #include <linux/bitops.h>
 #include <linux/device.h>
 #include <linux/dmaengine.h>
@@ -34,6 +35,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <asm/sizes.h>
+
 #include "dmaengine.h"
 #include "bcm2708_dma.h"
 
