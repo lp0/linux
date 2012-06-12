@@ -918,6 +918,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 		enum dma_ctrl_cmd cmd, unsigned long arg)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct dma_slave_config *slcfg;
 	unsigned long flags;
 
 	dev_vdbg(bcmchan->dev, "%s: %d: %d %lu\n", __func__,
@@ -925,8 +926,25 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 
 	switch (cmd) {
 	case DMA_SLAVE_CONFIG:
-		bcmchan->slcfg = *(struct dma_slave_config *)arg;
-		return 0;
+		slcfg = (struct dma_slave_config *)arg;
+		if (slcfg == NULL) {
+			return -EINVAL;
+		} else if (slcfg->direction == DMA_DEV_TO_MEM) {
+			bcmchan->slcfg = *slcfg;
+		} else if (slcfg->direction == DMA_MEM_TO_DEV) {
+			bcmchan->slcfg = *slcfg;
+
+			bcmchan->slcfg.src_addr = slcfg->dst_addr;
+			bcmchan->slcfg.src_addr_width = slcfg->dst_addr_width;
+			bcmchan->slcfg.src_maxburst = slcfg->dst_maxburst;
+
+			bcmchan->slcfg.dst_addr = slcfg->src_addr;
+			bcmchan->slcfg.dst_addr_width = slcfg->src_addr_width;
+			bcmchan->slcfg.dst_maxburst = slcfg->src_maxburst;
+			return 0;
+		} else {
+			return -EINVAL;
+		}
 
 	case BCM2708DMA_CONFIG: {
 		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
