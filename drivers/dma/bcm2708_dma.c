@@ -97,6 +97,22 @@ static void bcm2708_dma_delete(struct list_head *list)
 	}
 }
 
+static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan)
+{
+	int timeout = 100;
+	u32 status = 0;
+
+	writel(0, bcmchan->base + REG_CS);
+
+	while (!(status & BCM_CS_PAUSED) && timeout-- > 0)
+		status = readl(bcmchan->base + REG_CS);
+
+	if (status & BCM_CS_PAUSED) {
+		writel(0, bcmchan->base + REG_CONBLK_AD);
+		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+	}
+}
+
 static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 {
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
@@ -121,9 +137,7 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 		synchronize_irq(bcmchan->irq);
 
 		spin_lock_irqsave(&bcmchan->lock, flags);
-		writel(0, bcmchan->base + REG_CONBLK_AD);
-		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
-		writel(0, bcmchan->base + REG_CONBLK_AD);
+		bcm2708_dma_abort(bcmchan);
 		bcmchan->active = false;
 		bcmchan->paused = false;
 	}
@@ -844,7 +858,7 @@ static void bcm2708_dma_tasklet(unsigned long data)
 	bcm2708_dma_cleanup((struct bcm2708_dmachan *)data);
 }
 
-static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan, u32 block)
+static void bcm2708_dma_record_abort(struct bcm2708_dmachan *bcmchan, u32 block)
 {
 	struct bcm2708_dmatx *bcmtx;
 	bool found = false;
@@ -902,7 +916,7 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 			| BCM_DEBUG_READ_ERR(debug),
 			bcmchan->base + REG_DEBUG);
 
-		bcm2708_dma_abort(bcmchan, block);
+		bcm2708_dma_record_abort(bcmchan, block);
 
 		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
@@ -963,10 +977,10 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 
 			if (!bcmchan->paused)
 				writel(0, bcmchan->base + REG_CS);
+
 			block = readl(bcmchan->base + REG_CONBLK_AD);
-			writel(0, bcmchan->base + REG_CONBLK_AD);
-			writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
-			writel(0, bcmchan->base + REG_CONBLK_AD);
+			bcm2708_dma_abort(bcmchan);
+
 			bcmchan->active = false;
 			bcmchan->paused = false;
 
