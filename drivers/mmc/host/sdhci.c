@@ -1005,10 +1005,6 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 	mod_timer(&host->timer, jiffies + 10 * HZ);
 
 	host->cmd = cmd;
-	if (host->last_cmdop == MMC_APP_CMD)
-		host->last_cmdop = -cmd->opcode;
-	else
-		host->last_cmdop = cmd->opcode;
 
 	sdhci_prepare_data(host, cmd);
 
