@@ -561,7 +561,8 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 
 		bcmtx->desc[i].cb->ti = (from ? BCM_TI_DST_INC : BCM_TI_SRC_INC)
 			| BCM_TI_TDMODE | BCM_TI_BURST_LEN_SET(burst)
-			| bcmchan->cfg;
+			| (bcmchan->cfg &
+				(from ? ~BCM_TI_DST_DREQ : ~BCM_TI_SRC_DREQ));
 		bcmtx->desc[i].cb->src = from ? bcmchan->slcfg.src_addr : addr;
 		bcmtx->desc[i].cb->dst = from ? addr : bcmchan->slcfg.dst_addr;
 		bcmtx->desc[i].cb->len = (len / width) << 16 | width;
