@@ -530,7 +530,7 @@
 			reg = <0x300000 0x100>;
 			interrupts = <2 30>;
 
-			clock-frequency = <100000000>;	/* Set by VideoCore */
+			clock-frequency = <50000000>;	/* Set by VideoCore */
 		};
 
 		bsc1 {
