@@ -839,25 +839,14 @@ static void __bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan,
 
 static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
 {
-	LIST_HEAD(completed);
 	struct bcm2708_dmatx *bcmtx;
 	struct bcm2708_dmatx *tmp;
-	unsigned long flags;
 
-	spin_lock_irqsave(&bcmchan->lock, flags);
-	list_splice_tail_init(&bcmchan->completed, &completed);
-	spin_unlock_irqrestore(&bcmchan->lock, flags);
-
-	list_for_each_entry_safe(bcmtx, tmp, &completed, list) {
+	list_for_each_entry_safe(bcmtx, tmp, &bcmchan->completed, list) {
 		__bcm2708_dma_cleanup(bcmchan, bcmtx);
 		list_del(&bcmtx->list);
 		bcm2708_dma_free_tx(bcmtx);
 	}
-}
-
-static void bcm2708_dma_tasklet(unsigned long data)
-{
-	bcm2708_dma_cleanup((struct bcm2708_dmachan *)data);
 }
 
 static void bcm2708_dma_record_abort(struct bcm2708_dmachan *bcmchan, u32 block)
@@ -906,6 +895,7 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	if (status & BCM_CS_END) {
 		writel(BCM_CS_END, bcmchan->base + REG_CS);
 		bcm2708_dma_update_progress(bcmchan, block, true);
+		bcm2708_dma_cleanup(bcmchan);
 	}
 
 	if (status & BCM_CS_ERROR) {
@@ -929,8 +919,6 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
 	}
-
-	tasklet_schedule(&bcmchan->tasklet);
 
 	writel(BCM_CS_INT, bcmchan->base + REG_CS);
 	return IRQ_HANDLED;
@@ -993,7 +981,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			bcmchan->paused = false;
 
 			bcm2708_dma_update_progress(bcmchan, block, false);
-			tasklet_schedule(&bcmchan->tasklet);
+			bcm2708_dma_cleanup(bcmchan);
 		}
 		bcm2708_dma_delete(&bcmchan->pending);
 		bcm2708_dma_delete(&bcmchan->running);
@@ -1103,8 +1091,6 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		INIT_LIST_HEAD(&bcmchan->pending);
 		INIT_LIST_HEAD(&bcmchan->running);
 		INIT_LIST_HEAD(&bcmchan->completed);
-		tasklet_init(&bcmchan->tasklet, bcm2708_dma_tasklet,
-			(unsigned long)bcmchan);
 
 		/* valid only for channels 0 - 14
 		 * 15 has its own base address
@@ -1237,7 +1223,6 @@ static int bcm2708_dma_remove(struct platform_device *pdev)
 		list_for_each_entry(dmachan,
 				&bcmdev->dmadev[i].channels, device_node) {
 			bcmchan = to_bcmchan(dmachan);
-			tasklet_kill(&bcmchan->tasklet);
 		}
 
 		dma_async_device_unregister(&bcmdev->dmadev[i]);
