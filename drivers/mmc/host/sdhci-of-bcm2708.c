@@ -7,9 +7,11 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/bcm2708_dma.h>
 #include <linux/bitops.h>
 #include <linux/delay.h>
 #include <linux/device.h>
+#include <linux/dmaengine.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -21,6 +23,12 @@
 #include <linux/slab.h>
 
 #include "sdhci-pltfm.h"
+
+#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
+static bool use_dma = true;
+module_param(use_dma, bool, 0400);
+MODULE_PARM_DESC(use_dma, "Use slave DMA (default=1)");
+#endif
 
 /* The Arasan has a bug whereby it may lose the content of
  * successive writes to registers that are within two SD-card clock
@@ -63,7 +71,50 @@ static unsigned int bcm2708_sdhci_get_max_clock(struct sdhci_host *host)
 	return phost->clock;
 }
 
-static struct sdhci_ops bcm2708_sdhci_ops = {
+#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
+static const struct bcm2708_dmacfg cfg = {
+	.per = BCM2708_DMA_PER_EMMC
+};
+
+static bool bcm2708_sdhci_dma_filter(struct dma_chan *chan, void *filter_param)
+{
+	return dmaengine_device_control(chan,
+			BCM2708DMA_CONFIG, (unsigned long)&cfg) == 0;
+}
+
+static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
+{
+	struct dma_chan *chan;
+	dma_cap_mask_t mask;
+	struct dma_slave_config slcfg = {
+		.direction = DMA_DEV_TO_MEM,
+		.src_addr = 0x7e300000 + SDHCI_BUFFER,
+		.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES,
+		.src_maxburst = SZ_1K / DMA_SLAVE_BUSWIDTH_4_BYTES,
+		.device_fc = true
+	};
+
+	dma_cap_zero(mask);
+	dma_cap_set(DMA_SLAVE, mask);
+
+	chan = dma_request_channel(mask, bcm2708_sdhci_dma_filter, NULL);
+
+	if (dmaengine_device_control(chan,
+			BCM2708DMA_CONFIG, (unsigned long)&cfg)) {
+		dma_release_channel(chan);
+		return NULL;
+	}
+
+	if (dmaengine_slave_config(chan, &slcfg)) {
+		dma_release_channel(chan);
+		return NULL;
+	}
+
+	return chan;
+}
+#endif
+
+static struct sdhci_ops bcm2708_sdhci_ops __devinitconst = {
 	.write_l = bcm2708_sdhci_writel,
 	.write_w = bcm2708_sdhci_writew,
 	.write_b = bcm2708_sdhci_writeb,
@@ -79,12 +130,28 @@ static struct sdhci_pltfm_data bcm2708_sdhci_pdata __devinitconst = {
 		| SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN,
 	.quirks2 = SDHCI_QUIRK2_OCR_FROM_REGULATOR
 		| SDHCI_QUIRK2_START_PIO_FROM_INT,
-	.ops = &bcm2708_sdhci_ops
+	.caps = SDHCI_CAN_DO_HISPD /* (need to fix Linux' clock select first) */
 };
 
 static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
 {
-	return sdhci_pltfm_register(pdev, &bcm2708_sdhci_pdata);
+	struct sdhci_pltfm_data *pdata = devm_kzalloc(&pdev->dev,
+			sizeof(*pdata), GFP_KERNEL);
+	struct sdhci_ops *ops = devm_kzalloc(&pdev->dev,
+			sizeof(*ops), GFP_KERNEL);
+
+	*pdata = bcm2708_sdhci_pdata;
+	*ops = bcm2708_sdhci_ops;
+	pdata->ops = ops;
+
+#ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
+	if (use_dma) {
+		pdata->caps |= SDHCI_CAN_DO_SDMA;
+		ops->enable_slave_dma = bcm2708_sdhci_enable_slave_dma;
+	}
+#endif
+
+	return sdhci_pltfm_register(pdev, pdata);
 }
 
 static int __devexit bcm2708_sdhci_remove(struct platform_device *pdev)
