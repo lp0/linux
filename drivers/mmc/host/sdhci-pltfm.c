@@ -132,6 +132,7 @@ struct sdhci_host *sdhci_pltfm_init(struct platform_device *pdev,
 	if (pdata) {
 		host->quirks = pdata->quirks;
 		host->quirks2 = pdata->quirks2;
+		host->caps = pdata->caps;
 	}
 	host->irq = platform_get_irq(pdev, 0);
 
