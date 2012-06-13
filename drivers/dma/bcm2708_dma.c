@@ -99,7 +99,7 @@ static void bcm2708_dma_delete(struct list_head *list)
 
 static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan)
 {
-	int timeout = 100;
+	int timeout = 10000;
 	u32 status = 0;
 
 	writel(0, bcmchan->base + REG_CS);
@@ -120,9 +120,9 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 
 	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	bcm2708_dma_delete(&bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 
 	spin_lock_irqsave(&bcmchan->lock, flags);
 	bcm2708_dma_delete(&bcmchan->pending);
@@ -197,9 +197,9 @@ static dma_cookie_t bcm2708_dma_submit(struct dma_async_tx_descriptor *dmatx)
 	unsigned long flags;
 	dma_cookie_t cookie;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_del(&bcmtx->list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	
 	spin_lock_irqsave(&bcmchan->lock, flags);
 	if (!list_empty(&bcmchan->pending))
@@ -223,7 +223,7 @@ static struct bcm2708_dmatx *bcm2708_dma_alloc_cb(struct bcm2708_dmatx *bcmtx,
 
 	for (i = bcmtx->count; i < count; i++) {
 		bcmtx->desc[i].cb = dma_pool_alloc(bcmtx->chan->pool,
-				GFP_KERNEL, &bcmtx->desc[i].phys);
+				GFP_NOWAIT, &bcmtx->desc[i].phys);
 		if (unlikely(!bcmtx->desc[i].cb)) {
 			bcm2708_dma_free_tx(bcmtx);
 			return NULL;
@@ -246,7 +246,7 @@ static struct bcm2708_dmatx *bcm2708_dma_alloc_tx(
 		return NULL;
 
 	bcmtx = kzalloc(sizeof(*bcmtx) + count * sizeof(bcmtx->desc[0]),
-			GFP_KERNEL);
+			GFP_NOWAIT);
 	if (unlikely(!bcmtx))
 		return NULL;
 
@@ -294,7 +294,7 @@ static struct bcm2708_dmatx *bcm2708_dma_realloc_tx(struct bcm2708_dmatx *bcmtx,
 	}
 
 	tmp = krealloc(bcmtx, sizeof(*bcmtx) + count * sizeof(bcmtx->desc[0]),
-			GFP_KERNEL);
+			GFP_NOWAIT);
 	if (unlikely(!tmp)) {
 		bcm2708_dma_free_tx(bcmtx);
 		return NULL;
@@ -343,9 +343,9 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memcpy(
 
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
@@ -398,9 +398,9 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 	*bcmtx->memset_value = value;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
@@ -424,9 +424,9 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interrupt(
 	bcmtx->desc[0].cb->len = 0;
 	bcmtx->desc[0].cb->stride = 0;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
@@ -519,9 +519,9 @@ fetch:
 
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
@@ -533,13 +533,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
 	struct bcm2708_dmatx *bcmtx;
 	bool from = (direction == DMA_DEV_TO_MEM);
-	size_t width = from ? bcmchan->slcfg.src_addr_width
-			: bcmchan->slcfg.dst_addr_width;
-	size_t maxburst = from ? bcmchan->slcfg.src_maxburst
-			: bcmchan->slcfg.dst_maxburst;
-	size_t burst = min_t(size_t, (width * maxburst) / 4,
-		BCM_TI_BURST_CHAN(bcmchan));
-	u32 stride = from ? (width << 16) : width;
+	size_t burst;
 	size_t avail;
 	dma_addr_t addr;
 	size_t len;
@@ -548,21 +542,28 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 	dev_vdbg(bcmchan->dev, "%s: %d: %p+%d [%d,%lu] %p\n", __func__,
 		bcmchan->id, sgl, sg_len, direction, flags, context);
 
-	if (direction != DMA_MEM_TO_DEV && direction != DMA_DEV_TO_MEM)
+	if (unlikely(sgl == NULL || sg_len <= 0))
 		return NULL;
 
-	if (unlikely(sgl == NULL || sg_len <= 0 || width == 0 || width > 4))
+	if (direction != DMA_MEM_TO_DEV && direction != DMA_DEV_TO_MEM) {
+		dev_warn(bcmchan->dev, "%s: unsupported dir %d\n",
+			__func__, direction);
 		return NULL;
+	}
 
 	bcmtx = bcm2708_dma_alloc_tx(bcmchan, flags, sg_len);
 	if (unlikely(!bcmtx))
 		return NULL;
 
 	avail = sg_dma_len(sgl);
+	burst = min_t(size_t, bcmchan->slcfg.src_maxburst,
+			BCM_TI_BURST_CHAN(bcmchan));
+	if (burst == 0)
+		burst = 1;
 
 	while (true) {
 		/* create the largest transaction possible */
-		len = min_t(size_t, avail, MAX_YLENGTH * width);
+		len = min_t(size_t, avail, MAX_LEN(bcmchan));
 		if (len == 0)
 			goto fetch;
 
@@ -574,13 +575,15 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 			return NULL;
 
 		bcmtx->desc[i].cb->ti = (from ? BCM_TI_DST_INC : BCM_TI_SRC_INC)
-			| BCM_TI_TDMODE | BCM_TI_BURST_LEN_SET(burst)
-			| (bcmchan->cfg &
-				(from ? ~BCM_TI_DST_DREQ : ~BCM_TI_SRC_DREQ));
+			| BCM_TI_BURST_LEN_SET(burst)
+			| (bcmchan->cfg & ~(BCM_TI_SRC_DREQ | BCM_TI_DST_DREQ));
+		if (bcmchan->slcfg.device_fc)
+			bcmtx->desc[i].cb->ti |= from ? BCM_TI_SRC_DREQ
+							: BCM_TI_DST_DREQ;
 		bcmtx->desc[i].cb->src = from ? bcmchan->slcfg.src_addr : addr;
 		bcmtx->desc[i].cb->dst = from ? addr : bcmchan->slcfg.dst_addr;
-		bcmtx->desc[i].cb->len = (len / width) << 16 | width;
-		bcmtx->desc[i].cb->stride = stride;
+		bcmtx->desc[i].cb->len = len;
+		bcmtx->desc[i].cb->stride = 0;
 
 		/* update metadata */
 		avail -= len;
@@ -603,9 +606,9 @@ fetch:
 	}
 	bcmtx->desc[i].cb->ti |= BCM_TI_INTEN | BCM_TI_WAIT_RESP;
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
@@ -714,19 +717,15 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_interleaved(
 		+ (xt->dst_sgl ? xt->sgl[0].icg : 0));
 	bcmtx->desc[0].cb->stride = src_stride | (dst_stride << 16);
 
-	mutex_lock(&bcmchan->prep_lock);
+	spin_lock_irqsave(&bcmchan->prep_lock, flags);
 	list_add_tail(&bcmtx->list, &bcmchan->prep_list);
-	mutex_unlock(&bcmchan->prep_lock);
+	spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
 	return &bcmtx->dmatx;
 }
 
 static enum dma_status bcm2708_dma_tx_status(struct dma_chan *dmachan,
 	dma_cookie_t cookie, struct dma_tx_state *txstate)
 {
-	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
-
-	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
-
 	return dma_cookie_status(dmachan, cookie, txstate);
 }
 
@@ -766,6 +765,9 @@ static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
 	struct bcm2708_dmatx *tmp;
 	struct bcm2708_dmatx *last = NULL;
 	int i;
+
+	dev_dbg(bcmchan->dev, "%s: %d: %08x %d\n", __func__,
+		bcmchan->id, block, issue);
 
 	spin_lock(&bcmchan->lock);
 	if (block == 0)
@@ -891,14 +893,20 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	u32 status = readl(bcmchan->base + REG_CS);
 	u32 block;
 
+	dev_dbg(bcmchan->dev, "%s: %d: %08x\n", __func__,
+		bcmchan->id, status);
+
 	if (!(status & BCM_CS_INT))
 		return IRQ_NONE;
 
-	block = readl(bcmchan->base + REG_CONBLK_AD);
-	if (status & BCM_CS_END)
-		writel(status & BCM_CS_END, bcmchan->base + REG_CS);
+	dsb();
 
-	bcm2708_dma_update_progress(bcmchan, block, true);
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+
+	if (status & BCM_CS_END) {
+		writel(BCM_CS_END, bcmchan->base + REG_CS);
+		bcm2708_dma_update_progress(bcmchan, block, true);
+	}
 
 	if (status & BCM_CS_ERROR) {
 		u32 debug = readl(bcmchan->base + REG_DEBUG);
@@ -924,7 +932,7 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 
 	tasklet_schedule(&bcmchan->tasklet);
 
-	writel(status & BCM_CS_INT, bcmchan->base + REG_CS);
+	writel(BCM_CS_INT, bcmchan->base + REG_CS);
 	return IRQ_HANDLED;
 }
 
@@ -945,6 +953,7 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			return -EINVAL;
 		} else if (slcfg->direction == DMA_DEV_TO_MEM) {
 			bcmchan->slcfg = *slcfg;
+			return 0;
 		} else if (slcfg->direction == DMA_MEM_TO_DEV) {
 			bcmchan->slcfg = *slcfg;
 
@@ -956,9 +965,8 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			bcmchan->slcfg.dst_addr_width = slcfg->src_addr_width;
 			bcmchan->slcfg.dst_maxburst = slcfg->src_maxburst;
 			return 0;
-		} else {
-			return -EINVAL;
 		}
+		return -EINVAL;
 
 	case BCM2708DMA_CONFIG: {
 		struct bcm2708_dmacfg *cfg = (struct bcm2708_dmacfg *)arg;
@@ -1089,7 +1097,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		bcmchan->dev = bcmdev->dev;
 		bcmchan->pool = bcmdev->pool;
 		bcmchan->id = i;
-		mutex_init(&bcmchan->prep_lock);
+		spin_lock_init(&bcmchan->prep_lock);
 		INIT_LIST_HEAD(&bcmchan->prep_list);
 		spin_lock_init(&bcmchan->lock);
 		INIT_LIST_HEAD(&bcmchan->pending);
