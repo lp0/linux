@@ -126,6 +126,7 @@ struct sdhci_host {
 #define SDHCI_PV_ENABLED	(1<<8)	/* Preset value enabled */
 #define SDHCI_SDIO_IRQ_ENABLED	(1<<9)	/* SDIO irq enabled */
 #define SDHCI_HS200_NEEDS_TUNING (1<<10)	/* HS200 needs tuning */
+#define SDHCI_USE_SLAVE_DMA	(1<<11)	/* Host uses slave DMA */
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -153,6 +154,12 @@ struct sdhci_host {
 
 	dma_addr_t adma_addr;	/* Mapped ADMA descr. table */
 	dma_addr_t align_addr;	/* Mapped bounce buffer */
+
+	struct dma_chan *sl_chan;	/* Slave DMA channel */
+	struct dma_async_tx_descriptor *sl_txd; /* Slave DMA transfer descriptor */
+	dma_cookie_t sl_cookie;		/* Slave DMA cookie */
+	enum dma_status sl_status;	/* Slave DMA transfer status */
+	int sl_ack;			/* Slave DMA IRQ ack count */
 
 	struct tasklet_struct card_tasklet;	/* Tasklet structures */
 	struct tasklet_struct finish_tasklet;
