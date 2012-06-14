@@ -61,6 +61,7 @@
 #define BCM_TI_BURST_LEN_GET(n)	((n >> 12) & 0xF)	/* Burst Transfer Length (words) */
 #define BCM_TI_BURST_LEN_SET(n)	((n & 0xF) << 12)	/* Burst Transfer Length (words) */
 #define BCM_TI_BURST_CHAN(n)	((n)->lite ? 4 : 8)
+#define BCM_TI_WIDTH_MULT	4
 #define BCM_TI_PERMAP_GET(n)	((n >> 16) & 0x1F)	/* Periphal Mapping */
 #define BCM_TI_PERMAP_SET(n)	((n & 0x1F) << 16)	/* Periphal Mapping */
 #define BCM_TI_WAITS_GET(n)	((n >> 21) & MAX_WAITS)	/* Add Wait Cycles */

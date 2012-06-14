@@ -556,8 +556,11 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 		return NULL;
 
 	avail = sg_dma_len(sgl);
-	burst = min_t(size_t, bcmchan->slcfg.src_maxburst,
-			BCM_TI_BURST_CHAN(bcmchan) / (from ? 4 : 1));
+	burst = min_t(size_t, (bcmchan->slcfg.src_addr_width
+			* bcmchan->slcfg.src_maxburst)
+				/ (from ? BCM_TI_WIDTH_MULT * 4 : 4),
+			BCM_TI_BURST_CHAN(bcmchan)
+				/ (from ? BCM_TI_WIDTH_MULT : 1));
 	if (burst == 0)
 		burst = 1;
 
