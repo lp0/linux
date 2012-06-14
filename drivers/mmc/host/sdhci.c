@@ -459,7 +459,8 @@ static void sdhci_slave_dma_data_end(struct sdhci_host *host)
 
 	if (host->sl_status != DMA_IN_PROGRESS && host->sl_ack) {
 		WARN(host->sl_ack > 1, "multiple acks (%d)\n", host->sl_ack);
-		sdhci_data_end(host);
+		if (host->data)
+			sdhci_data_end(host);
 	}
 }
 
@@ -478,8 +479,7 @@ static void sdhci_finish_slave_dma(void *param)
 			host->data->error = -EIO;
 	}
 
-	if (host->data)
-		sdhci_slave_dma_data_end(host);
+	sdhci_slave_dma_data_end(host);
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
