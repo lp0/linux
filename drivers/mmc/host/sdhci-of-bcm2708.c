@@ -24,10 +24,27 @@
 
 #include "sdhci-pltfm.h"
 
+#define REG_BOOT_TIMEOUT	0x70
+#define REG_DBG_SEL		0x74
+#define REG_EXRDFIFO_EN		0x80
+#define REG_EXRDFIFO_CFG	0x84
+#define REG_TUNE_STEP		0x88
+#define REG_TUNE_STEPS_STD	0x8c
+#define REG_TUNE_STEPS_DDR	0x90
+#define REG_SPI_INT_SPT		0xf0
+
 #ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
 static bool use_dma = true;
 module_param(use_dma, bool, 0400);
 MODULE_PARM_DESC(use_dma, "Use slave DMA (default=1)");
+
+static bool exrd_fifo = false;
+module_param(exrd_fifo, bool, 0400);
+MODULE_PARM_DESC(exrd_fifo, "Enable DMA extension data FIFO (default=1)");
+
+static int rd_thrsh = 0;
+module_param(rd_thrsh, int, 0400);
+MODULE_PARM_DESC(rd_thrsh, "DMA extension data FIFO read threshold in 32-bit words (0-7)");
 #endif
 
 /* The Arasan has a bug whereby it may lose the content of
@@ -102,6 +119,10 @@ static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
 	if (!res)
 		return NULL;
 	slcfg.src_addr = res->start + SDHCI_BUFFER;
+
+	bcm2708_sdhci_writel(host, exrd_fifo ? 1 : 0, REG_EXRDFIFO_EN);
+	bcm2708_sdhci_writel(host, rd_thrsh & 7, REG_EXRDFIFO_CFG);
+
 	chan = dma_request_channel(mask, bcm2708_sdhci_dma_filter, NULL);
 
 	if (dmaengine_device_control(chan,
