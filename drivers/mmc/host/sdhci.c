@@ -1070,11 +1070,8 @@ static void sdhci_finish_data(struct sdhci_host *host)
 			sdhci_reset(host, SDHCI_RESET_DATA);
 		}
 
-		DBG("sdhci_finish_data calling stop\n");
-
 		sdhci_send_command(host, data->stop);
 	} else {
-		DBG("sdhci_finish_data calling tasklet\n");
 		tasklet_schedule(&host->finish_tasklet);
 	}
 }
