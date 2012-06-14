@@ -954,14 +954,30 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 		if (slcfg == NULL) {
 			return -EINVAL;
 		} else if (slcfg->direction == DMA_DEV_TO_MEM) {
+			if ((slcfg->src_addr & PERIPHERAL_MASK)
+					!= PERIPHERAL_BASE)
+				return -EINVAL;
+			if ((slcfg->dst_addr & PERIPHERAL_MASK)
+					== PERIPHERAL_BASE)
+				return -EINVAL;
+
 			bcmchan->slcfg = *slcfg;
+			bcmchan->slcfg.src_addr += PERIPHERAL_OFFSET;
 			return 0;
 		} else if (slcfg->direction == DMA_MEM_TO_DEV) {
+			if ((slcfg->src_addr & PERIPHERAL_MASK)
+					== PERIPHERAL_BASE)
+				return -EINVAL;
+			if ((slcfg->dst_addr & PERIPHERAL_MASK)
+					!= PERIPHERAL_BASE)
+				return -EINVAL;
+
 			bcmchan->slcfg = *slcfg;
 
 			bcmchan->slcfg.src_addr = slcfg->dst_addr;
 			bcmchan->slcfg.src_addr_width = slcfg->dst_addr_width;
 			bcmchan->slcfg.src_maxburst = slcfg->dst_maxburst;
+			bcmchan->slcfg.src_addr += PERIPHERAL_OFFSET;
 
 			bcmchan->slcfg.dst_addr = slcfg->src_addr;
 			bcmchan->slcfg.dst_addr_width = slcfg->src_addr_width;
