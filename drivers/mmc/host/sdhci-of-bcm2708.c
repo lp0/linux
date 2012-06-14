@@ -130,7 +130,7 @@ static struct sdhci_pltfm_data bcm2708_sdhci_pdata __devinitconst = {
 		| SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN,
 	.quirks2 = SDHCI_QUIRK2_OCR_FROM_REGULATOR
 		| SDHCI_QUIRK2_START_PIO_FROM_INT,
-	.caps = SDHCI_CAN_DO_HISPD /* (need to fix Linux' clock select first) */
+	.caps = SDHCI_CAN_DO_HISPD
 };
 
 static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
