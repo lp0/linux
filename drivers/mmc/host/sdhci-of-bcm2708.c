@@ -88,15 +88,20 @@ static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
 	dma_cap_mask_t mask;
 	struct dma_slave_config slcfg = {
 		.direction = DMA_DEV_TO_MEM,
-		.src_addr = 0x7e300000 + SDHCI_BUFFER,
 		.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES,
 		.src_maxburst = SZ_1K / DMA_SLAVE_BUSWIDTH_4_BYTES,
 		.device_fc = true
 	};
+	struct resource *res;
 
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
 
+	res = platform_get_resource(to_platform_device(host->mmc->parent),
+		IORESOURCE_MEM, 0);
+	if (!res)
+		return NULL;
+	slcfg.src_addr = res->start + SDHCI_BUFFER;
 	chan = dma_request_channel(mask, bcm2708_sdhci_dma_filter, NULL);
 
 	if (dmaengine_device_control(chan,
