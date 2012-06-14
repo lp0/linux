@@ -474,10 +474,12 @@ static void sdhci_finish_slave_dma(void *param)
 
 	if (host->sl_status != DMA_SUCCESS) {
 		host->sl_status = DMA_ERROR;
-		host->data->error = -EIO;
+		if (host->data)
+			host->data->error = -EIO;
 	}
 
-	sdhci_slave_dma_data_end(host);
+	if (host->data)
+		sdhci_slave_dma_data_end(host);
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
@@ -2402,8 +2404,12 @@ static irqreturn_t sdhci_irq(int irq, void *dev_id)
 	struct sdhci_host *host = dev_id;
 	u32 intmask, unexpected = 0;
 	int cardint = 0, max_loops = 16;
+	unsigned long flags = 0;
 
-	spin_lock(&host->lock);
+	if (host->flags & SDHCI_USE_SLAVE_DMA)
+		spin_lock_irqsave(&host->lock, flags);
+	else
+		spin_lock(&host->lock);
 
 	if (host->runtime_suspended) {
 		spin_unlock(&host->lock);
@@ -2488,7 +2494,10 @@ again:
 	if (intmask && --max_loops)
 		goto again;
 out:
-	spin_unlock(&host->lock);
+	if (host->flags & SDHCI_USE_SLAVE_DMA)
+		spin_unlock_irqrestore(&host->lock, flags);
+	else
+		spin_unlock(&host->lock);
 
 	if (unexpected) {
 		pr_err("%s: Unexpected interrupt 0x%08x.\n",
