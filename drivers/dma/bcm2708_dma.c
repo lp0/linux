@@ -887,10 +887,13 @@ static void bcm2708_dma_record_abort(struct bcm2708_dmachan *bcmchan, u32 block)
 		dev_warn(bcmchan->dev, "unable to find CB in error\n");
 }
 
+/*
+ * An optimised shared IRQ handler could be written that uses REG_INT_STATUS
+ * to detect activity on channels that are sharing an IRQ
+ */
 static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 {
-	struct dma_chan *dmachan = dev_id;
-	struct bcm2708_dmachan *bcmchan = to_bcmchan(dmachan);
+	struct bcm2708_dmachan *bcmchan = dev_id;
 	u32 status = readl(bcmchan->base + REG_CS);
 	u32 block;
 
@@ -1137,7 +1140,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		snprintf(tmp, len, "%s:chan%d", dev_name(bcmdev->dev), i);
 
 		ret = devm_request_irq(bcmdev->dev, bcmchan->irq,
-			bcm2708_dma_irq_handler, IRQF_SHARED, tmp, dmachan);
+			bcm2708_dma_irq_handler, IRQF_SHARED, tmp, bcmchan);
 		if (ret) {
 			devm_kfree(bcmdev->dev, tmp);
 			devm_kfree(bcmdev->dev, bcmchan);
