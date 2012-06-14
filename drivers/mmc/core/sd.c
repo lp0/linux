@@ -1237,8 +1237,8 @@ remove_card:
 err:
 	mmc_detach_bus(host);
 
-	pr_err("%s: error %d whilst initialising SD card\n",
-		mmc_hostname(host), err);
+	pr_err("%s: error %d whilst initialising SD card at %uHz\n",
+		mmc_hostname(host), err, host->ios.clock);
 
 	return err;
 }
