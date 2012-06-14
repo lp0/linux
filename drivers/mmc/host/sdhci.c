@@ -439,45 +439,6 @@ static void sdhci_transfer_pio(struct sdhci_host *host, u32 intmask)
 		DBG("PIO transfer complete\n");
 }
 
-static int sdhci_transfer_slave_dma(struct sdhci_host *host, u32 intmask)
-{
-	enum dma_transfer_direction dir = DMA_TRANS_NONE;
-	struct dma_async_tx_descriptor *txd;
-
-	BUG_ON(!host->data);
-
-	sdhci_mask_irqs(host, SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL);
-	if (host->data->flags & MMC_DATA_READ) {
-		if (intmask & SDHCI_INT_DATA_AVAIL)
-			dir = DMA_DEV_TO_MEM;
-	} else {
-		if (intmask & SDHCI_INT_SPACE_AVAIL)
-			dir = DMA_MEM_TO_DEV;
-	}
-
-	BUG_ON(dir == DMA_TRANS_NONE);
-
-	txd = dmaengine_prep_slave_sg(host->sl_chan, host->data->sg,
-			host->data->sg_len, dir, DMA_PREP_INTERRUPT
-				| DMA_CTRL_ACK
-				| DMA_COMPL_SKIP_DEST_UNMAP
-				| DMA_COMPL_SKIP_SRC_UNMAP);
-
-	WARN_ON(txd == NULL);
-	if (txd != NULL) {
-		host->sl_cookie = dmaengine_submit(txd);
-		if (!dma_submit_error(host->sl_cookie)) {
-			DBG("DMA transfer of %db submitted\n",
-				host->data->blocks);
-			dma_async_issue_pending(host->sl_chan);
-			return 0;
-		}
-	}
-	DBG("DMA error submitting %db for transfer\n", host->data->blocks);
-	sdhci_unmask_irqs(host, SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL);
-	return -EIO;
-}
-
 static void sdhci_data_end(struct sdhci_host *host)
 {
 	if (host->cmd) {
@@ -489,6 +450,87 @@ static void sdhci_data_end(struct sdhci_host *host)
 		host->data_early = 1;
 	} else {
 		sdhci_finish_data(host);
+	}
+}
+
+static void sdhci_slave_dma_data_end(struct sdhci_host *host)
+{
+	DBG("sl_status = %d, sl_ack = %d\n", host->sl_status, host->sl_ack);
+
+	if (host->sl_status != DMA_IN_PROGRESS && host->sl_ack) {
+		WARN(host->sl_ack > 1, "multiple acks (%d)\n", host->sl_ack);
+		sdhci_data_end(host);
+	}
+}
+
+static void sdhci_finish_slave_dma(void *param)
+{
+	struct sdhci_host *host = (struct sdhci_host *)param;
+	unsigned long flags;
+
+	spin_lock_irqsave(&host->lock, flags);
+	host->sl_status = dma_async_is_tx_complete(host->sl_chan,
+		host->sl_cookie, NULL, NULL);
+
+	if (host->sl_status != DMA_SUCCESS) {
+		host->sl_status = DMA_ERROR;
+		host->data->error = -EIO;
+	}
+
+	sdhci_slave_dma_data_end(host);
+	spin_unlock_irqrestore(&host->lock, flags);
+}
+
+static int sdhci_prepare_slave_dma(struct sdhci_host *host)
+{
+	enum dma_transfer_direction dir = DMA_TRANS_NONE;
+
+	BUG_ON(!host->data);
+
+	if (host->data->flags & MMC_DATA_READ)
+		dir = DMA_DEV_TO_MEM;
+	else
+		dir = DMA_MEM_TO_DEV;
+
+	BUG_ON(dir == DMA_TRANS_NONE);
+
+	host->sl_txd = dmaengine_prep_slave_sg(host->sl_chan,
+			host->data->sg, host->data->sg_len, dir,
+			DMA_PREP_INTERRUPT
+				| DMA_CTRL_ACK
+				| DMA_COMPL_SKIP_DEST_UNMAP
+				| DMA_COMPL_SKIP_SRC_UNMAP);
+	if (!host->sl_txd)
+		return -EINVAL;
+
+	host->sl_txd->callback = sdhci_finish_slave_dma;
+	host->sl_txd->callback_param = host;
+	host->sl_status = DMA_PAUSED;
+	host->sl_ack = 0;
+	return 0;
+}
+
+static int sdhci_transfer_slave_dma(struct sdhci_host *host)
+{
+	BUG_ON(!host->sl_txd);
+
+	sdhci_mask_irqs(host, SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL);
+	host->sl_cookie = dmaengine_submit(host->sl_txd);
+
+	if (!dma_submit_error(host->sl_cookie)) {
+		DBG("DMA transfer of %db submitted\n",
+			host->data->blocks);
+		host->sl_status = DMA_IN_PROGRESS;
+		dma_async_issue_pending(host->sl_chan);
+		return 0;
+	} else {
+		DBG("DMA error submitting %db for transfer\n",
+			host->data->blocks);
+		host->sl_status = DMA_ERROR;
+		dmaengine_terminate_all(host->sl_chan);
+		sdhci_unmask_irqs(host,
+				SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL);
+		return -EIO;
 	}
 }
 
@@ -893,7 +935,13 @@ static void sdhci_prepare_data(struct sdhci_host *host, struct mmc_command *cmd)
 				WARN_ON(1);
 				host->flags &= ~SDHCI_REQ_USE_DMA;
 			} else if (host->flags & SDHCI_USE_SLAVE_DMA) {
-				DBG("prepared %d DMA transfers\n", sg_cnt);
+				ret = sdhci_prepare_slave_dma(host);
+				if (ret) {
+					host->flags &= ~SDHCI_REQ_USE_DMA;
+				} else {
+					DBG("prepared %d DMA transfers\n",
+						sg_cnt);
+				}
 			} else {
 				WARN_ON(sg_cnt != 1);
 				sdhci_writel(host, sg_dma_address(data->sg),
@@ -2114,29 +2162,6 @@ static void sdhci_tasklet_finish(unsigned long param)
 	sdhci_runtime_pm_put(host);
 }
 
-static void sdhci_tasklet_slave_dma(unsigned long param)
-{
-	struct sdhci_host *host = (struct sdhci_host *)param;
-	dma_cookie_t status;
-	unsigned long flags;
-
-	spin_lock_irqsave(&host->lock, flags);
-	if (!host->data || !host->sl_chan) {
-		DBG("sdhci_finish_slave_dma no data\n");
-		spin_unlock_irqrestore(&host->lock, flags);
-		return;
-	}
-
-	DBG("DMA sync\n");
-
-	status = dma_sync_wait(host->sl_chan, host->sl_cookie);
-	if (status != DMA_SUCCESS)
-		host->data->error = -EIO;
-
-	sdhci_data_end(host);
-	spin_unlock_irqrestore(&host->lock, flags);
-}
-
 static void sdhci_timeout_timer(unsigned long data)
 {
 	struct sdhci_host *host;
@@ -2327,7 +2352,7 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 	else {
 		if (intmask & (SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL)) {
 			if (host->flags & SDHCI_USE_SLAVE_DMA) {
-				if (sdhci_transfer_slave_dma(host, intmask)) {
+				if (sdhci_transfer_slave_dma(host)) {
 					host->flags &= ~SDHCI_REQ_USE_DMA;
 					sdhci_transfer_pio(host, intmask);
 				}
@@ -2365,7 +2390,8 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 		if (intmask & SDHCI_INT_DATA_END) {
 			if ((host->flags & SDHCI_USE_SLAVE_DMA)
 					&& (host->flags & SDHCI_REQ_USE_DMA)) {
-				tasklet_schedule(&host->sl_tasklet);
+				host->sl_ack++;
+				sdhci_slave_dma_data_end(host);
 			} else {
 				sdhci_data_end(host);
 			}
@@ -3115,8 +3141,6 @@ int sdhci_add_host(struct sdhci_host *host)
 		sdhci_tasklet_card, (unsigned long)host);
 	tasklet_init(&host->finish_tasklet,
 		sdhci_tasklet_finish, (unsigned long)host);
-	tasklet_init(&host->sl_tasklet,
-		sdhci_tasklet_slave_dma, (unsigned long)host);
 
 	setup_timer(&host->timer, sdhci_timeout_timer, (unsigned long)host);
 
@@ -3175,7 +3199,6 @@ reset:
 untasklet:
 	tasklet_kill(&host->card_tasklet);
 	tasklet_kill(&host->finish_tasklet);
-	tasklet_kill(&host->sl_tasklet);
 
 	if (host->sl_chan)
 		dma_release_channel(host->sl_chan);
@@ -3224,7 +3247,6 @@ void sdhci_remove_host(struct sdhci_host *host, int dead)
 
 	tasklet_kill(&host->card_tasklet);
 	tasklet_kill(&host->finish_tasklet);
-	tasklet_kill(&host->sl_tasklet);
 
 	if (host->vmmc)
 		regulator_put(host->vmmc);

@@ -156,11 +156,13 @@ struct sdhci_host {
 	dma_addr_t align_addr;	/* Mapped bounce buffer */
 
 	struct dma_chan *sl_chan;	/* Slave DMA channel */
+	struct dma_async_tx_descriptor *sl_txd; /* Slave DMA transfer descriptor */
 	dma_cookie_t sl_cookie;		/* Slave DMA cookie */
+	enum dma_status sl_status;	/* Slave DMA transfer status */
+	int sl_ack;			/* Slave DMA IRQ ack count */
 
 	struct tasklet_struct card_tasklet;	/* Tasklet structures */
 	struct tasklet_struct finish_tasklet;
-	struct tasklet_struct sl_tasklet;
 
 	struct timer_list timer;	/* Timer for timeouts */
 
