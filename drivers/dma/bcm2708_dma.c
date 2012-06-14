@@ -370,7 +370,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_memset(
 
 	/* this wastes 4 bytes but avoids using a second pool */
 	bcmtx->memset_value = dma_pool_alloc(bcmtx->chan->pool,
-				GFP_KERNEL, &bcmtx->memset_phys);
+				GFP_NOWAIT, &bcmtx->memset_phys);
 	if (unlikely(!bcmtx->memset_value)) {
 		bcm2708_dma_free_tx(bcmtx);
 		return NULL;
@@ -557,7 +557,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 
 	avail = sg_dma_len(sgl);
 	burst = min_t(size_t, bcmchan->slcfg.src_maxburst,
-			BCM_TI_BURST_CHAN(bcmchan));
+			BCM_TI_BURST_CHAN(bcmchan) / (from ? 4 : 1));
 	if (burst == 0)
 		burst = 1;
 
@@ -575,6 +575,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 			return NULL;
 
 		bcmtx->desc[i].cb->ti = (from ? BCM_TI_DST_INC : BCM_TI_SRC_INC)
+			| (from ? BCM_TI_DST_WIDTH : BCM_TI_SRC_WIDTH)
 			| BCM_TI_BURST_LEN_SET(burst)
 			| (bcmchan->cfg & ~(BCM_TI_SRC_DREQ | BCM_TI_DST_DREQ));
 		if (bcmchan->slcfg.device_fc)
@@ -766,7 +767,7 @@ static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
 	struct bcm2708_dmatx *last = NULL;
 	int i;
 
-	dev_dbg(bcmchan->dev, "%s: %d: %08x %d\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x %d\n", __func__,
 		bcmchan->id, block, issue);
 
 	spin_lock(&bcmchan->lock);
@@ -792,6 +793,7 @@ done:
 	}
 	if (issue)
 		__bcm2708_dma_issue_pending(bcmchan);
+	tasklet_schedule(&bcmchan->tasklet);
 	spin_unlock(&bcmchan->lock);
 }
 
@@ -822,7 +824,7 @@ static void __bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan,
 {
 	int i;
 
-	dev_dbg(bcmtx->chan->dev, "%s: %d: %08x\n", __func__,
+	dev_vdbg(bcmtx->chan->dev, "%s: %d: %08x\n", __func__,
 		bcmtx->chan->id, bcmtx->dmatx.cookie);
 
 	if (bcmtx->dmatx.callback)
@@ -837,8 +839,9 @@ static void __bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan,
 			__bcm2708_dma_cleanup_src(bcmchan, bcmtx, i);
 }
 
-static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
+static void bcm2708_dma_tasklet(unsigned long data)
 {
+	struct bcm2708_dmachan *bcmchan = (struct bcm2708_dmachan *)data;
 	LIST_HEAD(completed);
 	struct bcm2708_dmatx *bcmtx;
 	struct bcm2708_dmatx *tmp;
@@ -853,11 +856,6 @@ static inline void bcm2708_dma_cleanup(struct bcm2708_dmachan *bcmchan)
 		list_del(&bcmtx->list);
 		bcm2708_dma_free_tx(bcmtx);
 	}
-}
-
-static void bcm2708_dma_tasklet(unsigned long data)
-{
-	bcm2708_dma_cleanup((struct bcm2708_dmachan *)data);
 }
 
 static void bcm2708_dma_record_abort(struct bcm2708_dmachan *bcmchan, u32 block)
@@ -893,7 +891,7 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	u32 status = readl(bcmchan->base + REG_CS);
 	u32 block;
 
-	dev_dbg(bcmchan->dev, "%s: %d: %08x\n", __func__,
+	dev_vdbg(bcmchan->dev, "%s: %d: %08x\n", __func__,
 		bcmchan->id, status);
 
 	if (!(status & BCM_CS_INT))
@@ -929,8 +927,6 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
 		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
 	}
-
-	tasklet_schedule(&bcmchan->tasklet);
 
 	writel(BCM_CS_INT, bcmchan->base + REG_CS);
 	return IRQ_HANDLED;
@@ -979,6 +975,10 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 	}
 
 	case DMA_TERMINATE_ALL:
+		spin_lock_irqsave(&bcmchan->prep_lock, flags);
+		bcm2708_dma_delete(&bcmchan->prep_list);
+		spin_unlock_irqrestore(&bcmchan->prep_lock, flags);
+
 		spin_lock_irqsave(&bcmchan->lock, flags);
 		if (bcmchan->active) {
 			u32 block;
@@ -993,7 +993,6 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 			bcmchan->paused = false;
 
 			bcm2708_dma_update_progress(bcmchan, block, false);
-			tasklet_schedule(&bcmchan->tasklet);
 		}
 		bcm2708_dma_delete(&bcmchan->pending);
 		bcm2708_dma_delete(&bcmchan->running);
@@ -1027,7 +1026,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct bcm2708_dmadev *bcmdev = devm_kzalloc(&pdev->dev,
-		sizeof(*bcmdev), GFP_KERNEL);
+		sizeof(*bcmdev), GFP_NOWAIT);
 	struct dma_device *dmadev = bcmdev->dmadev;
 	struct bcm2708_dmachan *bcmchan;
 	struct dma_chan *dmachan;
@@ -1090,7 +1089,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 			continue;
 
 		bcmchan = devm_kzalloc(bcmdev->dev,
-			sizeof(*bcmchan), GFP_KERNEL);
+			sizeof(*bcmchan), GFP_NOWAIT);
 		if (bcmchan == NULL)
 			return -ENOMEM;
 		dmachan = &bcmchan->dmachan;
@@ -1127,7 +1126,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		}
 
 		len = strlen(dev_name(bcmdev->dev)) + 16;
-		tmp = devm_kzalloc(bcmdev->dev, len, GFP_KERNEL);
+		tmp = devm_kzalloc(bcmdev->dev, len, GFP_NOWAIT);
 		if (!tmp) {
 			devm_kfree(bcmdev->dev, bcmchan);
 			continue;
