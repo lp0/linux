@@ -2819,7 +2819,8 @@ int sdhci_add_host(struct sdhci_host *host)
 	 * mask, but PIO does not need the hw shim so we set a new
 	 * mask here in that case.
 	 */
-	if (!(host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA))) {
+	if (!(host->flags & (SDHCI_USE_SDMA | SDHCI_USE_ADMA
+					| SDHCI_USE_SLAVE_DMA))) {
 		host->dma_mask = DMA_BIT_MASK(64);
 		mmc_dev(host->mmc)->dma_mask = &host->dma_mask;
 	}
@@ -3085,7 +3086,7 @@ int sdhci_add_host(struct sdhci_host *host)
 		mmc->max_segs = 128;
 	else if (host->flags & SDHCI_USE_SDMA)
 		mmc->max_segs = 1;
-	else /* PIO */
+	else /* PIO or slave DMA */
 		mmc->max_segs = 128;
 
 	/*
