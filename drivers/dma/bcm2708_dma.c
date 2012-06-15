@@ -905,14 +905,13 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 	if (!(status & BCM_CS_INT))
 		return IRQ_NONE;
 
-	dsb();
-
 	block = readl(bcmchan->base + REG_CONBLK_AD);
 
 	if (status & BCM_CS_END) {
 		writel(BCM_CS_END, bcmchan->base + REG_CS);
 		spin_lock(&bcmchan->lock);
-		bcm2708_dma_update_progress(bcmchan, block, true);
+		bcm2708_dma_update_progress(bcmchan, block,
+						!!(status & BCM_CS_ERROR));
 		spin_unlock(&bcmchan->lock);
 	}
 
