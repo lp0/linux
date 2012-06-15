@@ -773,7 +773,6 @@ static void bcm2708_dma_update_progress(struct bcm2708_dmachan *bcmchan,
 	dev_vdbg(bcmchan->dev, "%s: %d: %08x %d\n", __func__,
 		bcmchan->id, block, issue);
 
-	spin_lock(&bcmchan->lock);
 	if (block == 0)
 		bcmchan->active = false;
 
@@ -797,7 +796,6 @@ done:
 	if (issue)
 		__bcm2708_dma_issue_pending(bcmchan);
 	tasklet_schedule(&bcmchan->tasklet);
-	spin_unlock(&bcmchan->lock);
 }
 
 static inline void __bcm2708_dma_cleanup_dst(struct bcm2708_dmachan *bcmchan,
@@ -909,7 +907,9 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 
 	if (status & BCM_CS_END) {
 		writel(BCM_CS_END, bcmchan->base + REG_CS);
+		spin_lock(&bcmchan->lock);
 		bcm2708_dma_update_progress(bcmchan, block, true);
+		spin_unlock(&bcmchan->lock);
 	}
 
 	if (status & BCM_CS_ERROR) {
