@@ -17,6 +17,7 @@
 
 #include <linux/bcm2708_dma.h>
 #include <linux/bitops.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/dmaengine.h>
 #include <linux/dmapool.h>
@@ -99,22 +100,57 @@ static void bcm2708_dma_delete(struct list_head *list)
 
 static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan)
 {
-	int timeout = 10000;
-	u32 status = 0;
+	int timeout;
+	u32 status;
+	u32 block;
 
-	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+	dev_vdbg(bcmchan->dev, "%s: %d pausing\n", __func__, bcmchan->id);
 
+	/* Pause */
 	writel(0, bcmchan->base + REG_CS);
 
-	while (!(status & BCM_CS_PAUSED) && timeout-- > 0)
+	/* Wait for pause */
+	status = 0;
+	timeout = 1000;
+	while (!(status & BCM_CS_PAUSED) && timeout-- > 0) {
 		status = readl(bcmchan->base + REG_CS);
-
-	dev_vdbg(bcmchan->dev, "%s: %d %08x\n", __func__, bcmchan->id, status);
-	if ((status & (BCM_CS_ACTIVE | BCM_CS_PAUSED)) == BCM_CS_ACTIVE) {
-		writel(0, bcmchan->base + REG_CONBLK_AD);
-		writel(BCM_CS_ABORT | BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+		udelay(1);
 	}
-	dev_vdbg(bcmchan->dev, "%s: %d %08x\n", __func__, bcmchan->id, status);
+
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+	dev_vdbg(bcmchan->dev, "%s: %d paused %08x block %08x\n",
+		__func__, bcmchan->id, status, block);
+
+	/* Abort */
+	writel(0, bcmchan->base + REG_CONBLK_AD);
+	writel(BCM_CS_ABORT | BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+	dev_vdbg(bcmchan->dev, "%s: %d aborted %08x block %08x\n",
+		__func__, bcmchan->id, status, block);
+
+	/* Wait for finish */
+	status = 0;
+	timeout = 1000;
+	while ((status & (BCM_CS_WR_WAIT | BCM_CS_PAUSED | BCM_CS_ACTIVE))
+			&& timeout-- > 0) {
+		status = readl(bcmchan->base + REG_CS);
+		udelay(1);
+	}
+
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+	dev_vdbg(bcmchan->dev, "%s: %d finished %08x block %08x\n",
+		__func__, bcmchan->id, status, block);
+
+	/* Reset */
+	writel(BCM_CS_RESET, bcmchan->base + REG_CS);
+
+	block = readl(bcmchan->base + REG_CONBLK_AD);
+	dev_vdbg(bcmchan->dev, "%s: %d reset %08x block %08x\n",
+		__func__, bcmchan->id, status, block);
+
+	bcmchan->active = false;
+	bcmchan->paused = false;
 }
 
 static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
@@ -133,17 +169,7 @@ static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
 
 	if (unlikely(bcmchan->active || bcmchan->paused)) {
 		WARN_ON(1);
-
-		writel(0, bcmchan->base + REG_CS);
-		bcmchan->paused = true;
-		spin_unlock_irqrestore(&bcmchan->lock, flags);
-
-		synchronize_irq(bcmchan->irq);
-
-		spin_lock_irqsave(&bcmchan->lock, flags);
 		bcm2708_dma_abort(bcmchan);
-		bcmchan->active = false;
-		bcmchan->paused = false;
 	}
 
 	bcm2708_dma_delete(&bcmchan->running);
@@ -1010,13 +1036,9 @@ static int bcm2708_dma_control(struct dma_chan *dmachan,
 
 			if (!bcmchan->paused)
 				writel(0, bcmchan->base + REG_CS);
-
 			block = readl(bcmchan->base + REG_CONBLK_AD);
+
 			bcm2708_dma_abort(bcmchan);
-
-			bcmchan->active = false;
-			bcmchan->paused = false;
-
 			bcm2708_dma_update_progress(bcmchan, block, false);
 		}
 		bcm2708_dma_delete(&bcmchan->pending);
