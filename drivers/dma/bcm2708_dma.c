@@ -102,15 +102,19 @@ static void bcm2708_dma_abort(struct bcm2708_dmachan *bcmchan)
 	int timeout = 10000;
 	u32 status = 0;
 
+	dev_vdbg(bcmchan->dev, "%s: %d\n", __func__, bcmchan->id);
+
 	writel(0, bcmchan->base + REG_CS);
 
 	while (!(status & BCM_CS_PAUSED) && timeout-- > 0)
 		status = readl(bcmchan->base + REG_CS);
 
-	if (status & BCM_CS_PAUSED) {
+	dev_vdbg(bcmchan->dev, "%s: %d %08x\n", __func__, bcmchan->id, status);
+	if ((status & (BCM_CS_ACTIVE | BCM_CS_PAUSED)) == BCM_CS_ACTIVE) {
 		writel(0, bcmchan->base + REG_CONBLK_AD);
-		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
+		writel(BCM_CS_ABORT | BCM_CS_ACTIVE, bcmchan->base + REG_CS);
 	}
+	dev_vdbg(bcmchan->dev, "%s: %d %08x\n", __func__, bcmchan->id, status);
 }
 
 static void bcm2708_dma_free_chan(struct dma_chan *dmachan)
@@ -924,14 +928,13 @@ static irqreturn_t bcm2708_dma_irq_handler(int irq, void *dev_id)
 			block);
 
 		writel(BCM_DEBUG_RLSN_ERR(debug)
-			| BCM_DEBUG_FIFO_ERR(debug)
-			| BCM_DEBUG_READ_ERR(debug),
+				| BCM_DEBUG_FIFO_ERR(debug)
+				| BCM_DEBUG_READ_ERR(debug),
 			bcmchan->base + REG_DEBUG);
 
 		bcm2708_dma_record_abort(bcmchan, block);
 
-		writel(BCM_CS_ABORT, bcmchan->base + REG_CS);
-		writel(BCM_CS_ACTIVE, bcmchan->base + REG_CS);
+		writel(BCM_CS_ABORT | BCM_CS_ACTIVE, bcmchan->base + REG_CS);
 	}
 
 	writel(BCM_CS_INT, bcmchan->base + REG_CS);
