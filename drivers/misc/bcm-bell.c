@@ -33,7 +33,6 @@ struct bcm_bell {
 	struct device *dev;
 	struct resource res;
 	void __iomem *base;
-	bool read, write;
 
 	/* used to lock open, handler and data */
 	spinlock_t lock;
@@ -71,7 +70,6 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_bell *bell = devm_kzalloc(&of_dev->dev,
 		sizeof(*bell), GFP_KERNEL);
-	const char *access;
 	int ret;
 
 	if (bell == NULL)
@@ -96,35 +94,9 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 		return -EIO;
 	}
 
-	if (of_property_read_string(node, "access", &access)) {
-		dev_err(bell->dev, "unable to read access configuration\n");
-		return -EINVAL;
-	}
-
-	/* read this carefully so that the device tree format
-	 * can be exended in the future
-	 */
-	bell->read = (access[0] == 'r');
-	bell->write = (access[0] != '\0' && access[1] == 'w');
-	if (bell->read && bell->write) {
-		access = "r/w";
-	} else if (bell->read) {
-		access = "r/o";
-	} else if (bell->write) {
-		access = "w/o";
-	} else {
-		dev_err(bell->dev, "invalid access configuration: %s\n", access);
-		return -EINVAL;
-	}
-
 	/* register the interrupt handler */
-	if (bell->read) {
-		bell->irq = irq_of_parse_and_map(node, 0);
-		if (bell->irq <= 0) {
-			dev_err(bell->dev, "no IRQ");
-			spin_unlock_irq(&bell->lock);
-			return -ENXIO;
-		}
+	bell->irq = irq_of_parse_and_map(node, 0);
+	if (bell->irq) {
 		bell->handler = NULL;
 
 		ret = devm_request_irq(bell->dev, bell->irq,
@@ -136,11 +108,11 @@ static int __devinit bcm_bell_probe(struct platform_device *of_dev)
 			return ret;
 		}
 
-		dev_info(bell->dev, "doorbell at MMIO %#lx (irq = %d, %s)\n",
-			(unsigned long)bell->res.start, bell->irq, access);
+		dev_info(bell->dev, "doorbell at MMIO %#lx (irq = %d)\n",
+			(unsigned long)bell->res.start, bell->irq);
 	} else {
-		dev_info(bell->dev, "doorbell at MMIO %#lx (%s)\n",
-			(unsigned long)bell->res.start, access);
+		dev_info(bell->dev, "doorbell at MMIO %#lx\n",
+			(unsigned long)bell->res.start);
 	}
 
 	return 0;
@@ -213,7 +185,7 @@ int bcm_bell_read(struct bcm_bell *bell,
 	if (bell == NULL || handler == NULL)
 		return -EINVAL;
 
-	if (!bell->read)
+	if (!bell->irq)
 		return -EPERM;
 
 	spin_lock_irqsave(&bell->lock, flags);
@@ -233,12 +205,12 @@ void bcm_bell_put(struct bcm_bell *bell)
 
 	if (bell != NULL) {
 		spin_lock_irqsave(&bell->lock, flags);
-		if (bell->read)
+		if (bell->irq)
 			bell->handler = NULL;
 		bell->open = false;
 		spin_unlock_irqrestore(&bell->lock, flags);
 
-		if (bell->read)
+		if (bell->irq)
 			synchronize_irq(bell->irq);
 		put_device(bell->dev);
 	} else {
@@ -252,7 +224,7 @@ int bcm_bell_write(struct bcm_bell *bell)
 	if (bell == NULL)
 		return -EINVAL;
 
-	if (!bell->write)
+	if (bell->irq)
 		return -EPERM;
 
 	writel(0, bell->base);
