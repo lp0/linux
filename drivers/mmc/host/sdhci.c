@@ -518,6 +518,7 @@ static int sdhci_transfer_slave_dma(struct sdhci_host *host)
 
 	sdhci_mask_irqs(host, SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL);
 	host->sl_cookie = dmaengine_submit(host->sl_txd);
+	host->sl_txd = NULL;
 
 	if (!dma_submit_error(host->sl_cookie)) {
 		DBG("DMA transfer of %db submitted\n",
@@ -1033,6 +1034,12 @@ static void sdhci_finish_data(struct sdhci_host *host)
 	host->data = NULL;
 
 	if (host->flags & SDHCI_REQ_USE_DMA) {
+		if (host->flags & SDHCI_USE_SLAVE_DMA) {
+			if (host->sl_status != DMA_SUCCESS)
+				dmaengine_terminate_all(host->sl_chan);
+			host->sl_txd = NULL;
+		}
+
 		if (host->flags & SDHCI_USE_ADMA)
 			sdhci_adma_table_post(host, data);
 		else {
