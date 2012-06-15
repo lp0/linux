@@ -313,7 +313,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 		return -EIO;
 	}
 
-	if (of_property_read_string(node, "access", &access)) {
+	if (of_property_read_string(node, "broadcom,access", &access)) {
 		dev_err(mbox->dev, "unable to read access configuration\n");
 		return -EINVAL;
 	}
@@ -338,7 +338,7 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->write = w_off + MBOX_RW;
 
 	mbox->channels = 0;
-	of_property_read_u32(node, "channels", &mbox->channels);
+	of_property_read_u32(node, "broadcom,channels", &mbox->channels);
 	mbox->channels &= OF_CHANS_MASK;
 
 	if (!mbox->channels) {
