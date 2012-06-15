@@ -165,14 +165,25 @@ static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
 			sizeof(*pdata), GFP_KERNEL);
 	struct sdhci_ops *ops = devm_kzalloc(&pdev->dev,
 			sizeof(*ops), GFP_KERNEL);
+	struct resource *res;
+	void __iomem *base;
 
 	*pdata = bcm2708_sdhci_pdata;
 	*ops = bcm2708_sdhci_ops;
 	pdata->ops = ops;
 
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res)
+		return -ENOMEM;
+	base = devm_request_and_ioremap(&pdev->dev, res);
+	if (!base)
+		return -EIO;
+
 	/* Disable extension data FIFO unless DMA is enabled */
-	bcm2708_sdhci_writel(host, 0, REG_EXRDFIFO_EN);
-	bcm2708_sdhci_writel(host, 0, REG_EXRDFIFO_CFG);
+	writel(0, base + REG_EXRDFIFO_EN);
+	writel(0, base + REG_EXRDFIFO_CFG);
+	devm_ioremap_release(&pdev->dev, base);
+	devm_release_mem_region(&pdev->dev, res->start, resource_size(res));
 
 #ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
 	if (use_dma) {
