@@ -38,11 +38,11 @@ static bool use_dma = true;
 module_param(use_dma, bool, 0400);
 MODULE_PARM_DESC(use_dma, "Use slave DMA (default=1)");
 
-static bool exrd_fifo = false;
+static bool exrd_fifo = true;
 module_param(exrd_fifo, bool, 0400);
 MODULE_PARM_DESC(exrd_fifo, "Enable DMA extension data FIFO (default=1)");
 
-static int rd_thrsh = 0;
+static int rd_thrsh = 4;
 module_param(rd_thrsh, int, 0400);
 MODULE_PARM_DESC(rd_thrsh, "DMA extension data FIFO read threshold in 32-bit words (0-7)");
 #endif
