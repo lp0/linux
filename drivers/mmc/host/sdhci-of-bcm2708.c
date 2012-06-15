@@ -120,9 +120,6 @@ static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
 		return NULL;
 	slcfg.src_addr = res->start + SDHCI_BUFFER;
 
-	bcm2708_sdhci_writel(host, exrd_fifo ? 1 : 0, REG_EXRDFIFO_EN);
-	bcm2708_sdhci_writel(host, rd_thrsh & 7, REG_EXRDFIFO_CFG);
-
 	chan = dma_request_channel(mask, bcm2708_sdhci_dma_filter, NULL);
 
 	if (dmaengine_device_control(chan,
@@ -135,6 +132,9 @@ static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
 		dma_release_channel(chan);
 		return NULL;
 	}
+
+	bcm2708_sdhci_writel(host, exrd_fifo ? 1 : 0, REG_EXRDFIFO_EN);
+	bcm2708_sdhci_writel(host, rd_thrsh & 7, REG_EXRDFIFO_CFG);
 
 	return chan;
 }
@@ -169,6 +169,10 @@ static int __devinit bcm2708_sdhci_probe(struct platform_device *pdev)
 	*pdata = bcm2708_sdhci_pdata;
 	*ops = bcm2708_sdhci_ops;
 	pdata->ops = ops;
+
+	/* Disable extension data FIFO unless DMA is enabled */
+	bcm2708_sdhci_writel(host, 0, REG_EXRDFIFO_EN);
+	bcm2708_sdhci_writel(host, 0, REG_EXRDFIFO_CFG);
 
 #ifdef CONFIG_MMC_SDHCI_OF_BCM2708_DMA
 	if (use_dma) {
