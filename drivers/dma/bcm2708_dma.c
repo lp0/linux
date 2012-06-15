@@ -583,6 +583,7 @@ static struct dma_async_tx_descriptor *bcm2708_dma_prep_slave_sg(
 
 		bcmtx->desc[i].cb->ti = (from ? BCM_TI_DST_INC : BCM_TI_SRC_INC)
 			| (from ? BCM_TI_DST_WIDTH : BCM_TI_SRC_WIDTH)
+			| (from ? 0 : BCM_TI_WAIT_RESP)
 			| BCM_TI_BURST_LEN_SET(burst)
 			| (bcmchan->cfg & ~(BCM_TI_SRC_DREQ | BCM_TI_DST_DREQ));
 		if (bcmchan->slcfg.device_fc)
