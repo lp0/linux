@@ -381,6 +381,7 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm2708_fb *fb = devm_kzalloc(&of_dev->dev,
 		sizeof(*fb), GFP_KERNEL);
+	char *name;
 	int ret;
 
 	if (!fb)
@@ -394,6 +395,10 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 			PTR_ERR(fb->mbox));
 		return PTR_ERR(fb->mbox);
 	}
+
+	name = bcm_mbox_name(fb->mbox);
+	dev_info(fb->dev, "attached to mailbox %s\n", name);
+	kfree(name);
 
 	bcm2708_fb_of_prop(node, "broadcom,width", &fbwidth);
 	bcm2708_fb_of_prop(node, "broadcom,height", &fbheight);
