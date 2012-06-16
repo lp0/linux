@@ -151,15 +151,15 @@
 			reg = <0xB880 0x40>;
 			interrupts = <0 1>;
 
-			/* Read from 0x00..0x1f, Write to 0x20..3f */
-			broadcom,access = "rw";
-
 			/* Channels
-			 * 0: power
-			 * 1: fb
-			 * 3: vchiq
+			 * 0: Power
+			 * 1: Frame buffer
+			 * 2: Virtual UART
+			 * 3: VCHIQ
+			 * 4: LEDs
+			 * 5: Buttons
+			 * 6: Touch screen
 			 */
-			broadcom,channels = <0x000b>;
 		};
 
 		watchdog {
