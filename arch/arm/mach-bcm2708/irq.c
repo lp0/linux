@@ -120,9 +120,7 @@ static void armctrl_unmask_irq(struct irq_data *d)
 
 static struct irq_chip armctrl_chip = {
 	.name = "ARMCTRL-level",
-	.irq_ack = armctrl_mask_irq,
 	.irq_mask = armctrl_mask_irq,
-	.irq_mask_ack = armctrl_mask_irq,
 	.irq_unmask = armctrl_unmask_irq
 };
 
