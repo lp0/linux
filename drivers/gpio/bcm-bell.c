@@ -232,6 +232,9 @@ static int __devinit bcm_bell_probe(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < BCM_NUM_BELLS; i++) {
+		int len;
+		char *name;
+
 		bell->irq[i].irq = irq_of_parse_and_map(node, i);
 		if (!bell->irq[i].irq)
 			continue;
@@ -239,9 +242,14 @@ static int __devinit bcm_bell_probe(struct platform_device *pdev)
 		bell->irq[i].bell = bell;
 		bell->irq[i].id = i;
 
+		len = strlen(dev_name(bell->dev)) + 16;
+		name = devm_kzalloc(bell->dev, len, GFP_KERNEL);
+		if (!name)
+			continue;
+		snprintf(name, len, "%s:bell%d", dev_name(bell->dev), i);
+
 		ret = devm_request_irq(bell->dev, bell->irq[i].irq,
-			bcm_bell_irq_handler, 0, dev_name(bell->dev),
-			&bell->irq[i]);
+			bcm_bell_irq_handler, 0, name, &bell->irq[i]);
 		if (ret) {
 			dev_err(bell->dev, "unable to request irq %d",
 				bell->irq[i].irq);
