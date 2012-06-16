@@ -409,12 +409,14 @@ static irqreturn_t bcm2708_gpio_irq_handler(int irq, void *dev_id)
 	unsigned offset;
 	unsigned gpio;
 	unsigned int type;
+	bool enabled;
 
 	events = bcm2708_gpio_rd(pc, GPEDS0 + bank * 4);
 	for_each_set_bit(offset, &events, 32) {
 		gpio = (32 * bank) + offset;
 
 		spin_lock(&pc->irq_lock[bank]);
+		enabled = test_bit(offset, pc->enabled_irq_map);
 		type = pc->irq_type[gpio];
 		spin_unlock(&pc->irq_lock[bank]);
 
@@ -422,7 +424,9 @@ static irqreturn_t bcm2708_gpio_irq_handler(int irq, void *dev_id)
 		if (!(type & IRQ_TYPE_LEVEL_MASK))
 			bcm2708_gpio_set_bit(pc, GPEDS0, gpio);
 
-		generic_handle_irq(irq_linear_revmap(pc->irq_domain, gpio));
+		if (enabled)
+			generic_handle_irq(
+				irq_linear_revmap(pc->irq_domain, gpio));
 
 		/* ack level triggered IRQ after handling them */
 		if (type & IRQ_TYPE_LEVEL_MASK)
