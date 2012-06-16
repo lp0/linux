@@ -26,7 +26,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-#define MODULE_NAME "gpio-bcm-bell"
+#define MODULE_NAME "bcm-bell"
 
 #define BCM_NUM_BELLS		4
 
@@ -343,4 +343,4 @@ module_exit(bcm_bell_exit);
 MODULE_AUTHOR("Simon Arlott");
 MODULE_DESCRIPTION("ARM doorbell I/O to VideoCore processor");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:gpio-bcm-bell");
+MODULE_ALIAS("platform:bcm-bell");
