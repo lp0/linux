@@ -995,6 +995,8 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 	for (i = 0; i < BCM2708_NUM_BANKS; i++) {
 		unsigned long events;
 		unsigned offset;
+		int len;
+		char *name;
 
 		/* clear event detection flags */
 		bcm2708_gpio_wr(pc, GPREN0 + i * 4, 0);
@@ -1014,9 +1016,15 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 		pc->irq_data[i].bank = i;
 		spin_lock_init(&pc->irq_lock[i]);
 
+		len = strlen(dev_name(pc->dev)) + 16;
+		name = devm_kzalloc(pc->dev, len, GFP_KERNEL);
+		if (!name)
+			continue;
+		snprintf(name, len, "%s:bank%d", dev_name(pc->dev), i);
+
 		err = devm_request_irq(dev, pc->irq[i],
 			bcm2708_gpio_irq_handler, IRQF_SHARED,
-			dev_name(pc->dev), &pc->irq_data[i]);
+			name, &pc->irq_data[i]);
 		if (err) {
 			dev_err(dev, "unable to request IRQ %d\n", pc->irq[i]);
 			return err;
