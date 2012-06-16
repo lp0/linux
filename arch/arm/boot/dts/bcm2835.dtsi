@@ -134,26 +134,16 @@
 			interrupts = <0 0>;
 		};
 
-		vc_bell0: bell@0 {
+		vc_bell: bell {
 			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-			reg = <0xB840 0x4>;
-			interrupts = <0 2>;
-		};
+			reg = <0xB840 0x10>, <0xB8E4 0x4>;
+			interrupts = <0 2>, <0 3>;
 
-		vc_bell1: bell@1 {
-			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-			reg = <0xB844 0x4>;
-			interrupts = <0 3>;
-		};
+			gpio-controller;
+			#gpio-cells = <1>;
 
-		vc_bell2: bell@2 {
-			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-			reg = <0xB848 0x4>;
-		};
-
-		vc_bell3: bell@3 {
-			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-			reg = <0xB84c 0x4>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
 		};
 
 		vc_mbox: mbox {
