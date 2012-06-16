@@ -485,6 +485,8 @@
 			compatible = "broadcom,bcm2835-uart", "broadcom,bcm2708-uart", "arm,pl011", "arm,primecell";
 			reg = <0x201000 0x1000>;
 			interrupts = <2 25>;
+
+			clock-frequency = <3000000>;	/* Set by VideoCore */
 		};
 
 		spi {
