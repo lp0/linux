@@ -327,14 +327,9 @@ static struct platform_driver bcm_bell_driver = {
 
 static int __init bcm_bell_init(void)
 {
-	int ret;
 	printk(KERN_INFO MODULE_NAME ": Broadcom VideoCore Doorbell driver\n");
 
-	ret = platform_driver_register(&bcm_bell_driver);
-	if (ret)
-		printk(KERN_ERR MODULE_NAME ": registration failed (%d)\n", ret);
-
-	return ret;
+	return platform_driver_register(&bcm_bell_driver);
 }
 
 static void __exit bcm_bell_exit(void)
