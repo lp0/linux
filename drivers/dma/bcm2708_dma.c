@@ -1073,7 +1073,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct bcm2708_dmadev *bcmdev = devm_kzalloc(&pdev->dev,
-		sizeof(*bcmdev), GFP_NOWAIT);
+		sizeof(*bcmdev), GFP_KERNEL);
 	struct dma_device *dmadev = bcmdev->dmadev;
 	struct bcm2708_dmachan *bcmchan;
 	struct dma_chan *dmachan;
@@ -1136,7 +1136,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 			continue;
 
 		bcmchan = devm_kzalloc(bcmdev->dev,
-			sizeof(*bcmchan), GFP_NOWAIT);
+			sizeof(*bcmchan), GFP_KERNEL);
 		if (bcmchan == NULL)
 			return -ENOMEM;
 		dmachan = &bcmchan->dmachan;
@@ -1173,7 +1173,7 @@ static int bcm2708_dma_probe(struct platform_device *pdev)
 		}
 
 		len = strlen(dev_name(bcmdev->dev)) + 16;
-		tmp = devm_kzalloc(bcmdev->dev, len, GFP_NOWAIT);
+		tmp = devm_kzalloc(bcmdev->dev, len, GFP_KERNEL);
 		if (!tmp) {
 			devm_kfree(bcmdev->dev, bcmchan);
 			continue;
