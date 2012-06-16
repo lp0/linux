@@ -113,8 +113,8 @@ struct bcm_mbox {
 	void __iomem *config;
 	void __iomem *read;
 	void __iomem *write;
+	u32 irq;
 
-	u32 channels;
 	struct bcm_mbox_store store[MAX_CHAN+1];
 
 	/* used to lock running, waiting, outbox
@@ -124,8 +124,6 @@ struct bcm_mbox {
 	bool running;
 	bool waiting;
 	struct list_head outbox;
-
-	u32 irq;
 };
 
 static inline struct bcm_mbox_store *to_mbox_store(struct bcm_mbox_chan *chan)
@@ -140,7 +138,8 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	int i;
 
 	for (i = 0; i <= MAX_CHAN; i++) {
-		list_for_each_entry_safe(msg, tmp, &mbox->store[i].inbox, list) {
+		list_for_each_entry_safe(msg, tmp,
+				&mbox->store[i].inbox, list) {
 			list_del(&msg->list);
 			kfree(msg);
 		}
@@ -178,16 +177,12 @@ static void bcm_mbox_irq_read(struct bcm_mbox *mbox)
 	u32 val = readl(mbox->read);
 	int index = MBOX_CHAN(val);
 
-	if (!(mbox->channels & BIT(index))) {
-		dev_warn(mbox->dev, "message received for unknown channel: %08x\n", val);
-		return;
-	}
-
 	store = &mbox->store[index];
 	msg = kzalloc(sizeof(*msg), GFP_ATOMIC);
 
 	if (msg == NULL) {
-		dev_warn(mbox->dev, "out of memory: dropped message %08x\n", val);
+		dev_warn(mbox->dev,
+			"out of memory: dropped message %08x\n", val);
 		return;
 	}
 
@@ -211,7 +206,8 @@ static bool bcm_mbox_irq_write(struct bcm_mbox *mbox)
 		msg = NULL;
 		empty = true;
 	} else {
-		msg = list_first_entry(&mbox->outbox, struct bcm_mbox_msg, list);
+		msg = list_first_entry(&mbox->outbox,
+					struct bcm_mbox_msg, list);
 		list_del(&msg->list);
 		empty = list_empty(&mbox->outbox);
 	}
@@ -278,9 +274,6 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_mbox *mbox = devm_kzalloc(&of_dev->dev,
 		sizeof(*mbox), GFP_KERNEL);
-	const char *access;
-	void __iomem *r_off;
-	void __iomem *w_off;
 	int ret, i;
 	unsigned long flags;
 
@@ -313,38 +306,10 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 		return -EIO;
 	}
 
-	if (of_property_read_string(node, "broadcom,access", &access)) {
-		dev_err(mbox->dev, "unable to read access configuration\n");
-		return -EINVAL;
-	}
-
-	/* read this carefully so that the device tree format
-	 * can be exended in the future
-	 */
-	if (access[0] == 'r' && access[1] == 'w') {
-		r_off = mbox->base + MBOX_OFF0;
-		w_off = mbox->base + MBOX_OFF1;
-	} else if (access[0] == 'w' && access[1] == 'r') {
-		w_off = mbox->base + MBOX_OFF0;
-		r_off = mbox->base + MBOX_OFF1;
-	} else {
-		dev_err(mbox->dev, "invalid access configuration: %s\n", access);
-		return -EINVAL;
-	}
-
-	mbox->status = r_off + MBOX_STA;
-	mbox->config = r_off + MBOX_CNF;
-	mbox->read = r_off + MBOX_RW;
-	mbox->write = w_off + MBOX_RW;
-
-	mbox->channels = 0;
-	of_property_read_u32(node, "broadcom,channels", &mbox->channels);
-	mbox->channels &= OF_CHANS_MASK;
-
-	if (!mbox->channels) {
-		dev_err(mbox->dev, "mailbox has no channels\n");
-		return -EINVAL;
-	}
+	mbox->status = mbox->base + MBOX_OFF0 + MBOX_STA;
+	mbox->config = mbox->base + MBOX_OFF0 + MBOX_CNF;
+	mbox->read = mbox->base + MBOX_OFF0 + MBOX_RW;
+	mbox->write = mbox->base + MBOX_OFF1 + MBOX_RW;
 
 	/* disable interrupts and clear the mailbox */
 	writel(0, mbox->config);
@@ -376,8 +341,8 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 	mbox->running = true;
 	spin_unlock_irqrestore(&mbox->lock, flags);
 
-	dev_info(mbox->dev, "mailbox at MMIO %#lx (irq = %d, channels = 0x%04x)\n",
-		(unsigned long)mbox->res.start, mbox->irq, mbox->channels);
+	dev_info(mbox->dev, "mailbox at MMIO %#lx (irq = %d)\n",
+		(unsigned long)mbox->res.start, mbox->irq);
 
 	platform_set_drvdata(of_dev, mbox);
 	return 0;
@@ -453,8 +418,8 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 		goto put_dev;
 	}
 
-	/* check the channel is valid for the mailbox */
-	if (!(mbox->channels & BIT(index))) {
+	/* check the channel is valid */
+	if (index > MAX_CHAN) {
 		ret = -ECHRNG;
 		goto put_dev;
 	}
@@ -584,7 +549,8 @@ static int __bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 	if (list_empty(&store->inbox)) {
 		msg = NULL;
 	} else {
-		msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
+		msg = list_first_entry(&store->inbox,
+					struct bcm_mbox_msg, list);
 		list_del(&msg->list);
 	}
 	spin_unlock_irqrestore(&store->lock, flags);
@@ -700,7 +666,8 @@ int bcm_mbox_clear(struct bcm_mbox_chan *chan)
 		if (list_empty(&store->inbox)) {
 			msg = NULL;
 		} else {
-			msg = list_first_entry(&store->inbox, struct bcm_mbox_msg, list);
+			msg = list_first_entry(&store->inbox,
+						struct bcm_mbox_msg, list);
 			list_del(&msg->list);
 		}
 		spin_unlock_irqrestore(&store->lock, flags);
@@ -732,14 +699,9 @@ static struct platform_driver bcm_mbox_driver = {
 
 static int __init bcm_mbox_init(void)
 {
-	int ret;
 	printk(KERN_INFO MODULE_NAME ": Broadcom VideoCore Mailbox driver\n");
 
-	ret = platform_driver_register(&bcm_mbox_driver);
-	if (ret)
-		printk(KERN_ERR MODULE_NAME ": registration failed (%d)\n", ret);
-
-	return ret;
+	return platform_driver_register(&bcm_mbox_driver);
 }
 
 static void __exit bcm_mbox_exit(void)
