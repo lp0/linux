@@ -526,7 +526,7 @@
 		};
 
 		usb {
-			compatible = "broadcom,bcm2835-usb", "broadcom,bcm2708-usb", "synopsys,designware-hs-otg2-host", "broadcom,bcm2708-power-user";
+			compatible = "broadcom,bcm2835-usb", "broadcom,bcm2708-usb", "synopsys,designware-hs-otg2-host";
 			reg = <0x980000 0x20000>;
 			interrupts = <1 9>;
 		};
