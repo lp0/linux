@@ -1039,17 +1039,25 @@ static int __devinit bcm2708_pinctrl_probe(struct platform_device *pdev)
 	pinctrl_add_gpio_range(pc->pctl_dev, &pc->gpio_range);
 
 	platform_set_drvdata(pdev, pc);
-
 	return 0;
 }
 
 static int __devexit bcm2708_pinctrl_remove(struct platform_device *pdev)
 {
 	struct bcm2708_pinctrl *pc = platform_get_drvdata(pdev);
+	int ret;
 
-	pinctrl_remove_gpio_range(pc->pctl_dev, &pc->gpio_range);
-	pinctrl_unregister(pc->pctl_dev);
+	if (pc->pctl_dev) {
+		pinctrl_remove_gpio_range(pc->pctl_dev, &pc->gpio_range);
+		pinctrl_unregister(pc->pctl_dev);
+		pc->pctl_dev = NULL;
+	}
 
+	ret = gpiochip_remove(&pc->gpio_chip);
+	if (ret)
+		return ret;
+
+	platform_set_drvdata(pdev, NULL);
 	return 0;
 }
 
