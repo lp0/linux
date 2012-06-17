@@ -6,7 +6,7 @@
 	model = "Raspberry Pi Model B (BCM2835)";
 	#address-cells = <1>;
 	#size-cells = <1>;
-	compatible = "raspberrypi,model-b", "broadcom,bcm2835", "broadcom,bcm2708";
+	compatible = "raspberrypi,model-b", "broadcom,bcm2835-vc", "broadcom,bcm2708-vc";
 
 	memory {
 		device_type = "memory";

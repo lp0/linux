@@ -1,8 +1,21 @@
 /include/ "skeleton.dtsi"
 
+/*
+ * The "-vc" for the compatible value indicates that VideoCore is
+ * booted first and is in control of the hardware.
+ *
+ * Future firmware versions that swap this around so that the
+ * bootloader transfers control to the kernel running on the ARM
+ * immediately. When this happens, different architecture setup
+ * will be required and the "-vc" will be changed to "-arm" so
+ * that the kernel knows which mode is being used.
+ *
+ * See https://github.com/raspberrypi/firmware/issues/45
+ */
+
 / {
 	model = "BCM2835";
-	compatible = "broadcom,bcm2835", "broadcom,bcm2708";
+	compatible = "broadcom,bcm2835-vc", "broadcom,bcm2708-vc";
 
 	system {
 		revision = <0>;			/* Set by VideoCore */
