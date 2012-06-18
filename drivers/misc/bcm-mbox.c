@@ -762,6 +762,8 @@ int bcm_mbox_atomic_write(struct bcm_mbox_chan *chan, u32 data28)
 		if (!(status & MBOX_STA_EMPTY)) {
 			/* we have data to read */
 			bcm_mbox_irq_read(mbox);
+		} else {
+			cpu_relax();
 		}
 	}
 
