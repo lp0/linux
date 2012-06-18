@@ -62,13 +62,21 @@ static int bcm_vc_power_enable(struct regulator_dev *rdev)
 	mutex_lock(&mgr->lock);
 	state = mgr->state & BIT(pdev->index);
 	if (!state) {
+		int ret;
 		u32 val;
 
 		dev_dbg(pdev->dev, "power on\n");
 
 		mgr->state |= BIT(pdev->index);
-		bcm_mbox_call(mgr->mbox, PWR_TO_MBOX(mgr->state), &val);
-		mgr->state = MBOX_TO_PWR(val) & PMASK;
+		ret = bcm_mbox_call_timeout(mgr->mbox,
+				PWR_TO_MBOX(mgr->state), &val, 2 * HZ);
+		if (ret) {
+			/* failed, ensure power is off */
+			mgr->state &= ~BIT(pdev->index);
+			bcm_mbox_write(mgr->mbox, PWR_TO_MBOX(mgr->state));
+		} else {
+			mgr->state = MBOX_TO_PWR(val) & PMASK;
+		}
 	}
 	state = mgr->state & BIT(pdev->index);
 	mutex_unlock(&mgr->lock);
@@ -210,13 +218,11 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	kfree(name);
 
 	/* power everything off */
-	bcm_mbox_clear(mgr->mbox);
 	ret = bcm_mbox_write(mgr->mbox, PWR_TO_MBOX(0));
 	if (ret)
 		goto err;
 
 	/* find out what is powered on */
-	bcm_mbox_clear(mgr->mbox);
 	ret = bcm_mbox_call_interruptible(mgr->mbox, PQUERY, &mgr->state);
 	if (ret)
 		goto err;
