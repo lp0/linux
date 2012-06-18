@@ -214,7 +214,6 @@ static int bcm2708_fb_set_par(struct fb_info *info)
 	wmb();
 
 	/* inform vc about new framebuffer and get response */
-	bcm_mbox_clear(fb->mbox);
 	ret = bcm_mbox_call_timeout(fb->mbox, fb->dma, &val, 2 * HZ);
 	if (ret)
 		dev_err(fb->dev, "error communicating with VideoCore (%d)",
