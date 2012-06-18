@@ -124,7 +124,7 @@ struct sys_timer bcm2708_timer = {
 };
 
 static const char *bcm2708_compat[] = {
-	"broadcom,bcm2708",
+	"broadcom,bcm2708-vc",
 	NULL
 };
 
