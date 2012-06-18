@@ -61,7 +61,7 @@ static void bcm2708_sdhci_clock_delay(struct sdhci_host *host, int reg)
 
 	/* host->clock is the clock freq in Hz */
 	ns_2clk = 2000000000/host->clock;
-	udelay(DIV_ROUND_UP(ns_2clk, 1000) + 1);
+	ndelay(ns_2clk);
 }
 
 static void bcm2708_sdhci_writel(struct sdhci_host *host, u32 val, int reg)
