@@ -639,7 +639,10 @@ EXPORT_SYMBOL_GPL(bcm_mbox_read_timeout);
 
 int bcm_mbox_call(struct bcm_mbox_chan *chan, u32 out_data28, u32 *in_data28)
 {
-	int ret = bcm_mbox_write(chan, out_data28);
+	int ret;
+
+	bcm_mbox_clear(chan);
+	ret = bcm_mbox_write(chan, out_data28);
 	if (ret)
 		return ret;
 	return bcm_mbox_read(chan, in_data28);
@@ -649,7 +652,10 @@ EXPORT_SYMBOL_GPL(bcm_mbox_call);
 int bcm_mbox_call_interruptible(struct bcm_mbox_chan *chan, u32 out_data28,
 	u32 *in_data28)
 {
-	int ret = bcm_mbox_write(chan, out_data28);
+	int ret;
+
+	bcm_mbox_clear(chan);
+	ret = bcm_mbox_write(chan, out_data28);
 	if (ret)
 		return ret;
 	return bcm_mbox_read_interruptible(chan, in_data28);
@@ -659,7 +665,10 @@ EXPORT_SYMBOL_GPL(bcm_mbox_call_interruptible);
 int bcm_mbox_call_timeout(struct bcm_mbox_chan *chan, u32 out_data28,
 	u32 *in_data28, long wait_jiffies)
 {
-	int ret = bcm_mbox_write(chan, out_data28);
+	int ret;
+
+	bcm_mbox_clear(chan);
+	ret = bcm_mbox_write(chan, out_data28);
 	if (ret)
 		return ret;
 	return bcm_mbox_read_timeout(chan, in_data28, wait_jiffies);
