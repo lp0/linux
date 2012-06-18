@@ -48,7 +48,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-
 #define MODULE_NAME "bcm-mbox"
 
 /* offsets from a mail box base address */
@@ -151,48 +150,65 @@ static void bcm_mbox_free(struct bcm_mbox *mbox)
 	}
 }
 
+static void bcm_mbox_config_irq(struct bcm_mbox *mbox)
+{
+	if (!mbox->running) {
+		writel(0, mbox->config);
+	} else if (mbox->waiting) {
+		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
+	} else {
+		writel(MBOX_STA_IRQ_DATA, mbox->config);
+	}
+}
+
 static void bcm_mbox_irq_error(struct bcm_mbox *mbox, int error)
 {
 	dev_err(mbox->dev, "mailbox error %08x\n", error);
 
-	/* clear it */
+	/* clear it with a config write */
 	spin_lock(&mbox->lock);
-	if (mbox->running) {
-		if (mbox->waiting) {
-			writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE,
-				mbox->config);
-		} else {
-			writel(MBOX_STA_IRQ_DATA, mbox->config);
-		}
-	} else {
-		writel(0, mbox->config);
-	}
+	bcm_mbox_config_irq(mbox);
 	spin_unlock(&mbox->lock);
+}
+
+static void bcm_mbox_fetch(struct bcm_mbox *mbox,
+	struct bcm_mbox_store **store, struct bcm_mbox_msg **msg)
+{
+	u32 val = readl(mbox->read);
+	int index = MBOX_CHAN(val);
+
+	*store = &mbox->store[index];
+	*msg = kzalloc(sizeof(**msg), GFP_ATOMIC);
+
+	if (*msg == NULL) {
+		dev_warn(mbox->dev,
+			"out of memory: dropped message %08x\n", val);
+		return;
+	}
+
+	(*msg)->val = val | 0xf;
+	dev_dbg(mbox->dev, "received message %08x\n", val);
+}
+
+static void bcm_mbox_save(struct bcm_mbox_store *store,
+	struct bcm_mbox_msg *msg)
+{
+	if (msg != NULL) {
+		spin_lock(&store->lock);
+		list_add_tail(&msg->list, &store->inbox);
+		spin_unlock(&store->lock);
+
+		up(&store->recv);
+	}
 }
 
 static void bcm_mbox_irq_read(struct bcm_mbox *mbox)
 {
 	struct bcm_mbox_store *store;
 	struct bcm_mbox_msg *msg;
-	u32 val = readl(mbox->read);
-	int index = MBOX_CHAN(val);
 
-	store = &mbox->store[index];
-	msg = kzalloc(sizeof(*msg), GFP_ATOMIC);
-
-	if (msg == NULL) {
-		dev_warn(mbox->dev,
-			"out of memory: dropped message %08x\n", val);
-		return;
-	}
-
-	msg->val = val | 0xf;
-	dev_dbg(mbox->dev, "received message %08x\n", val);
-
-	spin_lock(&store->lock);
-	list_add_tail(&msg->list, &store->inbox);
-	spin_unlock(&store->lock);
-	up(&store->recv);
+	bcm_mbox_fetch(mbox, &store, &msg);
+	bcm_mbox_save(store, msg);
 }
 
 static bool bcm_mbox_irq_write(struct bcm_mbox *mbox)
@@ -201,7 +217,6 @@ static bool bcm_mbox_irq_write(struct bcm_mbox *mbox)
 	bool active = false;
 	bool empty;
 
-	spin_lock(&mbox->lock);
 	if (list_empty(&mbox->outbox)) {
 		msg = NULL;
 		empty = true;
@@ -213,11 +228,9 @@ static bool bcm_mbox_irq_write(struct bcm_mbox *mbox)
 	}
 	if (mbox->running && mbox->waiting && empty) {
 		/* we don't want to send data, disable the interrupt */
-		writel(MBOX_STA_IRQ_DATA, mbox->config);
-
 		mbox->waiting = false;
+		bcm_mbox_config_irq(mbox);
 	}
-	spin_unlock(&mbox->lock);
 
 	if (msg != NULL) {
 		dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
@@ -253,7 +266,9 @@ static irqreturn_t bcm_mbox_irq_handler(int irq, void *dev_id)
 
 		if (!(status & MBOX_STA_EMPTY)) {
 			/* we have data to read */
+			spin_lock(&mbox->lock);
 			bcm_mbox_irq_read(mbox);
+			spin_unlock(&mbox->lock);
 
 			active = true;
 			ret = IRQ_HANDLED;
@@ -261,7 +276,10 @@ static irqreturn_t bcm_mbox_irq_handler(int irq, void *dev_id)
 
 		if (!(status & MBOX_STA_FULL)) {
 			/* we can send data */
+			spin_lock(&mbox->lock);
 			active = bcm_mbox_irq_write(mbox);
+			spin_unlock(&mbox->lock);
+
 			ret = IRQ_HANDLED;
 		}
 	}
@@ -337,8 +355,8 @@ static int __devinit bcm_mbox_probe(struct platform_device *of_dev)
 
 	/* enable the interrupt on data reception */
 	spin_lock_irqsave(&mbox->lock, flags);
-	writel(MBOX_STA_IRQ_DATA, mbox->config);
 	mbox->running = true;
+	bcm_mbox_config_irq(mbox);
 	spin_unlock_irqrestore(&mbox->lock, flags);
 
 	dev_info(mbox->dev, "mailbox at MMIO %#lx (irq = %d)\n",
@@ -507,9 +525,8 @@ static void __bcm_mbox_write(struct bcm_mbox *mbox, struct bcm_mbox_msg *msg)
 		list_add_tail(&msg->list, &mbox->outbox);
 
 		/* enable the interrupt on write space available */
-		writel(MBOX_STA_IRQ_DATA | MBOX_STA_IRQ_WSPACE, mbox->config);
-
 		mbox->waiting = true;
+		bcm_mbox_config_irq(mbox);
 	}
 out:
 	spin_unlock_irqrestore(&mbox->lock, flags);
@@ -567,7 +584,7 @@ static int __bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 
 int bcm_mbox_poll(struct bcm_mbox_chan *chan, u32 *data28)
 {
-	if (!bcm_mbox_chan_valid(chan))
+	if (!bcm_mbox_chan_valid(chan) || !data28)
 		return -EINVAL;
 
 	if (down_trylock(&to_mbox_store(chan)->recv))
@@ -579,7 +596,7 @@ EXPORT_SYMBOL_GPL(bcm_mbox_poll);
 
 int bcm_mbox_read(struct bcm_mbox_chan *chan, u32 *data28)
 {
-	if (!bcm_mbox_chan_valid(chan))
+	if (!bcm_mbox_chan_valid(chan) || !data28)
 		return -EINVAL;
 
 	down(&to_mbox_store(chan)->recv);
@@ -591,7 +608,7 @@ int bcm_mbox_read_interruptible(struct bcm_mbox_chan *chan, u32 *data28)
 {
 	int ret;
 
-	if (!bcm_mbox_chan_valid(chan))
+	if (!bcm_mbox_chan_valid(chan) || !data28)
 		return -EINVAL;
 
 	if ((ret = down_interruptible(&to_mbox_store(chan)->recv))) {
@@ -603,14 +620,15 @@ int bcm_mbox_read_interruptible(struct bcm_mbox_chan *chan, u32 *data28)
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_read_interruptible);
 
-int bcm_mbox_read_timeout(struct bcm_mbox_chan *chan, u32 *data28, long jiffies)
+int bcm_mbox_read_timeout(struct bcm_mbox_chan *chan, u32 *data28,
+	long wait_jiffies)
 {
 	int ret;
 
-	if (!bcm_mbox_chan_valid(chan))
+	if (!bcm_mbox_chan_valid(chan) || !data28)
 		return -EINVAL;
 
-	if ((ret = down_timeout(&to_mbox_store(chan)->recv, jiffies))) {
+	if ((ret = down_timeout(&to_mbox_store(chan)->recv, wait_jiffies))) {
 		/* The wait was interrupted or timed out */
 		return ret;
 	}
@@ -639,14 +657,135 @@ int bcm_mbox_call_interruptible(struct bcm_mbox_chan *chan, u32 out_data28,
 EXPORT_SYMBOL_GPL(bcm_mbox_call_interruptible);
 
 int bcm_mbox_call_timeout(struct bcm_mbox_chan *chan, u32 out_data28,
-	u32 *in_data28, long jiffies)
+	u32 *in_data28, long wait_jiffies)
 {
 	int ret = bcm_mbox_write(chan, out_data28);
 	if (ret)
 		return ret;
-	return bcm_mbox_read_timeout(chan, in_data28, jiffies);
+	return bcm_mbox_read_timeout(chan, in_data28, wait_jiffies);
 }
 EXPORT_SYMBOL_GPL(bcm_mbox_call_timeout);
+
+int bcm_mbox_atomic_read(struct bcm_mbox_chan *chan, u32 *data28)
+{
+	struct bcm_mbox *mbox;
+	struct bcm_mbox_store *store;
+	struct bcm_mbox_msg *msg;
+	unsigned long flags;
+	int ret = -ENODEV;
+
+	if (!bcm_mbox_chan_valid(chan) || !data28)
+		return -EINVAL;
+	mbox = chan->mbox;
+	store = to_mbox_store(chan);
+
+	spin_lock_irqsave(&mbox->lock, flags);
+	if (!mbox->running)
+		goto out;
+
+	/* disable interrupts */
+	writel(0, mbox->config);
+
+	if (!down_trylock(&store->recv)) {
+		ret = __bcm_mbox_read(chan, data28);
+		goto out;
+	}
+
+	dev_dbg(mbox->dev, "waiting for message\n");
+	msg = NULL;
+	while (msg == NULL) {
+		struct bcm_mbox_store *tmp;
+
+		/* wait until we can read */
+		while (readl(mbox->status) & MBOX_STA_EMPTY)
+			cpu_relax();
+
+		bcm_mbox_fetch(mbox, &tmp, &msg);
+
+		if (msg == NULL) {
+			ret = -ENOMEM;
+			goto out;
+		}
+
+		if (tmp != store) {
+			/* not for us, save it */
+			bcm_mbox_save(tmp, msg);
+			msg = NULL;
+		}
+	}
+
+	*data28 = MBOX_DATA28(msg->val);
+	kfree(msg);
+	ret = 0;
+
+out:
+	/* enable interrupts */
+	bcm_mbox_config_irq(mbox);
+
+	spin_unlock_irqrestore(&mbox->lock, flags);
+	return ret;
+}
+
+int bcm_mbox_atomic_write(struct bcm_mbox_chan *chan, u32 data28)
+{
+	struct bcm_mbox *mbox;
+	struct bcm_mbox_msg *msg;
+	unsigned long flags;
+	int ret = -ENODEV;
+	u32 status;
+
+	if (!bcm_mbox_chan_valid(chan))
+		return -EINVAL;
+	mbox = chan->mbox;
+
+	msg = kmalloc(sizeof(*msg), GFP_ATOMIC);
+	if (msg == NULL)
+		return -ENOMEM;
+
+	/* data shouldn't contain anything in the lower 4 bits */
+	WARN_ON(data28 & MAX_CHAN);
+	msg->val = MBOX_MSG(chan->index, data28);
+
+	spin_lock_irqsave(&mbox->lock, flags);
+	if (!mbox->running)
+		goto out;
+
+	/* disable interrupts */
+	writel(0, mbox->config);
+
+	dev_dbg(mbox->dev, "waiting to write\n");
+	while ((status = readl(mbox->status)) & MBOX_STA_FULL) {
+		/*
+		 * we need more output space, try to read more
+		 * messages in an attempt to free up the outbox
+		 */
+		if (!(status & MBOX_STA_EMPTY)) {
+			/* we have data to read */
+			bcm_mbox_irq_read(mbox);
+		}
+	}
+
+	/* write message */
+	dev_dbg(mbox->dev, "sending message %08x\n", msg->val);
+	writel(msg->val, mbox->write);
+	kfree(msg);
+
+	/* check for errors */
+	status = readl(mbox->status);
+	if (status & MBOX_ERR_MASK) {
+		bcm_mbox_irq_error(mbox, status & MBOX_ERR_MASK);
+		ret = -EIO;
+	} else {
+		ret = 0;
+	}
+
+out:
+	/* enable interrupts */
+	bcm_mbox_config_irq(mbox);
+	spin_unlock_irqrestore(&mbox->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(bcm_mbox_atomic_write);
 
 int bcm_mbox_clear(struct bcm_mbox_chan *chan)
 {
