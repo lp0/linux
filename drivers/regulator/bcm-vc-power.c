@@ -205,7 +205,7 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 
 	mgr->dev = &of_dev->dev;
 	mutex_init(&mgr->lock);
-	mgr->mbox = bcm_mbox_get(node, "broadcom,vc-mailbox", "broadcom,vc-channel");
+	mgr->mbox = bcm_mbox_get(node, 0);
 
 	if (IS_ERR(mgr->mbox)) {
 		dev_err(mgr->dev, "unable to find mailbox channel (%ld)\n",
