@@ -68,9 +68,9 @@
 #define IS_VALID_BANK(x) ((x > 0) && (x < 32))
 #define IS_VALID_IRQ(x) (x < 32)
 
-/* Pack the bank and irq (32 bits) into the hwirq */
-#define MAKE_HWIRQ(b, n)	((b << 5) | (n))
-#define HWIRQ_BANK(i)		(i >> 5)
+/* Put the bank and irq (32 bits) into the hwirq */
+#define MAKE_HWIRQ(b, n)	((b << 8) | (n))
+#define HWIRQ_BANK(i)		(i >> 8)
 #define HWIRQ_BIT(i)		BIT(i & 0x1f)
 
 #define NR_IRQS_BANK0		8
