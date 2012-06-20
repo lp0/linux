@@ -136,18 +136,6 @@
 			interrupts = <0 0>;
 		};
 
-		vc_bell: bell {
-			compatible = "broadcom,bcm2835-bell", "broadcom,bcm2708-bell";
-			reg = <0xB840 0x10>, <0xB8E4 0x4>;
-			interrupts = <0 2>, <0 3>;
-
-			gpio-controller;
-			#gpio-cells = <1>;
-
-			interrupt-controller;
-			#interrupt-cells = <1>;
-		};
-
 		vc_mbox: mbox {
 			compatible = "broadcom,bcm2835-mbox", "broadcom,bcm2708-mbox";
 			reg = <0xB880 0x40>;
