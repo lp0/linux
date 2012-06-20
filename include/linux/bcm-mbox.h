@@ -17,14 +17,13 @@ struct bcm_mbox_chan;
 
 /*
  * @node: calling node
- * @pmbox: property name for mailbox phandle
- * @pchan: property name for channel index
+ * @index: mailbox phandle instance index
  *
  * Returns an error pointer if not found, otherwise holds a reference to the
  * device that must be put back with bcm_mbox_put.
  */
 extern struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
-	const char *pmbox, const char *pchan);
+	int index);
 extern char *bcm_mbox_name(struct bcm_mbox_chan *mbox);
 extern void bcm_mbox_put(struct bcm_mbox_chan *mbox);
 

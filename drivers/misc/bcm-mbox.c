@@ -389,30 +389,34 @@ static int bcm_mbox_remove(struct platform_device *of_dev)
 	return 0;
 }
 
-struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
-	const char *pmbox, const char *pchan)
+struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node, int index)
 {
-	struct device_node *mbox_node;
 	struct platform_device *pdev;
 	struct bcm_mbox *mbox;
 	struct bcm_mbox_chan *chan;
 	struct bcm_mbox_store *store;
-	u32 index;
+	struct of_phandle_args phargs;
+	struct device_node *mbox_node;
+	u32 channel;
 	int ret;
 	unsigned long flags;
 
-	if (node == NULL || pmbox == NULL || pchan == NULL)
+	if (node == NULL)
 		return ERR_PTR(-EINVAL);
 
-	if (of_property_read_u32(node, pchan, &index))
-		return ERR_PTR(-EINVAL);
-
-	if (index > MAX_CHAN)
-		return ERR_PTR(-EOVERFLOW);
-
-	mbox_node = of_parse_phandle(node, pmbox, 0);
-	if (mbox_node == NULL)
+	if (of_parse_phandle_with_args(node, "broadcom,vc-mailbox",
+			"#channel-cells", index, &phargs))
 		return ERR_PTR(-ENOENT);
+
+	if (phargs.args_count != 1)
+		return ERR_PTR(-EINVAL);
+
+	mbox_node = phargs.np;
+	channel = phargs.args[0];
+
+	/* check the channel is valid */
+	if (channel > MAX_CHAN)
+		return ERR_PTR(-EOVERFLOW);
 
 	pdev = of_find_device_by_node(mbox_node);
 	if (pdev == NULL) {
@@ -436,12 +440,6 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 		goto put_dev;
 	}
 
-	/* check the channel is valid */
-	if (index > MAX_CHAN) {
-		ret = -ECHRNG;
-		goto put_dev;
-	}
-
 	/* create a reference */
 	chan = kmalloc(sizeof(*chan), GFP_KERNEL);
 	if (chan == NULL) {
@@ -450,7 +448,7 @@ struct bcm_mbox_chan *bcm_mbox_get(struct device_node *node,
 	}
 
 	chan->mbox = mbox;
-	chan->index = index;
+	chan->index = channel;
 	store = to_mbox_store(chan);
 
 	spin_lock_irqsave(&store->lock, flags);
