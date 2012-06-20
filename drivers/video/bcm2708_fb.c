@@ -387,7 +387,7 @@ static int bcm2708_fb_probe(struct platform_device *of_dev)
 		return -ENOMEM;
 
 	fb->dev = &of_dev->dev;
-	fb->mbox = bcm_mbox_get(node, "broadcom,vc-mailbox", "broadcom,vc-channel");
+	fb->mbox = bcm_mbox_get(node, 0);
 
 	if (IS_ERR(fb->mbox)) {
 		dev_err(fb->dev, "unable to find VideoCore mailbox (%ld)",
