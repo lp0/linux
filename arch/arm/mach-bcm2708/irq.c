@@ -73,6 +73,7 @@
 #define HWIRQ_BANK(i)		(i >> 5)
 #define HWIRQ_BIT(i)		BIT(i & 0x1f)
 
+#define NR_IRQS_BANK0		8
 #define BANK0_HWIRQ_MASK	0xff
 /* Shortcuts can't be disabled so any unknown new ones need to be masked */
 #define SHORTCUT1_MASK		0x00007c00
@@ -137,6 +138,9 @@ static int armctrl_xlate(struct irq_domain *d, struct device_node *ctrlr,
 	if (WARN_ON(intspec[1] >= IRQS_PER_BANK))
 		return -EINVAL;
 
+	if (WARN_ON(intspec[0] == 0 && intspec[1] >= NR_IRQS_BANK0))
+		return -EINVAL;
+
 	*out_hwirq = MAKE_HWIRQ(intspec[0], intspec[1]);
 	*out_type = IRQ_TYPE_NONE;
 	return 0;
@@ -169,8 +173,9 @@ int __init armctrl_of_init(struct device_node *node,
 		panic("%s: unable to request resources for IC registers\n",
 			node->full_name);
 
-	intc.domain = irq_domain_add_linear(node, IRQS_PER_BANK * NR_BANKS,
-		&armctrl_ops, NULL);
+	intc.domain = irq_domain_add_linear(node,
+			NR_IRQS_BANK0 + IRQS_PER_BANK * (NR_BANKS - 1),
+			&armctrl_ops, NULL);
 	if (!intc.domain)
 		panic("%s: unable to create IRQ domain\n", node->full_name);
 
