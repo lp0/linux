@@ -99,6 +99,8 @@
 			hub {
 				compatible = "usb,hub", "usb,device";
 				reg = <1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
 
 				ethernet {
 					compatible = "net,ethernet", "usb,device";
