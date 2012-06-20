@@ -33,8 +33,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		broadcom,vc-mailbox = <&vc_mbox>;
-		broadcom,vc-channel = <0>;
+		broadcom,vc-mailbox = <&vc_mbox 0>;
 
 		regulator-name = "VideoCore";
 		regulator-min-microvolt = <5000000>;

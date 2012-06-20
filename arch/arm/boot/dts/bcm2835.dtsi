@@ -26,8 +26,7 @@
 	display {
 		compatible = "broadcom,bcm2835-fb", "broadcom,bcm2708-fb";
 
-		broadcom,vc-mailbox = <&vc_mbox>;
-		broadcom,vc-channel = <1>;
+		broadcom,vc-mailbox = <&vc_mbox 1>;
 
 		broadcom,width = <0>;		/* Set by VideoCore */
 		broadcom,height = <0>;		/* Set by VideoCore */
@@ -163,6 +162,7 @@
 			 * 5: Buttons
 			 * 6: Touch screen
 			 */
+			#channel-cells = <1>;
 		};
 
 		watchdog {
