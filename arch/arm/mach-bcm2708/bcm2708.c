@@ -59,10 +59,10 @@ static void __init bcm2708_of_system(void)
 		u32 rev;
 		u64 serial;
 
-		if (!of_property_read_u32(system, "revision", &rev))
+		if (!of_property_read_u32(system, "linux,revision", &rev))
 			system_rev = rev;
 
-		if (!of_property_read_u64(system, "serial", &serial)) {
+		if (!of_property_read_u64(system, "linux,serial", &serial)) {
 			system_serial_low = (u32)serial;
 			system_serial_high = (u32)(serial >> 32);
 		}
@@ -124,7 +124,7 @@ struct sys_timer bcm2708_timer = {
 };
 
 static const char *bcm2708_compat[] = {
-	"broadcom,bcm2708-vc",
+	"broadcom,bcm2708",
 	NULL
 };
 
