@@ -4,12 +4,9 @@
 
 / {
 	model = "Raspberry Pi Model A (BCM2835)";
-	#address-cells = <1>;
-	#size-cells = <1>;
 	compatible = "raspberrypi,model-a", "broadcom,bcm2835", "broadcom,bcm2708";
 
 	memory {
-		device_type = "memory";
 		reg = <0 0x10000000>; /* 256MB */
 	};
 
@@ -97,6 +94,7 @@
 
 		usb {
 			hcd-supply = <&usb_hcd_power>;
+			dr_mode = "otg";
 		};
 	};
 };
