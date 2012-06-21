@@ -28,6 +28,16 @@
 		};
 	};
 
+	display {
+		compatible = "broadcom,bcm2835-fb", "broadcom,bcm2708-fb";
+
+		broadcom,vc-mailbox = <&vc_mbox 1>;
+
+		broadcom,width = <0>;		/* Set by VideoCore */
+		broadcom,height = <0>;		/* Set by VideoCore */
+		broadcom,depth = <0>;		/* Set by VideoCore */
+	};
+
 	power: regulator {
 		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr", "simple-bus";
 		#address-cells = <1>;
