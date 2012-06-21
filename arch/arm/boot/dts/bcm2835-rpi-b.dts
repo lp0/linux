@@ -38,23 +38,17 @@
 		broadcom,depth = <0>;		/* Set by VideoCore */
 	};
 
-	power: regulator {
+	power {
 		compatible = "broadcom,bcm2835-power-mgr", "broadcom,bcm2708-power-mgr", "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <0>;
 
 		broadcom,vc-mailbox = <&vc_mbox 0>;
 
-		regulator-name = "VideoCore";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		regulator-always-on = <1>;
-
 		sd_card_power: regulator@0 {
 			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
 			reg = <0>;
 
-			vin-supply = <&power>;
 			regulator-name = "SD Card";
 			regulator-min-microvolt = <3300000>;
 			regulator-max-microvolt = <3300000>;
@@ -65,7 +59,6 @@
 			compatible = "broadcom,bcm2835-power-dev", "broadcom,bcm2708-power-dev";
 			reg = <3>;
 
-			vin-supply = <&power>;
 			regulator-name = "USB HCD";
 			regulator-min-microvolt = <5000000>;
 			regulator-max-microvolt = <5000000>;
