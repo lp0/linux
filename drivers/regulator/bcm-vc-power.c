@@ -40,8 +40,6 @@ struct bcm_vc_power_mgr {
 	struct mutex lock;
 	struct bcm_mbox_chan *mbox;
 	u32 state;
-
-	struct regulator_dev *rdev;
 };
 
 struct bcm_vc_power_dev {
@@ -123,21 +121,6 @@ static int bcm_vc_power_enable_time(struct regulator_dev *rdev)
 	return 10000; /* 10ms */
 }
 
-static int bcm_vc_power_list_mgr_voltage(struct regulator_dev *rdev,
-	unsigned selector)
-{
-	struct bcm_vc_power_mgr *mgr = rdev_get_drvdata(rdev);
-
-	return selector == 0 ? mgr->fixed_uV : 0;
-}
-
-static int bcm_vc_power_get_mgr_voltage(struct regulator_dev *rdev)
-{
-	struct bcm_vc_power_mgr *mgr = rdev_get_drvdata(rdev);
-
-	return mgr->fixed_uV;
-}
-
 static int bcm_vc_power_list_dev_voltage(struct regulator_dev *rdev,
 	unsigned selector)
 {
@@ -152,20 +135,6 @@ static int bcm_vc_power_get_dev_voltage(struct regulator_dev *rdev)
 
 	return pdev->fixed_uV;
 }
-
-static struct regulator_ops mgr_ops = {
-	.list_voltage = bcm_vc_power_list_mgr_voltage,
-	.get_voltage = bcm_vc_power_get_mgr_voltage
-};
-
-static const struct regulator_desc mgr_desc = {
-	.name = MODULE_NAME,
-	.id = -1,
-	.type = REGULATOR_VOLTAGE,
-	.owner = THIS_MODULE,
-	.ops = &mgr_ops,
-	.n_voltages = 1
-};
 
 static struct regulator_ops dev_ops = {
 	.enable = bcm_vc_power_enable,
@@ -191,12 +160,6 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 	struct device_node *node = of_dev->dev.of_node;
 	struct bcm_vc_power_mgr *mgr = devm_kzalloc(&of_dev->dev,
 		sizeof(*mgr), GFP_KERNEL);
-	struct regulator_init_data *init_data;
-	struct regulator_config config = {
-		.dev = &of_dev->dev,
-		.of_node = node,
-		.driver_data = mgr
-	};
 	char *name;
 	int ret;
 
@@ -230,19 +193,6 @@ static int __devinit bcm_vc_power_mgr_probe(struct platform_device *of_dev)
 
 	dev_dbg(mgr->dev, "current = %08x\n", mgr->state);
 
-	init_data = of_get_regulator_init_data(mgr->dev, node);
-	init_data->constraints.apply_uV = false;
-	WARN_ON(init_data->constraints.min_uV != init_data->constraints.max_uV);
-	mgr->fixed_uV = init_data->constraints.max_uV;
-	config.init_data = init_data;
-
-	mgr->rdev = regulator_register(&mgr_desc, &config);
-	if (IS_ERR(mgr->rdev)) {
-		ret = PTR_ERR(mgr->rdev);
-		dev_warn(mgr->dev, "failed to register regulator (%d)\n", ret);
-		goto err;
-	}
-
 	platform_set_drvdata(of_dev, mgr);
 	return 0;
 
@@ -255,7 +205,6 @@ static int __devexit bcm_vc_power_mgr_remove(struct platform_device *of_dev)
 {
 	struct bcm_vc_power_mgr *mgr = platform_get_drvdata(of_dev);
 
-	regulator_unregister(mgr->rdev);
 	bcm_mbox_put(mgr->mbox);
 	platform_set_drvdata(of_dev, NULL);
 	return 0;
