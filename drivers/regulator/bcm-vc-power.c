@@ -24,10 +24,10 @@
 
 #define MODULE_NAME "bcm-vc-power"
 
-/* 27 bits available in mbox (0-26) */
-#define MAX_POWER_DEV 26
-#define PMASK  0x07ffffff
-#define PQUERY 0x08000000
+/* 25 bits available in mbox (4-29) */
+#define MAX_POWER_DEV 25
+#define PMASK  0x03ffffff
+#define PQUERY 0x04000000
 
 #define PWR_TO_MBOX(x) ((x) << 4)
 #define MBOX_TO_PWR(x) ((x) >> 4)
