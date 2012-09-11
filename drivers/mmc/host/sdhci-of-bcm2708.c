@@ -121,6 +121,8 @@ static struct dma_chan *bcm2708_sdhci_enable_slave_dma(struct sdhci_host *host)
 	slcfg.src_addr = res->start + SDHCI_BUFFER;
 
 	chan = dma_request_channel(mask, bcm2708_sdhci_dma_filter, NULL);
+	if (!chan)
+		return NULL;
 
 	if (dmaengine_device_control(chan,
 			BCM2708DMA_CONFIG, (unsigned long)&cfg)) {
