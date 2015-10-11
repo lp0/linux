@@ -62,6 +62,7 @@ struct bcm63xx_enet_platform_data {
 #define ENETSW_MAX_PORT	8
 #define ENETSW_PORTS_6328 5 /* 4 FE PHY + 1 RGMII */
 #define ENETSW_PORTS_6368 6 /* 4 FE PHY + 2 RGMII */
+#define ENETSW_PORTS_63168 8 /* 4 FE PHY + 4 RGMII */
 
 #define ENETSW_RGMII_PORT0	4
 

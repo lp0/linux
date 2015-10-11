@@ -7,8 +7,10 @@
 
 /* Chip Identifier / Revision register */
 #define PERF_REV_REG			0x0
-#define REV_CHIPID_SHIFT		16
-#define REV_CHIPID_MASK			(0xffff << REV_CHIPID_SHIFT)
+#define REV_CHIPID4_SHIFT		16
+#define REV_CHIPID4_MASK		(0xffff << REV_CHIPID4_SHIFT)
+#define REV_CHIPID5_SHIFT		12
+#define REV_CHIPID5_MASK		(0xfffff << REV_CHIPID5_SHIFT)
 #define REV_REVID_SHIFT			0
 #define REV_REVID_MASK			(0xff << REV_REVID_SHIFT)
 
@@ -209,6 +211,41 @@
 					CKCTL_6368_NAND_EN |		\
 					CKCTL_6368_IPSEC_EN)
 
+#define CKCTL_63168_DISABLE_GLESS_EN	(1 << 0)
+#define CKCTL_63168_VDSL_QPROC_EN	(1 << 1)
+#define CKCTL_63168_VDSL_AFE_EN		(1 << 2)
+#define CKCTL_63168_VDSL_EN		(1 << 3)
+#define CKCTL_63168_MIPS_EN		(1 << 4)
+#define CKCTL_63168_WLAN_OCP_EN		(1 << 5)
+#define CKCTL_63168_DECT_EN		(1 << 6)
+#define CKCTL_63168_FAP0_EN		(1 << 7)
+#define CKCTL_63168_FAP1_EN		(1 << 8)
+#define CKCTL_63168_SAR_EN		(1 << 9)
+#define CKCTL_63168_ROBOSW_EN		(1 << 10)
+#define CKCTL_63168_PCM_EN		(1 << 11)
+#define CKCTL_63168_USBD_EN		(1 << 12)
+#define CKCTL_63168_USBH_EN		(1 << 13)
+#define CKCTL_63168_IPSEC_EN		(1 << 14)
+#define CKCTL_63168_SPI_EN		(1 << 15)
+#define CKCTL_63168_HSSPI_EN		(1 << 16)
+#define CKCTL_63168_PCIE_EN		(1 << 17)
+#define CKCTL_63168_PHYMIPS_EN		(1 << 18)
+#define CKCTL_63168_GMAC_EN		(1 << 19)
+#define CKCTL_63168_NAND_EN		(1 << 20)
+#define CKCTL_63168_TBUS_EN		(1 << 27)
+#define CKCTL_63168_ROBOSW250_EN	(1 << 31)
+
+#define CKCTL_63168_ALL_SAFE_EN		(CKCTL_63168_SPI_EN |		\
+					CKCTL_63168_SAR_EN |		\
+					CKCTL_63168_ROBOSW_EN |		\
+					CKCTL_63168_ROBOSW250_EN |	\
+					CKCTL_63168_USBH_EN |		\
+					CKCTL_63168_DISABLE_GLESS_EN |	\
+					CKCTL_63168_GMAC_EN |		\
+					CKCTL_63168_NAND_EN |		\
+					CKCTL_63168_IPSEC_EN |		\
+					CKCTL_63168_PHYMIPS_EN)
+
 /* System PLL Control register	*/
 #define PERF_SYS_PLL_CTL_REG		0x8
 #define SYS_PLL_SOFT_RESET		0x1
@@ -222,6 +259,7 @@
 #define PERF_IRQMASK_6358_REG(x)	(0xc + (x) * 0x2c)
 #define PERF_IRQMASK_6362_REG(x)	(0x20 + (x) * 0x10)
 #define PERF_IRQMASK_6368_REG(x)	(0x20 + (x) * 0x10)
+#define PERF_IRQMASK_63168_REG(x)	(0x20 + (x) * 0x20)
 
 /* Interrupt Status register */
 #define PERF_IRQSTAT_3368_REG		0x10
@@ -232,6 +270,7 @@
 #define PERF_IRQSTAT_6358_REG(x)	(0x10 + (x) * 0x2c)
 #define PERF_IRQSTAT_6362_REG(x)	(0x28 + (x) * 0x10)
 #define PERF_IRQSTAT_6368_REG(x)	(0x28 + (x) * 0x10)
+#define PERF_IRQSTAT_63168_REG(x)	(0x30 + (x) * 0x20)
 
 /* External Interrupt Configuration register */
 #define PERF_EXTIRQ_CFG_REG_3368	0x14
@@ -242,6 +281,7 @@
 #define PERF_EXTIRQ_CFG_REG_6358	0x14
 #define PERF_EXTIRQ_CFG_REG_6362	0x18
 #define PERF_EXTIRQ_CFG_REG_6368	0x18
+#define PERF_EXTIRQ_CFG_REG_63168	0x18
 
 #define PERF_EXTIRQ_CFG_REG2_6368	0x1c
 
@@ -271,6 +311,7 @@
 #define PERF_SOFTRESET_6358_REG		0x34
 #define PERF_SOFTRESET_6362_REG		0x10
 #define PERF_SOFTRESET_6368_REG		0x10
+#define PERF_SOFTRESET_63168_REG	0x10
 
 #define SOFTRESET_3368_SPI_MASK		(1 << 0)
 #define SOFTRESET_3368_ENET_MASK	(1 << 2)
@@ -363,6 +404,15 @@
 #define SOFTRESET_6368_USBS_MASK	(1 << 11)
 #define SOFTRESET_6368_USBH_MASK	(1 << 12)
 #define SOFTRESET_6368_PCM_MASK		(1 << 13)
+
+#define SOFTRESET_63168_SPI_MASK	(1 << 0)
+#define SOFTRESET_63168_EPHY_MASK	(1 << 2)
+#define SOFTRESET_63168_SAR_MASK	(1 << 3)
+#define SOFTRESET_63168_USBD_MASK	(1 << 5)
+#define SOFTRESET_63168_USBH_MASK	(1 << 6)
+#define SOFTRESET_63168_PCIE_CORE_MASK	(1 << 8)
+#define SOFTRESET_63168_PCIE_MASK	(1 << 9)
+#define SOFTRESET_63168_PCIE_EXT_MASK	(1 << 10)
 
 /* MIPS PLL control register */
 #define PERF_MIPSPLLCTL_REG		0x34
@@ -541,10 +591,13 @@
 #define GPIO_PINMUX_OTHR_6328_USB_HOST	(1 << GPIO_PINMUX_OTHR_6328_USB_SHIFT)
 #define GPIO_PINMUX_OTHR_6328_USB_DEV	(2 << GPIO_PINMUX_OTHR_6328_USB_SHIFT)
 
-#define GPIO_BASEMODE_6368_REG		0x38
-#define GPIO_BASEMODE_6368_UART2	0x1
-#define GPIO_BASEMODE_6368_GPIO		0x0
-#define GPIO_BASEMODE_6368_MASK		0x7
+/* REG on 6362, 63168, 63268, 6368, 6816, 68220 */
+#define GPIO_BASEMODE_REG		0x38
+/* NAND on 6362, 63168, 63268, 68220 */
+#define GPIO_BASEMODE_NAND		0x4
+#define GPIO_BASEMODE_UART2		0x1
+#define GPIO_BASEMODE_GPIO		0x0
+#define GPIO_BASEMODE_MASK		0x7
 /* those bits must be kept as read in gpio basemode register*/
 
 #define GPIO_STRAPBUS_REG		0x40
@@ -554,6 +607,10 @@
 #define STRAPBUS_6368_BOOT_SEL_NAND	0
 #define STRAPBUS_6368_BOOT_SEL_SERIAL	1
 #define STRAPBUS_6368_BOOT_SEL_PARALLEL 3
+
+#define GPIO_ROBOSW_GPHY_CTL_REG	0x54
+#define GPIO_63168_GPHY_LOW_POWER	(1 << 3)
+#define GPIO_63168_GPHY_MUX_SELECT	(1 << 18)
 
 
 /*************************************************************************
@@ -1202,6 +1259,8 @@
 #define MEMC_CFG_ROW_SHIFT		6
 #define MEMC_CFG_ROW_MASK		(0x3 << MEMC_CFG_ROW_SHIFT)
 
+#define MEMC_CSEND_REG			0x8
+
 
 /*************************************************************************
  * _REG relative to RSET_DDR
@@ -1228,7 +1287,6 @@
 #define DDR_DMIPSPLLDIV_6368_REG	0x24
 #define DMIPSPLLDIV_6368_MDIV_SHIFT	0
 #define DMIPSPLLDIV_6368_MDIV_MASK	(0xff << DMIPSPLLDIV_6368_MDIV_SHIFT)
-
 
 /*************************************************************************
  * _REG relative to RSET_M2M
@@ -1369,6 +1427,12 @@
 #define STRAPBUS_6328_BOOT_SEL_SERIAL	(1 << 28)
 #define STRAPBUS_6328_BOOT_SEL_NAND	(0 << 28)
 
+#define MISC_STRAPBUS_63168_REG		0x14
+#define STRAPBUS_63168_FCVO_SHIFT	21
+#define STRAPBUS_63168_FCVO_MASK	(0xf << STRAPBUS_63168_FCVO_SHIFT)
+#define STRAPBUS_63168_BOOT_SEL_SERIAL	(1 << 11)
+#define STRAPBUS_63168_BOOT_SEL_NAND	(0 << 11)
+
 /*************************************************************************
  * _REG relative to RSET_PCIE
  *************************************************************************/
@@ -1426,5 +1490,45 @@
 
 #define OTP_USER_BITS_6328_REG(i)	(0x20 + (i) * 4)
 #define   OTP_6328_REG3_TP1_DISABLED	BIT(9)
+
+/*************************************************************************
+ * _REG relative to RSET_NAND
+ *************************************************************************/
+
+/* only valid for BRCMNAND revision < 6.0 */
+
+#define NAND_REVISION_REG		0x00
+#define NAND_CMD_START_REG		0x04
+#define NAND_CMD_START_DEV_ID_READ	(0x07 << 24)
+#define NAND_CMD_EXT_ADDR_REG		0x08
+#define NAND_CMD_ADDR_REG		0x0c
+
+#define NAND_BOOT_CFG_REG		0x14
+#define NAND_BOOT_CFG_EBC_CS0_SEL	(1 << 0)
+#define NAND_BOOT_CFG_EBC_CS1_SEL	(1 << 1)
+#define NAND_BOOT_CFG_EBC_CS2_SEL	(1 << 2)
+#define NAND_BOOT_CFG_EBC_CS3_SEL	(1 << 3)
+#define NAND_BOOT_CFG_EBC_CS4_SEL	(1 << 4)
+#define NAND_BOOT_CFG_EBC_CS5_SEL	(1 << 5)
+#define NAND_BOOT_CFG_EBC_CS6_SEL	(1 << 6)
+#define NAND_BOOT_CFG_EBC_CS7_SEL	(1 << 7)
+#define NAND_BOOT_CFG_EBI_CS0_USES_NAND	(1 << 8)
+#define NAND_BOOT_CFG_EBI_CS1_USES_NAND	(1 << 9)
+#define NAND_BOOT_CFG_EBI_CS2_USES_NAND	(1 << 10)
+#define NAND_BOOT_CFG_EBI_CS3_USES_NAND	(1 << 11)
+#define NAND_BOOT_CFG_EBI_CS4_USES_NAND	(1 << 12)
+#define NAND_BOOT_CFG_EBI_CS5_USES_NAND	(1 << 13)
+#define NAND_BOOT_CFG_EBI_CS6_USES_NAND	(1 << 14)
+#define NAND_BOOT_CFG_EBI_CS7_USES_NAND	(1 << 15)
+#define NAND_BOOT_CFG_WR_PROT_BLK0	(1 << 28)
+#define NAND_BOOT_CFG_AUTO_DEV_ID	(1 << 30)
+#define NAND_BOOT_CFG_CS_LOCK		(1 << 31)
+
+#define NAND_CS_XOR_REG			0x18
+#define NAND_SEMAPHORE_REG		0x58
+#define NAND_FLASH_DEV_ID_REG		0x60
+#define NAND_INTF_STAT_REG		0x6c
+#define NAND_INTF_STAT_FLASH_READY	(1 << 30)
+
 
 #endif /* BCM63XX_REGS_H_ */

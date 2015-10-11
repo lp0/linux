@@ -37,7 +37,8 @@ static __init void bcm63xx_spi_regs_init(void)
 	if (BCMCPU_IS_6338() || BCMCPU_IS_6348())
 		bcm63xx_regs_spi = bcm6348_regs_spi;
 	if (BCMCPU_IS_3368() || BCMCPU_IS_6358() ||
-		BCMCPU_IS_6362() || BCMCPU_IS_6368())
+		BCMCPU_IS_6362() || BCMCPU_IS_6368() ||
+		BCMCPU_IS_63168())
 		bcm63xx_regs_spi = bcm6358_regs_spi;
 }
 
@@ -85,7 +86,7 @@ int __init bcm63xx_spi_register(void)
 	}
 
 	if (BCMCPU_IS_3368() || BCMCPU_IS_6358() || BCMCPU_IS_6362() ||
-		BCMCPU_IS_6368()) {
+		BCMCPU_IS_6368() || BCMCPU_IS_63168()) {
 		spi_resources[0].end += BCM_6358_RSET_SPI_SIZE - 1;
 		spi_pdata.fifo_size = SPI_6358_MSG_DATA_SIZE;
 		spi_pdata.msg_type_shift = SPI_6358_MSG_TYPE_SHIFT;

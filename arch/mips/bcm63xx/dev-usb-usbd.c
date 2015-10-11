@@ -41,7 +41,7 @@ int __init bcm63xx_usbd_register(const struct bcm63xx_usbd_platform_data *pd)
 		IRQ_USBD_RXDMA2, IRQ_USBD_TXDMA2 };
 	int i;
 
-	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6368())
+	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6368() && !BCMCPU_IS_63168())
 		return 0;
 
 	usbd_resources[0].start = bcm63xx_regset_address(RSET_USBD);

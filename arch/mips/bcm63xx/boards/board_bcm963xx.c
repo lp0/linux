@@ -5,6 +5,10 @@
  *
  * Copyright (C) 2008 Maxime Bizon <mbizon@freebox.fr>
  * Copyright (C) 2008 Florian Fainelli <florian@openwrt.org>
+ * Copyright 2015 Simon Arlott
+ *
+ * BCM63168 support derived from code:
+ * Copyright 2000-2010 Broadcom Corporation
  */
 
 #include <linux/init.h>
@@ -754,6 +758,22 @@ const char *board_get_name(void)
 	return board.name;
 }
 
+static void __init bcm63168_nand_recfg(u32 *boot_cfg, bool read) {
+	if (read) {
+		/* configure nand for reading */
+		*boot_cfg = bcm_nand_readl(NAND_BOOT_CFG_REG);
+		bcm_nand_writel(NAND_BOOT_CFG_AUTO_DEV_ID
+				| NAND_BOOT_CFG_EBC_CS2_SEL
+				| NAND_BOOT_CFG_EBC_CS0_SEL,
+				NAND_BOOT_CFG_REG);
+		bcm_nand_writel(1, NAND_CS_XOR_REG);
+	} else {
+		/* restore previous configuration */
+		bcm_nand_writel(*boot_cfg, NAND_BOOT_CFG_REG);
+		bcm_nand_writel(0, NAND_CS_XOR_REG);
+	}
+}
+
 /*
  * early init callback, read nvram data from flash and checksum it
  */
@@ -765,11 +785,29 @@ void __init board_prom_init(void)
 	char *board_name = NULL;
 	u32 val;
 	struct bcm_hcs *hcs;
+	u32 bcm63168_nand_boot_cfg;
+
+	if (BCMCPU_IS_63168()) {
+		bool boot_nand;
+		int ret;
+
+		val = bcm_misc_readl(MISC_STRAPBUS_63168_REG);
+		boot_nand = !(val & STRAPBUS_63168_BOOT_SEL_NAND);
+
+		if (!boot_nand)
+			panic("BCM63168 NVRAM data is not in NAND");
+
+		ret = bcm63xx_flash_register();
+		if (ret)
+			panic("BCM63168 NAND flash device error %d", ret);
+
+		bcm63168_nand_recfg(&bcm63168_nand_boot_cfg, true);
+	}
 
 	/* read base address of boot chip select (0)
-	 * 6328/6362 do not have MPI but boot from a fixed address
+	 * 6328/6362/63168 do not have MPI but boot from a fixed address
 	 */
-	if (BCMCPU_IS_6328() || BCMCPU_IS_6362()) {
+	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() | BCMCPU_IS_63168()) {
 		val = 0x18000000;
 	} else {
 		val = bcm_mpi_readl(MPI_CSBASE_REG(0));
@@ -787,6 +825,9 @@ void __init board_prom_init(void)
 	printk(KERN_INFO PFX "CFE version: %s\n", cfe_version);
 
 	bcm63xx_nvram_init(boot_addr + BCM963XX_NVRAM_OFFSET);
+
+	if (BCMCPU_IS_63168())
+		bcm63168_nand_recfg(&bcm63168_nand_boot_cfg, false);
 
 	if (BCMCPU_IS_3368()) {
 		hcs = (struct bcm_hcs *)boot_addr;
@@ -918,7 +959,8 @@ int __init board_register_devices(void)
 
 	bcm63xx_hsspi_register();
 
-	bcm63xx_flash_register();
+	if (!BCMCPU_IS_63168())
+		bcm63xx_flash_register();
 
 	bcm63xx_led_data.num_leds = ARRAY_SIZE(board.leds);
 	bcm63xx_led_data.leds = board.leds;
