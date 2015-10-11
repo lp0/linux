@@ -5,6 +5,10 @@
  *
  * Copyright (C) 2008 Maxime Bizon <mbizon@freebox.fr>
  * Copyright (C) 2009 Florian Fainelli <florian@openwrt.org>
+ * Copyright 2015 Simon Arlott
+ *
+ * BCM63168 support derived from code:
+ * Copyright 2000-2010 Broadcom Corporation
  */
 
 #include <linux/kernel.h>
@@ -13,6 +17,7 @@
 #include <asm/cpu.h>
 #include <asm/cpu-info.h>
 #include <asm/mipsregs.h>
+#include <asm/setup.h>
 #include <bcm63xx_cpu.h>
 #include <bcm63xx_regs.h>
 #include <bcm63xx_io.h>
@@ -24,7 +29,7 @@ EXPORT_SYMBOL(bcm63xx_regs_base);
 const int *bcm63xx_irqs;
 EXPORT_SYMBOL(bcm63xx_irqs);
 
-u16 bcm63xx_cpu_id __read_mostly;
+u32 bcm63xx_cpu_id __read_mostly;
 EXPORT_SYMBOL(bcm63xx_cpu_id);
 
 static u8 bcm63xx_cpu_rev;
@@ -99,6 +104,15 @@ static const int bcm6368_irqs[] = {
 
 };
 
+static const unsigned long bcm63168_regs_base[] = {
+	__GEN_CPU_REGS_TABLE(63168)
+};
+
+static const int bcm63168_irqs[] = {
+	__GEN_CPU_IRQ_TABLE(63168)
+
+};
+
 u8 bcm63xx_get_cpu_rev(void)
 {
 	return bcm63xx_cpu_rev;
@@ -118,7 +132,7 @@ unsigned int bcm63xx_get_memory_size(void)
 
 static unsigned int detect_cpu_clock(void)
 {
-	u16 cpu_id = bcm63xx_get_cpu_id();
+	u32 cpu_id = bcm63xx_get_cpu_id();
 
 	switch (cpu_id) {
 	case BCM3368_CPU_ID:
@@ -222,6 +236,7 @@ static unsigned int detect_cpu_clock(void)
 			return 320000000;
 		}
 	}
+
 	case BCM6368_CPU_ID:
 	{
 		unsigned int tmp, p1, p2, ndiv, m1;
@@ -245,6 +260,29 @@ static unsigned int detect_cpu_clock(void)
 		return (((64 * 1000000) / p1) * p2 * ndiv) / m1;
 	}
 
+	case BCM63168_CPU_ID:
+	{
+		unsigned int tmp, mips_pll_fcvo;
+
+		tmp = bcm_misc_readl(MISC_STRAPBUS_63168_REG);
+		mips_pll_fcvo = (tmp & STRAPBUS_63168_FCVO_MASK)
+				>> STRAPBUS_63168_FCVO_SHIFT;
+		switch (mips_pll_fcvo) {
+		case 0x02:
+		case 0x0b:
+		case 0x0f:
+			return 400000000;
+		case 0x03:
+		case 0x0e:
+			return 320000000;
+		case 0x0a:
+			return 333000000;
+
+		default:
+			panic("Failed to detect clock for BCM63168 CPU with mips_pll_fcvo=%02X\n", mips_pll_fcvo);
+		}
+	}
+
 	default:
 		panic("Failed to detect clock for CPU with id=%04X\n", cpu_id);
 	}
@@ -265,6 +303,9 @@ static unsigned int detect_memory_size(void)
 		val = bcm_sdram_readl(SDRAM_MBASE_REG);
 		return val * 8 * 1024 * 1024;
 	}
+
+	if (BCMCPU_IS_63168())
+		return bcm_memc_readl(MEMC_CSEND_REG) << 24;
 
 	if (BCMCPU_IS_6338() || BCMCPU_IS_6348()) {
 		val = bcm_sdram_readl(SDRAM_CFG_REG);
@@ -323,6 +364,7 @@ void __init bcm63xx_cpu_init(void)
 		break;
 	}
 
+
 	/*
 	 * really early to panic, but delaying panic would not help since we
 	 * will never get any working console
@@ -332,45 +374,55 @@ void __init bcm63xx_cpu_init(void)
 
 	/* read out CPU type */
 	tmp = bcm_readl(chipid_reg);
-	bcm63xx_cpu_id = (tmp & REV_CHIPID_MASK) >> REV_CHIPID_SHIFT;
+	bcm63xx_cpu_id = (tmp & REV_CHIPID5_MASK) >> REV_CHIPID5_SHIFT;
 	bcm63xx_cpu_rev = (tmp & REV_REVID_MASK) >> REV_REVID_SHIFT;
 
 	switch (bcm63xx_cpu_id) {
-	case BCM3368_CPU_ID:
-		bcm63xx_regs_base = bcm3368_regs_base;
-		bcm63xx_irqs = bcm3368_irqs;
+	case BCM63168_CPU_ID:
+		bcm63xx_regs_base = bcm63168_regs_base;
+		bcm63xx_irqs = bcm63168_irqs;
 		break;
-	case BCM6328_CPU_ID:
-		bcm63xx_regs_base = bcm6328_regs_base;
-		bcm63xx_irqs = bcm6328_irqs;
-		break;
-	case BCM6338_CPU_ID:
-		bcm63xx_regs_base = bcm6338_regs_base;
-		bcm63xx_irqs = bcm6338_irqs;
-		break;
-	case BCM6345_CPU_ID:
-		bcm63xx_regs_base = bcm6345_regs_base;
-		bcm63xx_irqs = bcm6345_irqs;
-		break;
-	case BCM6348_CPU_ID:
-		bcm63xx_regs_base = bcm6348_regs_base;
-		bcm63xx_irqs = bcm6348_irqs;
-		break;
-	case BCM6358_CPU_ID:
-		bcm63xx_regs_base = bcm6358_regs_base;
-		bcm63xx_irqs = bcm6358_irqs;
-		break;
-	case BCM6362_CPU_ID:
-		bcm63xx_regs_base = bcm6362_regs_base;
-		bcm63xx_irqs = bcm6362_irqs;
-		break;
-	case BCM6368_CPU_ID:
-		bcm63xx_regs_base = bcm6368_regs_base;
-		bcm63xx_irqs = bcm6368_irqs;
-		break;
+
 	default:
-		panic("unsupported broadcom CPU %x", bcm63xx_cpu_id);
-		break;
+		bcm63xx_cpu_id = (tmp & REV_CHIPID4_MASK) >> REV_CHIPID4_SHIFT;
+
+		switch (bcm63xx_cpu_id) {
+		case BCM3368_CPU_ID:
+			bcm63xx_regs_base = bcm3368_regs_base;
+			bcm63xx_irqs = bcm3368_irqs;
+			break;
+		case BCM6328_CPU_ID:
+			bcm63xx_regs_base = bcm6328_regs_base;
+			bcm63xx_irqs = bcm6328_irqs;
+			break;
+		case BCM6338_CPU_ID:
+			bcm63xx_regs_base = bcm6338_regs_base;
+			bcm63xx_irqs = bcm6338_irqs;
+			break;
+		case BCM6345_CPU_ID:
+			bcm63xx_regs_base = bcm6345_regs_base;
+			bcm63xx_irqs = bcm6345_irqs;
+			break;
+		case BCM6348_CPU_ID:
+			bcm63xx_regs_base = bcm6348_regs_base;
+			bcm63xx_irqs = bcm6348_irqs;
+			break;
+		case BCM6358_CPU_ID:
+			bcm63xx_regs_base = bcm6358_regs_base;
+			bcm63xx_irqs = bcm6358_irqs;
+			break;
+		case BCM6362_CPU_ID:
+			bcm63xx_regs_base = bcm6362_regs_base;
+			bcm63xx_irqs = bcm6362_irqs;
+			break;
+		case BCM6368_CPU_ID:
+			bcm63xx_regs_base = bcm6368_regs_base;
+			bcm63xx_irqs = bcm6368_irqs;
+			break;
+		default:
+			panic("unsupported broadcom CPU %x", bcm63xx_cpu_id);
+			break;
+		}
 	}
 
 	bcm63xx_cpu_freq = detect_cpu_clock();
@@ -382,4 +434,14 @@ void __init bcm63xx_cpu_init(void)
 	       bcm63xx_cpu_freq / 1000000);
 	printk(KERN_INFO "%uMB of RAM installed\n",
 	       bcm63xx_memory_size >> 20);
+
+#ifndef CONFIG_MIPS_EJTAG_FDC_EARLYCON
+	/* registers are setup, enable early_printk now
+	 * so that board detection failures can be output
+	 * (but don't do this before the JTAG console)
+	 */
+#ifdef CONFIG_EARLY_PRINTK
+	setup_early_printk();
+#endif
+#endif
 }

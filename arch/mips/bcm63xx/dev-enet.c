@@ -176,7 +176,8 @@ static int __init register_shared(void)
 	else
 		shared_res[0].end += (RSET_ENETDMA_SIZE)  - 1;
 
-	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368())
+	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368()
+			|| BCMCPU_IS_63168())
 		chan_count = 32;
 	else if (BCMCPU_IS_6345())
 		chan_count = 8;
@@ -276,7 +277,8 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 {
 	int ret;
 
-	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368())
+	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368()
+			&& !BCMCPU_IS_63168())
 		return -ENODEV;
 
 	ret = register_shared();
@@ -293,7 +295,7 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 
 	memcpy(bcm63xx_enetsw_device.dev.platform_data, pd, sizeof(*pd));
 
-	if (BCMCPU_IS_6328())
+	if (BCMCPU_IS_6328() || BCMCPU_IS_63168())
 		enetsw_pd.num_ports = ENETSW_PORTS_6328;
 	else if (BCMCPU_IS_6362() || BCMCPU_IS_6368())
 		enetsw_pd.num_ports = ENETSW_PORTS_6368;
