@@ -343,6 +343,8 @@ static int __init bcm63xx_pci_init(void)
 	case BCM6358_CPU_ID:
 	case BCM6368_CPU_ID:
 		return bcm63xx_register_pci();
+	case BCM63168_CPU_ID:
+		return bcm63xx_register_pcie();
 	default:
 		return -ENODEV;
 	}

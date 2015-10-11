@@ -146,7 +146,8 @@ static int __init register_enetdma(bool enetsw)
 	enetdma_pd.dmas_offset = bcm63xx_regset_address(RSET_ENETDMAS);
 	enetdma_pd.dmas_offset -= bcm63xx_regset_address(RSET_ENETDMA);
 
-	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368()) {
+	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368()
+			|| BCMCPU_IS_63168()) {
 		enetdma_pd.n_channels = 32;
 	} else if (BCMCPU_IS_6345()) {
 		enetdma_pd.n_channels = 8;
@@ -273,7 +274,8 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 {
 	int ret;
 
-	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368())
+	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368()
+			&& !BCMCPU_IS_63168())
 		return -ENODEV;
 
 	ret = register_enetdma(true);
@@ -290,6 +292,8 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 		enetsw_pd.num_ports = ENETSW_PORTS_6328;
 	else if (BCMCPU_IS_6362() || BCMCPU_IS_6368())
 		enetsw_pd.num_ports = ENETSW_PORTS_6368;
+	else if (BCMCPU_IS_63168())
+		enetsw_pd.num_ports = ENETSW_PORTS_63168;
 
 	if (!enetsw_pd.rx_max_ring_size)
 		enetsw_pd.rx_max_ring_size = 512;

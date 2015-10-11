@@ -158,6 +158,7 @@ static void __internal_irq_unmask_##width(struct irq_data *d,		\
 
 BUILD_IPIC_INTERNAL(32);
 BUILD_IPIC_INTERNAL(64);
+BUILD_IPIC_INTERNAL(128);
 
 asmlinkage void plat_irq_dispatch(void)
 {
@@ -343,6 +344,7 @@ static int bcm63xx_external_irq_set_type(struct irq_data *d,
 	case BCM6358_CPU_ID:
 	case BCM6362_CPU_ID:
 	case BCM6368_CPU_ID:
+	case BCM63168_CPU_ID:
 		if (levelsense)
 			reg |= EXTIRQ_CFG_LEVELSENSE(irq);
 		else
@@ -514,6 +516,17 @@ static void bcm63xx_init_irq(void)
 		ext_irq_end = BCM_6368_EXT_IRQ5 - IRQ_INTERNAL_BASE;
 		ext_irq_cfg_reg1 = PERF_EXTIRQ_CFG_REG_6368;
 		ext_irq_cfg_reg2 = PERF_EXTIRQ_CFG_REG2_6368;
+	case BCM63168_CPU_ID:
+		irq_stat_addr[0] += PERF_IRQSTAT_63168_REG(0);
+		irq_mask_addr[0] += PERF_IRQMASK_63168_REG(0);
+		irq_stat_addr[1] += PERF_IRQSTAT_63168_REG(1);
+		irq_mask_addr[1] += PERF_IRQMASK_63168_REG(1);
+		irq_bits = 128;
+		ext_irq_count = 4;
+		is_ext_irq_cascaded = 1;
+		ext_irq_start = BCM_63168_EXT_IRQ0 - IRQ_INTERNAL_BASE;
+		ext_irq_end = BCM_63168_EXT_IRQ3 - IRQ_INTERNAL_BASE;
+		ext_irq_cfg_reg1 = PERF_EXTIRQ_CFG_REG_63168;
 		break;
 	default:
 		BUG();
@@ -523,10 +536,14 @@ static void bcm63xx_init_irq(void)
 		dispatch_internal = __dispatch_internal_32;
 		internal_irq_mask = __internal_irq_mask_32;
 		internal_irq_unmask = __internal_irq_unmask_32;
-	} else {
+	} else if (irq_bits == 64) {
 		dispatch_internal = __dispatch_internal_64;
 		internal_irq_mask = __internal_irq_mask_64;
 		internal_irq_unmask = __internal_irq_unmask_64;
+	} else {
+		dispatch_internal = __dispatch_internal_128;
+		internal_irq_mask = __internal_irq_mask_128;
+		internal_irq_unmask = __internal_irq_unmask_128;
 	}
 }
 

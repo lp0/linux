@@ -39,6 +39,11 @@ config BCM63XX_CPU_6368
 	bool "support 6368 CPU"
 	select SYS_HAS_CPU_BMIPS4350
 	select HW_HAS_PCI
+
+config BCM63XX_CPU_63168
+	bool "support 63168 CPU"
+	select SYS_HAS_CPU_BMIPS4350
+	select HW_HAS_PCI
 endmenu
 
 source "arch/mips/bcm63xx/boards/Kconfig"

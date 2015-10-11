@@ -133,6 +133,9 @@ static void enetsw_set(struct clk *clk, int enable)
 				CKCTL_6368_SWPKT_USB_EN |
 				CKCTL_6368_SWPKT_SAR_EN,
 				enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_ROBOSW_EN |
+				CKCTL_63168_ROBOSW250_EN, enable);
 	else
 		return;
 
@@ -177,6 +180,8 @@ static void usbh_set(struct clk *clk, int enable)
 		bcm_hwclock_set(CKCTL_6362_USBH_EN, enable);
 	else if (BCMCPU_IS_6368())
 		bcm_hwclock_set(CKCTL_6368_USBH_EN, enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_USBH_EN, enable);
 }
 
 static struct clk clk_usbh = {
@@ -194,6 +199,8 @@ static void usbd_set(struct clk *clk, int enable)
 		bcm_hwclock_set(CKCTL_6362_USBD_EN, enable);
 	else if (BCMCPU_IS_6368())
 		bcm_hwclock_set(CKCTL_6368_USBD_EN, enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_USBD_EN, enable);
 }
 
 static struct clk clk_usbd = {
@@ -215,9 +222,12 @@ static void spi_set(struct clk *clk, int enable)
 		mask = CKCTL_6358_SPI_EN;
 	else if (BCMCPU_IS_6362())
 		mask = CKCTL_6362_SPI_EN;
-	else
-		/* BCMCPU_IS_6368 */
+	else if (BCMCPU_IS_6368())
 		mask = CKCTL_6368_SPI_EN;
+	else if (BCMCPU_IS_63168())
+		mask = CKCTL_63168_SPI_EN;
+	else
+		return;
 	bcm_hwclock_set(mask, enable);
 }
 
@@ -236,6 +246,8 @@ static void hsspi_set(struct clk *clk, int enable)
 		mask = CKCTL_6328_HSSPI_EN;
 	else if (BCMCPU_IS_6362())
 		mask = CKCTL_6362_HSSPI_EN;
+	else if (BCMCPU_IS_63168())
+		mask = CKCTL_63168_HSSPI_EN;
 	else
 		return;
 
@@ -252,11 +264,13 @@ static struct clk clk_hsspi = {
  */
 static void xtm_set(struct clk *clk, int enable)
 {
-	if (!BCMCPU_IS_6368())
+	if (BCMCPU_IS_6368())
+		bcm_hwclock_set(CKCTL_6368_SAR_EN |
+				CKCTL_6368_SWPKT_SAR_EN, enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_SAR_EN, enable);
+	else
 		return;
-
-	bcm_hwclock_set(CKCTL_6368_SAR_EN |
-			CKCTL_6368_SWPKT_SAR_EN, enable);
 
 	if (enable) {
 		/* reset sar core afer clock change */
@@ -281,6 +295,8 @@ static void ipsec_set(struct clk *clk, int enable)
 		bcm_hwclock_set(CKCTL_6362_IPSEC_EN, enable);
 	else if (BCMCPU_IS_6368())
 		bcm_hwclock_set(CKCTL_6368_IPSEC_EN, enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_IPSEC_EN, enable);
 }
 
 static struct clk clk_ipsec = {
@@ -297,6 +313,8 @@ static void pcie_set(struct clk *clk, int enable)
 		bcm_hwclock_set(CKCTL_6328_PCIE_EN, enable);
 	else if (BCMCPU_IS_6362())
 		bcm_hwclock_set(CKCTL_6362_PCIE_EN, enable);
+	else if (BCMCPU_IS_63168())
+		bcm_hwclock_set(CKCTL_63168_PCIE_EN, enable);
 }
 
 static struct clk clk_pcie = {
@@ -376,9 +394,9 @@ struct clk *clk_get(struct device *dev, const char *id)
 		return &clk_periph;
 	if ((BCMCPU_IS_3368() || BCMCPU_IS_6358()) && !strcmp(id, "pcm"))
 		return &clk_pcm;
-	if ((BCMCPU_IS_6362() || BCMCPU_IS_6368()) && !strcmp(id, "ipsec"))
+	if ((BCMCPU_IS_6362() || BCMCPU_IS_6368() || BCMCPU_IS_63168()) && !strcmp(id, "ipsec"))
 		return &clk_ipsec;
-	if ((BCMCPU_IS_6328() || BCMCPU_IS_6362()) && !strcmp(id, "pcie"))
+	if ((BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_63168()) && !strcmp(id, "pcie"))
 		return &clk_pcie;
 	return ERR_PTR(-ENOENT);
 }
@@ -393,6 +411,7 @@ EXPORT_SYMBOL(clk_put);
 
 #define HSSPI_PLL_HZ_6328	133333333
 #define HSSPI_PLL_HZ_6362	400000000
+#define HSSPI_PLL_HZ_63168	400000000
 
 static int __init bcm63xx_clk_init(void)
 {
@@ -402,6 +421,9 @@ static int __init bcm63xx_clk_init(void)
 		break;
 	case BCM6362_CPU_ID:
 		clk_hsspi.rate = HSSPI_PLL_HZ_6362;
+		break;
+	case BCM63168_CPU_ID:
+		clk_hsspi.rate = HSSPI_PLL_HZ_63168;
 		break;
 	}
 
