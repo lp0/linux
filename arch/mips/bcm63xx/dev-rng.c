@@ -28,7 +28,7 @@ static struct platform_device bcm63xx_rng_device = {
 
 int __init bcm63xx_rng_register(void)
 {
-	if (!BCMCPU_IS_6368())
+	if (!BCMCPU_IS_6368() && !BCMCPU_IS_63168())
 		return -ENODEV;
 
 	rng_resources[0].start = bcm63xx_regset_address(RSET_RNG);
