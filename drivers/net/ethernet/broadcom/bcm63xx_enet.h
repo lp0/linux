@@ -1,20 +1,21 @@
 #ifndef BCM63XX_ENET_H_
 #define BCM63XX_ENET_H_
 
+#include <linux/bcm63xx_dev_enet.h>
+#include <linux/bcm63xx_iudma.h>
 #include <linux/types.h>
 #include <linux/mii.h>
 #include <linux/mutex.h>
 #include <linux/phy.h>
 #include <linux/platform_device.h>
 
-#include <bcm63xx_regs.h>
-#include <bcm63xx_irq.h>
-#include <bcm63xx_io.h>
-#include <bcm63xx_iudma.h>
-
 /* default number of descriptor */
-#define BCMENET_DEF_RX_DESC	64
-#define BCMENET_DEF_TX_DESC	32
+#define BCMENET_DEF_RX_DESC	16
+#define BCMENET_DEF_TX_DESC	16
+
+/* maximum number of descriptor */
+#define BCMENET_MAX_RX_DESC	8192
+#define BCMENET_MAX_TX_DESC	8192
 
 /* maximum burst len for dma (4 bytes unit) */
 #define BCMENET_DMA_MAXBURST	16
@@ -31,6 +32,174 @@
  * get overflow information if packet size is 2048 or above
  */
 #define BCMENET_MAX_MTU		2046
+
+
+#define BCMENET_MAX_CLKS	3
+
+
+/* Receiver Configuration register */
+#define ENET_RXCFG_REG			0x0
+#define ENET_RXCFG_ALLMCAST_SHIFT	1
+#define ENET_RXCFG_ALLMCAST_MASK	(1 << ENET_RXCFG_ALLMCAST_SHIFT)
+#define ENET_RXCFG_PROMISC_SHIFT	3
+#define ENET_RXCFG_PROMISC_MASK		(1 << ENET_RXCFG_PROMISC_SHIFT)
+#define ENET_RXCFG_LOOPBACK_SHIFT	4
+#define ENET_RXCFG_LOOPBACK_MASK	(1 << ENET_RXCFG_LOOPBACK_SHIFT)
+#define ENET_RXCFG_ENFLOW_SHIFT		5
+#define ENET_RXCFG_ENFLOW_MASK		(1 << ENET_RXCFG_ENFLOW_SHIFT)
+
+/* Receive Maximum Length register */
+#define ENET_RXMAXLEN_REG		0x4
+#define ENET_RXMAXLEN_SHIFT		0
+#define ENET_RXMAXLEN_MASK		(0x7ff << ENET_RXMAXLEN_SHIFT)
+
+/* Transmit Maximum Length register */
+#define ENET_TXMAXLEN_REG		0x8
+#define ENET_TXMAXLEN_SHIFT		0
+#define ENET_TXMAXLEN_MASK		(0x7ff << ENET_TXMAXLEN_SHIFT)
+
+/* MII Status/Control register */
+#define ENET_MIISC_REG			0x10
+#define ENET_MIISC_MDCFREQDIV_SHIFT	0
+#define ENET_MIISC_MDCFREQDIV_MASK	(0x7f << ENET_MIISC_MDCFREQDIV_SHIFT)
+#define ENET_MIISC_PREAMBLEEN_SHIFT	7
+#define ENET_MIISC_PREAMBLEEN_MASK	(1 << ENET_MIISC_PREAMBLEEN_SHIFT)
+
+/* MII Data register */
+#define ENET_MIIDATA_REG		0x14
+#define ENET_MIIDATA_DATA_SHIFT		0
+#define ENET_MIIDATA_DATA_MASK		(0xffff << ENET_MIIDATA_DATA_SHIFT)
+#define ENET_MIIDATA_TA_SHIFT		16
+#define ENET_MIIDATA_TA_MASK		(0x3 << ENET_MIIDATA_TA_SHIFT)
+#define ENET_MIIDATA_REG_SHIFT		18
+#define ENET_MIIDATA_REG_MASK		(0x1f << ENET_MIIDATA_REG_SHIFT)
+#define ENET_MIIDATA_PHYID_SHIFT	23
+#define ENET_MIIDATA_PHYID_MASK		(0x1f << ENET_MIIDATA_PHYID_SHIFT)
+#define ENET_MIIDATA_OP_READ_MASK	(0x6 << 28)
+#define ENET_MIIDATA_OP_WRITE_MASK	(0x5 << 28)
+
+/* Ethernet Interrupt Mask register */
+#define ENET_IRMASK_REG			0x18
+
+/* Ethernet Interrupt register */
+#define ENET_IR_REG			0x1c
+#define ENET_IR_MII			(1 << 0)
+#define ENET_IR_MIB			(1 << 1)
+#define ENET_IR_FLOWC			(1 << 2)
+
+/* Ethernet Control register */
+#define ENET_CTL_REG			0x2c
+#define ENET_CTL_ENABLE_SHIFT		0
+#define ENET_CTL_ENABLE_MASK		(1 << ENET_CTL_ENABLE_SHIFT)
+#define ENET_CTL_DISABLE_SHIFT		1
+#define ENET_CTL_DISABLE_MASK		(1 << ENET_CTL_DISABLE_SHIFT)
+#define ENET_CTL_SRESET_SHIFT		2
+#define ENET_CTL_SRESET_MASK		(1 << ENET_CTL_SRESET_SHIFT)
+#define ENET_CTL_EPHYSEL_SHIFT		3
+#define ENET_CTL_EPHYSEL_MASK		(1 << ENET_CTL_EPHYSEL_SHIFT)
+
+/* Transmit Control register */
+#define ENET_TXCTL_REG			0x30
+#define ENET_TXCTL_FD_SHIFT		0
+#define ENET_TXCTL_FD_MASK		(1 << ENET_TXCTL_FD_SHIFT)
+
+/* Transmit Watermask register */
+#define ENET_TXWMARK_REG		0x34
+#define ENET_TXWMARK_WM_SHIFT		0
+#define ENET_TXWMARK_WM_MASK		(0x3f << ENET_TXWMARK_WM_SHIFT)
+
+/* MIB Control register */
+#define ENET_MIBCTL_REG			0x38
+#define ENET_MIBCTL_RDCLEAR_SHIFT	0
+#define ENET_MIBCTL_RDCLEAR_MASK	(1 << ENET_MIBCTL_RDCLEAR_SHIFT)
+
+/* Perfect Match Data Low register */
+#define ENET_PML_REG(x)			(0x58 + (x) * 8)
+#define ENET_PMH_REG(x)			(0x5c + (x) * 8)
+#define ENET_PMH_DATAVALID_SHIFT	16
+#define ENET_PMH_DATAVALID_MASK		(1 << ENET_PMH_DATAVALID_SHIFT)
+
+/* MIB register */
+#define ENET_MIB_REG(x)			(0x200 + (x) * 4)
+#define ENET_MIB_REG_COUNT		55
+
+/* Port traffic control */
+#define ENETSW_PTCTRL_REG(x)		(0x0 + (x))
+#define ENETSW_PTCTRL_RXDIS_MASK	(1 << 0)
+#define ENETSW_PTCTRL_TXDIS_MASK	(1 << 1)
+#define ENETSW_PTCTRL_NO_STP		0x00
+#define ENETSW_PTCTRL_STP_DISABLED	0x20
+#define ENETSW_PTCTRL_STP_BLOCKING	0x40
+#define ENETSW_PTCTRL_STP_LISTENING	0x60
+#define ENETSW_PTCTRL_STP_LEARNING	0x80
+#define ENETSW_PTCTRL_STP_FORWARDING	0xA0
+
+/* Switch mode register */
+#define ENETSW_SWMODE_REG		(0xb)
+#define ENETSW_SWMODE_FWD_EN_MASK	(1 << 1)
+#define ENETSW_SWMODE_BCAST_MIPS_ONLY	(1 << 5)
+
+/* IMP override Register */
+#define ENETSW_IMPOV_REG		(0xe)
+#define ENETSW_IMPOV_FORCE_MASK		(1 << 7)
+#define ENETSW_IMPOV_TXFLOW_MASK	(1 << 5)
+#define ENETSW_IMPOV_RXFLOW_MASK	(1 << 4)
+#define ENETSW_IMPOV_1000_MASK		(1 << 3)
+#define ENETSW_IMPOV_100_MASK		(1 << 2)
+#define ENETSW_IMPOV_FDX_MASK		(1 << 1)
+#define ENETSW_IMPOV_LINKUP_MASK	(1 << 0)
+
+/* Port config registers */
+#define ENETSW_PORT_FORWARD_MODE_REG	(0x21)
+#define ENETSW_PORT_FORWARD_MCAST	(1 << 7)
+#define ENETSW_PORT_FORWARD_UCAST	(1 << 6)
+#define ENETSW_PORT_FORWARD_IP_MCAST	(1 << 1)
+#define ENETSW_PORT_ENABLE_REG		(0x23)
+#define ENETSW_PORT_PROTECTED_MAP_REG	(0x24)
+#define ENETSW_PORT_WAN_MAP_REG		(0x26)
+#define ENETSW_PORT_UCAST_LOOKUP_FAIL	(0x32)
+#define ENETSW_PORT_MCAST_LOOKUP_FAIL	(0x34)
+#define ENETSW_PORT_IP_MC_LOOKUP_FAIL	(0x36)
+#define ENETSW_PORT_DISABLE_LEARNING	(0x3c) /* u16 bitmask */
+
+/* Port override Register */
+#define ENETSW_PORTOV_REG(x)		(0x58 + (x))
+#define ENETSW_PORTOV_ENABLE_MASK	(1 << 6)
+#define ENETSW_PORTOV_TXFLOW_MASK	(1 << 5)
+#define ENETSW_PORTOV_RXFLOW_MASK	(1 << 4)
+#define ENETSW_PORTOV_1000_MASK		(1 << 3)
+#define ENETSW_PORTOV_100_MASK		(1 << 2)
+#define ENETSW_PORTOV_FDX_MASK		(1 << 1)
+#define ENETSW_PORTOV_LINKUP_MASK	(1 << 0)
+
+/* MDIO control register */
+#define ENETSW_MDIOC_REG		(0xb0)
+#define ENETSW_MDIOC_EXT_MASK		(1 << 16)
+#define ENETSW_MDIOC_REG_SHIFT		20
+#define ENETSW_MDIOC_PHYID_SHIFT	25
+#define ENETSW_MDIOC_RD_MASK		(1 << 30)
+#define ENETSW_MDIOC_WR_MASK		(1 << 31)
+
+/* MDIO data register */
+#define ENETSW_MDIOD_REG		(0xb4)
+
+/* Global Management Configuration Register */
+#define ENETSW_GMCR_REG			(0x200)
+#define ENETSW_GMCR_RST_MIB_MASK	(1 << 0)
+
+/* MIB register */
+#define ENETSW_MIB_REG(x)		(0x2800 + (x) * 4)
+#define ENETSW_MIB_REG_COUNT		47
+
+/* Port based VLAN */
+#define ENETSW_PORT_BASED_VLAN(x)	(0x3100 + (x) * 2) /* u16 bitmask */
+
+/* Jumbo control register port mask register */
+#define ENETSW_JMBCTL_PORT_REG		(0x4004)
+
+/* Jumbo control mib good frame register */
+#define ENETSW_JMBCTL_MAXSIZE_REG	(0x4008)
+
 
 /*
  * MIB Counters register definitions
@@ -191,6 +360,14 @@ struct bcm_enet_mib_counters {
 };
 
 
+struct bcm_enet_pkt {
+	struct list_head node;
+	struct sk_buff *skb;
+	dma_addr_t buf;
+	struct bcm63xx_iudma_context ctx;
+};
+
+
 struct bcm_enet_priv {
 
 	/* mac id (from platform device id) */
@@ -199,81 +376,38 @@ struct bcm_enet_priv {
 	/* base remapped address of device */
 	void __iomem *base;
 
-	/* mac irq, rx_dma irq, tx_dma irq */
+	/* mac irq */
 	int irq;
-	int irq_rx;
-	int irq_tx;
 
-	/* hw view of rx & tx dma ring */
-	dma_addr_t rx_desc_dma;
-	dma_addr_t tx_desc_dma;
-
-	/* allocated size (in bytes) for rx & tx dma ring */
-	unsigned int rx_desc_alloc_size;
-	unsigned int tx_desc_alloc_size;
-
-
-	struct napi_struct napi;
-
-	/* dma channel id for rx */
-	int rx_chan;
-
-	/* number of dma desc in rx ring */
-	int rx_ring_size;
-
-	/* cpu view of rx dma ring */
-	struct bcm_enet_desc *rx_desc_cpu;
-
-	/* current number of armed descriptor given to hardware for rx */
-	int rx_desc_count;
-
-	/* next rx descriptor to fetch from hardware */
-	int rx_curr_desc;
-
-	/* next dirty rx descriptor to refill */
-	int rx_dirty_desc;
-
-	/* size of allocated rx skbs */
+	/* rx and tx dma channel/packet queues */
+	struct dma_chan *rx_dma;
+	struct dma_chan *tx_dma;
+	struct list_head rx_active;
+	struct list_head rx_inactive;
+	struct list_head tx_active;
+	struct list_head tx_inactive;
+	unsigned int rx_max_ring_size;
+	unsigned int tx_max_ring_size;
+	unsigned int rx_ring_size;
+	unsigned int tx_ring_size;
+	unsigned int rx_count;
 	unsigned int rx_skb_size;
-
-	/* list of skb given to hw for rx */
-	struct sk_buff **rx_skb;
-
-	/* used when rx skb allocation failed, so we defer rx queue
-	 * refill */
-	struct timer_list rx_timeout;
-
-	/* lock rx_timeout against rx normal operation */
+	unsigned int tx_count;
 	spinlock_t rx_lock;
-
-
-	/* dma channel id for tx */
-	int tx_chan;
-
-	/* number of dma desc in tx ring */
-	int tx_ring_size;
+	spinlock_t tx_lock;
+	bool rx_running;
+	bool tx_running;
 
 	/* maximum dma burst size */
 	int dma_maxburst;
 
-	/* cpu view of rx dma ring */
-	struct bcm_enet_desc *tx_desc_cpu;
+	/* platform dma config */
+	struct bcm63xx_enet_platform_dma_data pd_rx_dma;
+	struct bcm63xx_enet_platform_dma_data pd_tx_dma;
 
-	/* number of available descriptor for tx */
-	int tx_desc_count;
-
-	/* next tx descriptor avaiable */
-	int tx_curr_desc;
-
-	/* next dirty tx descriptor to reclaim */
-	int tx_dirty_desc;
-
-	/* list of skb given to hw for tx */
-	struct sk_buff **tx_skb;
-
-	/* lock used by tx reclaim and xmit */
-	spinlock_t tx_lock;
-
+	/* used when rx skb allocation failed, so we defer rx queue
+	 * refill */
+	struct timer_list rx_timeout;
 
 	/* set if internal phy is ignored and external mii interface
 	 * is selected */
@@ -315,10 +449,13 @@ struct bcm_enet_priv {
 	struct mutex mib_update_lock;
 
 	/* mac clock */
-	struct clk *mac_clk;
+	struct clk *mac_clks[BCMENET_MAX_CLKS];
 
 	/* phy clock if internal phy is used */
 	struct clk *phy_clk;
+
+	struct reset_control *reset;
+	struct regulator *regulator;
 
 	/* network device reference */
 	struct net_device *net_dev;
@@ -339,21 +476,6 @@ struct bcm_enet_priv {
 	/* used to poll switch port state */
 	struct timer_list swphy_poll;
 	spinlock_t enetsw_mdio_lock;
-
-	/* dma channel enable mask */
-	u32 dma_chan_en_mask;
-
-	/* dma channel interrupt mask */
-	u32 dma_chan_int_mask;
-
-	/* DMA engine has internal SRAM */
-	bool dma_has_sram;
-
-	/* dma channel width */
-	unsigned int dma_chan_width;
-
-	/* dma descriptor shift value */
-	unsigned int dma_desc_shift;
 };
 
 
