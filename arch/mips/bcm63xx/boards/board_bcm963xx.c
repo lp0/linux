@@ -22,7 +22,7 @@
 #include <bcm63xx_io.h>
 #include <bcm63xx_nvram.h>
 #include <bcm63xx_dev_pci.h>
-#include <bcm63xx_dev_enet.h>
+#include <linux/bcm63xx_dev_enet.h>
 #include <bcm63xx_dev_dsp.h>
 #include <bcm63xx_dev_flash.h>
 #include <bcm63xx_dev_hsspi.h>

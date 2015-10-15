@@ -52,9 +52,10 @@ config B44_PCI
 
 config BCM63XX_ENET
 	tristate "Broadcom 63xx internal mac support"
-	depends on BCM63XX
+	depends on BCM63XX || BMIPS_GENERIC
 	select MII
 	select PHYLIB
+	select BCM63XX_IUDMA
 	help
 	  This driver supports the ethernet MACs in the Broadcom 63xx
 	  MIPS chipset family (BCM63XX).

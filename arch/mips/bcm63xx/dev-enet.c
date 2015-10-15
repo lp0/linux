@@ -10,40 +10,12 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/export.h>
-#include <bcm63xx_dev_enet.h>
+#include <linux/bcm63xx_dev_enet.h>
+#include <linux/bcm63xx_iudma.h>
 #include <bcm63xx_io.h>
 #include <bcm63xx_regs.h>
 
-static const unsigned long bcm6348_regs_enetdmac[] = {
-	[ENETDMAC_CHANCFG]	= ENETDMAC_CHANCFG_REG,
-	[ENETDMAC_IR]		= ENETDMAC_IR_REG,
-	[ENETDMAC_IRMASK]	= ENETDMAC_IRMASK_REG,
-	[ENETDMAC_MAXBURST]	= ENETDMAC_MAXBURST_REG,
-};
-
-static const unsigned long bcm6345_regs_enetdmac[] = {
-	[ENETDMAC_CHANCFG]	= ENETDMA_6345_CHANCFG_REG,
-	[ENETDMAC_IR]		= ENETDMA_6345_IR_REG,
-	[ENETDMAC_IRMASK]	= ENETDMA_6345_IRMASK_REG,
-	[ENETDMAC_MAXBURST]	= ENETDMA_6345_MAXBURST_REG,
-	[ENETDMAC_BUFALLOC]	= ENETDMA_6345_BUFALLOC_REG,
-	[ENETDMAC_RSTART]	= ENETDMA_6345_RSTART_REG,
-	[ENETDMAC_FC]		= ENETDMA_6345_FC_REG,
-	[ENETDMAC_LEN]		= ENETDMA_6345_LEN_REG,
-};
-
-const unsigned long *bcm63xx_regs_enetdmac;
-EXPORT_SYMBOL(bcm63xx_regs_enetdmac);
-
-static __init void bcm63xx_enetdmac_regs_init(void)
-{
-	if (BCMCPU_IS_6345())
-		bcm63xx_regs_enetdmac = bcm6345_regs_enetdmac;
-	else
-		bcm63xx_regs_enetdmac = bcm6348_regs_enetdmac;
-}
-
-static struct resource shared_res[] = {
+static struct resource enetdma_res[] = {
 	{
 		.start		= -1, /* filled at runtime */
 		.end		= -1, /* filled at runtime */
@@ -51,24 +23,34 @@ static struct resource shared_res[] = {
 	},
 	{
 		.start		= -1, /* filled at runtime */
-		.end		= -1, /* filled at runtime */
-		.flags		= IORESOURCE_MEM,
+		.flags		= IORESOURCE_IRQ,
 	},
 	{
 		.start		= -1, /* filled at runtime */
-		.end		= -1, /* filled at runtime */
-		.flags		= IORESOURCE_MEM,
+		.flags		= IORESOURCE_IRQ,
+	},
+	{
+		.start		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
+	},
+	{
+		.start		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
 	},
 };
 
-static struct platform_device bcm63xx_enet_shared_device = {
-	.name		= "bcm63xx_enet_shared",
-	.id		= 0,
-	.num_resources	= ARRAY_SIZE(shared_res),
-	.resource	= shared_res,
+static struct bcm63xx_iudma_platform_data enetdma_pd;
+
+static struct platform_device bcm63xx_enetdma_device = {
+	.name		= "bcm63xx-iudma",
+	.num_resources	= ARRAY_SIZE(enetdma_res),
+	.resource	= enetdma_res,
+	.dev		= {
+		.platform_data = &enetdma_pd,
+	},
 };
 
-static int shared_device_registered;
+static int enetdma_device_registered;
 
 static struct resource enet0_res[] = {
 	{
@@ -139,14 +121,6 @@ static struct resource enetsw_res[] = {
 		/* start & end filled at runtime */
 		.flags		= IORESOURCE_MEM,
 	},
-	{
-		/* start filled at runtime */
-		.flags		= IORESOURCE_IRQ,
-	},
-	{
-		/* start filled at runtime */
-		.flags		= IORESOURCE_IRQ,
-	},
 };
 
 static struct bcm63xx_enetsw_platform_data enetsw_pd;
@@ -160,41 +134,63 @@ static struct platform_device bcm63xx_enetsw_device = {
 	},
 };
 
-static int __init register_shared(void)
+static int __init register_enetdma(bool enetsw)
 {
-	int ret, chan_count;
+	int ret;
 
-	if (shared_device_registered)
+	if (enetdma_device_registered)
 		return 0;
 
-	bcm63xx_enetdmac_regs_init();
+	enetdma_pd.dmac_offset = bcm63xx_regset_address(RSET_ENETDMAC);
+	enetdma_pd.dmac_offset -= bcm63xx_regset_address(RSET_ENETDMA);
+	enetdma_pd.dmas_offset = bcm63xx_regset_address(RSET_ENETDMAS);
+	enetdma_pd.dmas_offset -= bcm63xx_regset_address(RSET_ENETDMA);
 
-	shared_res[0].start = bcm63xx_regset_address(RSET_ENETDMA);
-	shared_res[0].end = shared_res[0].start;
-	if (BCMCPU_IS_6345())
-		shared_res[0].end += (RSET_6345_ENETDMA_SIZE) - 1;
-	else
-		shared_res[0].end += (RSET_ENETDMA_SIZE)  - 1;
+	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368()) {
+		enetdma_pd.n_channels = 32;
+	} else if (BCMCPU_IS_6345()) {
+		enetdma_pd.n_channels = 8;
+		enetdma_pd.dmas_offset = 0;
+	} else {
+		enetdma_pd.n_channels = 16;
+	}
 
-	if (BCMCPU_IS_6328() || BCMCPU_IS_6362() || BCMCPU_IS_6368())
-		chan_count = 32;
-	else if (BCMCPU_IS_6345())
-		chan_count = 8;
-	else
-		chan_count = 16;
+	enetdma_pd.n_requests = 512;
 
-	shared_res[1].start = bcm63xx_regset_address(RSET_ENETDMAC);
-	shared_res[1].end = shared_res[1].start;
-	shared_res[1].end += RSET_ENETDMAC_SIZE(chan_count)  - 1;
+	enetdma_res[0].start = bcm63xx_regset_address(RSET_ENETDMA);
+	enetdma_res[0].end = enetdma_res[0].start;
+	if (BCMCPU_IS_6345()) {
+		enetdma_res[0].end += (RSET_6345_ENETDMA_SIZE +
+			RSET_ENETDMAC_SIZE(enetdma_pd.n_channels) - 1);
+	} else {
+		enetdma_res[0].end += (RSET_ENETDMA_SIZE +
+			RSET_ENETDMAC_SIZE(enetdma_pd.n_channels) +
+			RSET_ENETDMAS_SIZE(enetdma_pd.n_channels) - 1);
+	}
 
-	shared_res[2].start = bcm63xx_regset_address(RSET_ENETDMAS);
-	shared_res[2].end = shared_res[2].start;
-	shared_res[2].end += RSET_ENETDMAS_SIZE(chan_count)  - 1;
+	if (enetsw) {
+		enetdma_res[1].start = bcm63xx_get_irq_number(IRQ_ENETSW_RXDMA0);
+		enetdma_res[2].start = bcm63xx_get_irq_number(IRQ_ENETSW_TXDMA0);
+	} else {
+		enetdma_res[1].start = bcm63xx_get_irq_number(IRQ_ENET0_RXDMA);
+		enetdma_res[2].start = bcm63xx_get_irq_number(IRQ_ENET0_TXDMA);
+		enetdma_res[3].start = bcm63xx_get_irq_number(IRQ_ENET1_RXDMA);
+		enetdma_res[4].start = bcm63xx_get_irq_number(IRQ_ENET1_TXDMA);
+	}
 
-	ret = platform_device_register(&bcm63xx_enet_shared_device);
+	if (!enetdma_res[1].start)
+		enetdma_res[1].start = -1;
+	if (!enetdma_res[2].start)
+		enetdma_res[2].start = -1;
+	if (!enetdma_res[3].start)
+		enetdma_res[3].start = -1;
+	if (!enetdma_res[4].start)
+		enetdma_res[4].start = -1;
+
+	ret = platform_device_register(&bcm63xx_enetdma_device);
 	if (ret)
 		return ret;
-	shared_device_registered = 1;
+	enetdma_device_registered = 1;
 
 	return 0;
 }
@@ -212,7 +208,7 @@ int __init bcm63xx_enet_register(int unit,
 	if (unit == 1 && (BCMCPU_IS_6338() || BCMCPU_IS_6345()))
 		return -ENODEV;
 
-	ret = register_shared();
+	ret = register_enetdma(false);
 	if (ret)
 		return ret;
 
@@ -250,19 +246,20 @@ int __init bcm63xx_enet_register(int unit,
 		dpd->phy_interrupt = bcm63xx_get_irq_number(IRQ_ENET_PHY);
 	}
 
-	dpd->dma_chan_en_mask = ENETDMAC_CHANCFG_EN_MASK;
-	dpd->dma_chan_int_mask = ENETDMAC_IR_PKTDONE_MASK;
-	if (BCMCPU_IS_6345()) {
-		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_CHAINING_MASK;
-		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_WRAP_EN_MASK;
-		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_FLOWC_EN_MASK;
-		dpd->dma_chan_int_mask |= ENETDMA_IR_BUFDONE_MASK;
-		dpd->dma_chan_int_mask |= ENETDMA_IR_NOTOWNER_MASK;
-		dpd->dma_chan_width = ENETDMA_6345_CHAN_WIDTH;
-		dpd->dma_desc_shift = ENETDMA_6345_DESC_SHIFT;
+	if (!dpd->rx_max_ring_size)
+		dpd->rx_max_ring_size = 512;
+
+	if (!dpd->tx_max_ring_size)
+		dpd->tx_max_ring_size = 512;
+
+	dpd->rx_dma.dma_dev = &bcm63xx_enetdma_device.dev;
+	dpd->tx_dma.dma_dev = &bcm63xx_enetdma_device.dev;
+	if (unit == 0) {
+		dpd->rx_dma.chan_id = 0;
+		dpd->tx_dma.chan_id = 1;
 	} else {
-		dpd->dma_has_sram = true;
-		dpd->dma_chan_width = ENETDMA_CHAN_WIDTH;
+		dpd->rx_dma.chan_id = 2;
+		dpd->tx_dma.chan_id = 3;
 	}
 
 	ret = platform_device_register(pdev);
@@ -279,17 +276,13 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368())
 		return -ENODEV;
 
-	ret = register_shared();
+	ret = register_enetdma(true);
 	if (ret)
 		return ret;
 
 	enetsw_res[0].start = bcm63xx_regset_address(RSET_ENETSW);
 	enetsw_res[0].end = enetsw_res[0].start;
 	enetsw_res[0].end += RSET_ENETSW_SIZE - 1;
-	enetsw_res[1].start = bcm63xx_get_irq_number(IRQ_ENETSW_RXDMA0);
-	enetsw_res[2].start = bcm63xx_get_irq_number(IRQ_ENETSW_TXDMA0);
-	if (!enetsw_res[2].start)
-		enetsw_res[2].start = -1;
 
 	memcpy(bcm63xx_enetsw_device.dev.platform_data, pd, sizeof(*pd));
 
@@ -298,10 +291,16 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 	else if (BCMCPU_IS_6362() || BCMCPU_IS_6368())
 		enetsw_pd.num_ports = ENETSW_PORTS_6368;
 
-	enetsw_pd.dma_has_sram = true;
-	enetsw_pd.dma_chan_width = ENETDMA_CHAN_WIDTH;
-	enetsw_pd.dma_chan_en_mask = ENETDMAC_CHANCFG_EN_MASK;
-	enetsw_pd.dma_chan_int_mask = ENETDMAC_IR_PKTDONE_MASK;
+	if (!enetsw_pd.rx_max_ring_size)
+		enetsw_pd.rx_max_ring_size = 512;
+
+	if (!enetsw_pd.tx_max_ring_size)
+		enetsw_pd.tx_max_ring_size = 512;
+
+	enetsw_pd.rx_dma.dma_dev = &bcm63xx_enetdma_device.dev;
+	enetsw_pd.tx_dma.dma_dev = &bcm63xx_enetdma_device.dev;
+	enetsw_pd.rx_dma.chan_id = 0;
+	enetsw_pd.tx_dma.chan_id = 1;
 
 	ret = platform_device_register(&bcm63xx_enetsw_device);
 	if (ret)
