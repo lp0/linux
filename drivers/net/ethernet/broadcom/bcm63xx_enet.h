@@ -329,6 +329,7 @@ struct bcm_enet_priv {
 	/* maximum hardware transmit/receive size */
 	unsigned int hw_mtu;
 
+	bool enet_is_gmac;
 	bool enet_is_sw;
 
 	/* port mapping for switch devices */
@@ -356,5 +357,51 @@ struct bcm_enet_priv {
 	unsigned int dma_desc_shift;
 };
 
+#define ENET_GMAC_IRMASK_REG		0x24
+#define ENET_GMAC_STATUS_REG		0x28
+#define ENET_GMAC_STATUS_SPEED_SHIFT	0
+#define ENET_GMAC_STATUS_SPEED_MASK	(0x03 << ENET_GMAC_STATUS_SPEED_SHIFT)
+#define ENET_GMAC_SPEED_10		0
+#define ENET_GMAC_SPEED_100		1
+#define ENET_GMAC_SPEED_1000		2
+#define ENET_GMAC_SPEED_2500		3
+#define ENET_GMAC_STATUS_HD		(1 << 2)
+#define ENET_GMAC_STATUS_AUTO_CFG_EN	(1 << 3)
+#define ENET_GMAC_STATUS_LINK_UP	(1 << 4)
+#define ENET_GMAC_MAC_RESET_REG		0x38
+#define ENET_GMAC_MAC_SW_RESET		(1 << 0)
+#define ENET_GMAC_MAC_RX_FIFO_FLUSH	(1 << 1)
+#define ENET_GMAC_MAC_TX_FIFO_FLUSH	(1 << 2)
+#define ENET_GMAC_TXIPGLEN_REG		0x5c
+#define ENET_GMAC_RXIPGLEN_REG		0x78
+#define ENET_GMAC_CMD_REG		0x408
+#define ENET_GMAC_CMD_RX_ENABLE		(1 << 0)
+#define ENET_GMAC_CMD_TX_ENABLE		(1 << 1)
+#define ENET_GMAC_CMD_SPEED_SHIFT	2
+#define ENET_GMAC_CMD_SPEED_MASK	(0x03 << ENET_GMAC_CMD_SPEED_SHIFT)
+#define ENET_GMAC_CMD_PROMISC_ENABLE	(1 << 4)
+#define ENET_GMAC_CMD_PAD_REM_ENABLE	(1 << 5)
+#define ENET_GMAC_CMD_CRC_FWD		(1 << 6)
+#define ENET_GMAC_CMD_PAUSE_FWD		(1 << 7)
+#define ENET_GMAC_CMD_RX_PAUSE_IGNORE	(1 << 8)
+#define ENET_GMAC_CMD_TX_ADDR_INS	(1 << 9)
+#define ENET_GMAC_CMD_HD_ENABLE		(1 << 10)
+#define ENET_GMAC_CMD_SW_RESET		(1 << 13)
+#define ENET_GMAC_CMD_LOC_LOOPBACK_EN	(1 << 15)
+#define ENET_GMAC_CMD_ENABLE_EXT_CFG	(1 << 22)
+#define ENET_GMAC_CMD_CTRL_FRM_ENABLE	(1 << 23)
+#define ENET_GMAC_CMD_LEN_CHECK_DISABLE	(1 << 24)
+#define ENET_GMAC_CMD_REM_LOOPBACK_EN	(1 << 25)
+#define ENET_GMAC_CMD_RX_ERR_DISC	(1 << 26)
+#define ENET_GMAC_CMD_PRBL_ENABLE	(1 << 27)
+#define ENET_GMAC_CMD_TX_PAUSE_IGNORE	(1 << 28)
+#define ENET_GMAC_CMD_TXRX_EN_CFG	(1 << 29)
+#define ENET_GMAC_CMD_RUNT_FILT_DISABLE	(1 << 30)
+#define ENET_GMAC_MAC0_REG		0x40c
+#define ENET_GMAC_MAC1_REG		0x410
+#define ENET_GMAC_MAXLEN_REG		0x414
+#define ENET_GMAC_TXFIFOFLUSH_REG	0x734
+#define ENET_GMAC_RXFIFOSTATUS_REG	0x738
+#define ENET_GMAC_TXFIFOSTATUS_REG	0x73c
 
 #endif /* ! BCM63XX_ENET_H_ */

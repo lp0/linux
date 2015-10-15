@@ -24,6 +24,7 @@ struct board_info {
 	/* enabled feature/device */
 	unsigned int	has_enet0:1;
 	unsigned int	has_enet1:1;
+	unsigned int	has_enetgmac:1;
 	unsigned int	has_enetsw:1;
 	unsigned int	has_pci:1;
 	unsigned int	has_pccard:1;
@@ -37,6 +38,7 @@ struct board_info {
 	/* ethernet config */
 	struct bcm63xx_enet_platform_data enet0;
 	struct bcm63xx_enet_platform_data enet1;
+	struct bcm63xx_enetgmac_platform_data enetgmac;
 	struct bcm63xx_enetsw_platform_data enetsw;
 
 	/* USB config */

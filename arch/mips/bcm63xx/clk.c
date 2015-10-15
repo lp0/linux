@@ -119,6 +119,15 @@ static struct clk clk_ephy = {
 	.set	= ephy_set,
 };
 
+static void enetgmac_set(struct clk *clk, int enable)
+{
+	bcm_hwclock_set(CKCTL_63168_GMAC_EN, enable);
+}
+
+static struct clk clk_enetgmac = {
+	.set	= enetgmac_set,
+};
+
 /*
  * Ethernet switch clock
  */
@@ -376,6 +385,8 @@ struct clk *clk_get(struct device *dev, const char *id)
 		return &clk_enet0;
 	if (!strcmp(id, "enet1"))
 		return &clk_enet1;
+	if (!strcmp(id, "enetgmac"))
+		return &clk_enetgmac;
 	if (!strcmp(id, "enetsw"))
 		return &clk_enetsw;
 	if (!strcmp(id, "ephy"))

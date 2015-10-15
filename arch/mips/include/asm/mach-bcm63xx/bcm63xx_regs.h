@@ -236,11 +236,9 @@
 #define CKCTL_63168_ROBOSW250_EN	(1 << 31)
 
 #define CKCTL_63168_ALL_SAFE_EN		(CKCTL_63168_SPI_EN |		\
-					CKCTL_63168_USBD_EN |		\
 					CKCTL_63168_SAR_EN |		\
 					CKCTL_63168_ROBOSW_EN |		\
 					CKCTL_63168_ROBOSW250_EN |	\
-					CKCTL_63168_PCM_EN |		\
 					CKCTL_63168_USBH_EN |		\
 					CKCTL_63168_DISABLE_GLESS_EN |	\
 					CKCTL_63168_GMAC_EN |		\
@@ -610,6 +608,10 @@
 #define STRAPBUS_6368_BOOT_SEL_SERIAL	1
 #define STRAPBUS_6368_BOOT_SEL_PARALLEL 3
 
+#define GPIO_ROBOSW_GPHY_CTL_REG	0x54
+#define GPIO_63168_GPHY_LOW_POWER	(1 << 3)
+#define GPIO_63168_GPHY_MUX_SELECT	(1 << 18)
+
 
 /*************************************************************************
  * _REG relative to RSET_ENET
@@ -806,6 +808,9 @@
 #define ENETDMAC_IR_BUFDONE_MASK	(1 << 0)
 #define ENETDMAC_IR_PKTDONE_MASK	(1 << 1)
 #define ENETDMAC_IR_NOTOWNER_MASK	(1 << 2)
+#define ENETDMAC_IR_PORT_SHIFT		8
+#define ENETDMAC_IR_PORT_MASK		(0xf << ENETDMAC_IR_PORT_SHIFT)
+#define ENETDMAC_IR_PORT(x)		(((x) & ENETDMAC_IR_PORT_MASK) >> ENETDMAC_IR_PORT_SHIFT)
 
 /* Interrupt Mask register */
 #define ENETDMAC_IRMASK_REG		(0x8)
@@ -839,10 +844,17 @@
 #define ENETSW_PTCTRL_REG(x)		(0x0 + (x))
 #define ENETSW_PTCTRL_RXDIS_MASK	(1 << 0)
 #define ENETSW_PTCTRL_TXDIS_MASK	(1 << 1)
+#define ENETSW_PTCTRL_NO_STP		0x00
+#define ENETSW_PTCTRL_STP_DISABLED	0x20
+#define ENETSW_PTCTRL_STP_BLOCKING	0x40
+#define ENETSW_PTCTRL_STP_LISTENING	0x60
+#define ENETSW_PTCTRL_STP_LEARNING	0x80
+#define ENETSW_PTCTRL_STP_FORWARDING	0xA0
 
 /* Switch mode register */
 #define ENETSW_SWMODE_REG		(0xb)
 #define ENETSW_SWMODE_FWD_EN_MASK	(1 << 1)
+#define ENETSW_SWMODE_BCAST_MIPS_ONLY	(1 << 5)
 
 /* IMP override Register */
 #define ENETSW_IMPOV_REG		(0xe)
@@ -853,6 +865,19 @@
 #define ENETSW_IMPOV_100_MASK		(1 << 2)
 #define ENETSW_IMPOV_FDX_MASK		(1 << 1)
 #define ENETSW_IMPOV_LINKUP_MASK	(1 << 0)
+
+/* Port config registers */
+#define ENETSW_PORT_FORWARD_MODE_REG	(0x21)
+#define ENETSW_PORT_FORWARD_MCAST	(1 << 7)
+#define ENETSW_PORT_FORWARD_UCAST	(1 << 6)
+#define ENETSW_PORT_FORWARD_IP_MCAST	(1 << 1)
+#define ENETSW_PORT_ENABLE_REG		(0x23)
+#define ENETSW_PORT_PROTECTED_MAP_REG	(0x24)
+#define ENETSW_PORT_WAN_MAP_REG		(0x26)
+#define ENETSW_PORT_UCAST_LOOKUP_FAIL	(0x32)
+#define ENETSW_PORT_MCAST_LOOKUP_FAIL	(0x34)
+#define ENETSW_PORT_IP_MC_LOOKUP_FAIL	(0x36)
+#define ENETSW_PORT_DISABLE_LEARNING	(0x3c) /* u16 bitmask */
 
 /* Port override Register */
 #define ENETSW_PORTOV_REG(x)		(0x58 + (x))
@@ -882,6 +907,9 @@
 /* MIB register */
 #define ENETSW_MIB_REG(x)		(0x2800 + (x) * 4)
 #define ENETSW_MIB_REG_COUNT		47
+
+/* Port based VLAN */
+#define ENETSW_PORT_BASED_VLAN(x)	(0x3100 + (x) * 2) /* u16 bitmask */
 
 /* Jumbo control register port mask register */
 #define ENETSW_JMBCTL_PORT_REG		(0x4004)
@@ -1527,6 +1555,5 @@
 #define NAND_FLASH_DEV_ID_REG		0x60
 #define NAND_INTF_STAT_REG		0x6c
 #define NAND_INTF_STAT_FLASH_READY	(1 << 30)
-
 
 #endif /* BCM63XX_REGS_H_ */

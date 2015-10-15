@@ -6,6 +6,8 @@
  * Copyright (C) 2008 Maxime Bizon <mbizon@freebox.fr>
  */
 
+#define IRQ_INTERNAL_BASE 8
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
@@ -69,6 +71,38 @@ static struct platform_device bcm63xx_enet_shared_device = {
 };
 
 static int shared_device_registered;
+
+static struct resource enetgmac0_res[] = {
+	{
+		.start		= -1, /* filled at runtime */
+		.end		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_MEM,
+	},
+	{
+		.start		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
+	},
+	{
+		.start		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
+	},
+	{
+		.start		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
+	},
+};
+
+static struct bcm63xx_enetgmac_platform_data enetgmac0_pd;
+
+static struct platform_device bcm63xx_enetgmac0_device = {
+	.name		= "bcm63xx_enetgmac",
+	.id		= 0,
+	.num_resources	= ARRAY_SIZE(enetgmac0_res),
+	.resource	= enetgmac0_res,
+	.dev		= {
+		.platform_data = &enetgmac0_pd,
+	},
+};
 
 static struct resource enet0_res[] = {
 	{
@@ -272,6 +306,52 @@ int __init bcm63xx_enet_register(int unit,
 	return 0;
 }
 
+int __init bcm63xx_enetgmac_register(const struct bcm63xx_enetgmac_platform_data *pd)
+{
+	struct platform_device *pdev;
+	struct bcm63xx_enetgmac_platform_data *dpd;
+	int ret;
+
+	enetgmac0_res[0].start = BCM_63168_GMAC_BASE;
+	enetgmac0_res[0].end = enetgmac0_res[0].start;
+	enetgmac0_res[0].end += RSET_ENET_SIZE - 1;
+	enetgmac0_res[1].start = BCM_63168_ENET_PHY_IRQ;
+	enetgmac0_res[2].start = BCM_63168_GMAC_RXDMA0_IRQ;
+	enetgmac0_res[3].start = BCM_63168_GMAC_TXDMA0_IRQ;
+	pdev = &bcm63xx_enetgmac0_device;
+
+	/* copy given platform data */
+	dpd = pdev->dev.platform_data;
+	memcpy(dpd, pd, sizeof(*pd));
+
+	/* adjust them in case internal phy is used */
+	if (dpd->use_internal_phy) {
+		dpd->phy_id = 4;
+		dpd->has_phy_interrupt = 1;
+		dpd->phy_interrupt = BCM_63168_ENET_PHY_IRQ;
+	}
+
+	dpd->dma_chan_en_mask = ENETDMAC_CHANCFG_EN_MASK;
+	dpd->dma_chan_int_mask = ENETDMAC_IR_PKTDONE_MASK;
+	if (BCMCPU_IS_6345()) {
+		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_CHAINING_MASK;
+		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_WRAP_EN_MASK;
+		dpd->dma_chan_en_mask |= ENETDMAC_CHANCFG_FLOWC_EN_MASK;
+		dpd->dma_chan_int_mask |= ENETDMA_IR_BUFDONE_MASK;
+		dpd->dma_chan_int_mask |= ENETDMA_IR_NOTOWNER_MASK;
+		dpd->dma_chan_width = ENETDMA_6345_CHAN_WIDTH;
+		dpd->dma_desc_shift = ENETDMA_6345_DESC_SHIFT;
+	} else {
+		dpd->dma_has_sram = true;
+		dpd->dma_chan_width = ENETDMA_CHAN_WIDTH;
+	}
+
+	ret = platform_device_register(pdev);
+	if (ret)
+		return ret;
+	return 0;
+}
+
 int __init
 bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 {
@@ -280,6 +360,31 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 	if (!BCMCPU_IS_6328() && !BCMCPU_IS_6362() && !BCMCPU_IS_6368()
 			&& !BCMCPU_IS_63168())
 		return -ENODEV;
+
+	if (BCMCPU_IS_63168()) {
+		/* Ethernet port 3 supports two modes, it
+		 * can be used via ROBO switch mode or with
+		 * its own DMA IRQ and channels.
+		 *
+		 * Until support for GMAC is added to enetsw,
+		 * disable GMAC so that the port works as
+		 * part of ROBO switch mode.
+		 *
+		 * Note: the port must not be enabled in
+		 * both modes at the same time. Link status
+		 * updates will work but packets can not be
+		 * transmitted or received via ethsw.
+		 */
+		u32 gpio_ctl;
+
+		/* Disconnect GPHY */
+		gpio_ctl = bcm_gpio_readl(GPIO_ROBOSW_GPHY_CTL_REG);
+		printk(KERN_INFO "GPIO_ROBOSW_GPHY_CTL_REG=%08x\n", gpio_ctl);
+//		gpio_ctl &= ~GPIO_63168_GPHY_MUX_SELECT;
+		gpio_ctl |= GPIO_63168_GPHY_MUX_SELECT;
+		printk(KERN_INFO "GPIO_ROBOSW_GPHY_CTL_REG=%08x\n", gpio_ctl);
+		bcm_gpio_writel(gpio_ctl, GPIO_ROBOSW_GPHY_CTL_REG);
+	}
 
 	ret = register_shared();
 	if (ret)
@@ -295,10 +400,12 @@ bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd)
 
 	memcpy(bcm63xx_enetsw_device.dev.platform_data, pd, sizeof(*pd));
 
-	if (BCMCPU_IS_6328() || BCMCPU_IS_63168())
+	if (BCMCPU_IS_6328())
 		enetsw_pd.num_ports = ENETSW_PORTS_6328;
 	else if (BCMCPU_IS_6362() || BCMCPU_IS_6368())
 		enetsw_pd.num_ports = ENETSW_PORTS_6368;
+	else if (BCMCPU_IS_63168())
+		enetsw_pd.num_ports = ENETSW_PORTS_63168;
 
 	enetsw_pd.dma_has_sram = true;
 	enetsw_pd.dma_chan_width = ENETDMA_CHAN_WIDTH;

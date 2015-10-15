@@ -57,11 +57,62 @@ struct bcm63xx_enet_platform_data {
 };
 
 /*
+ * on board ethernet platform data
+ */
+struct bcm63xx_enetgmac_platform_data {
+	char mac_addr[ETH_ALEN];
+
+	int has_phy;
+
+	/* if has_phy, then set use_internal_phy */
+	int use_internal_phy;
+
+	/* or fill phy info to use an external one */
+	int phy_id;
+	int has_phy_interrupt;
+	int phy_interrupt;
+
+	/* if has_phy, use autonegociated pause parameters or force
+	 * them */
+	int pause_auto;
+	int pause_rx;
+	int pause_tx;
+
+	/* if !has_phy, set desired forced speed/duplex */
+	int force_speed_100;
+	int force_duplex_full;
+
+	/* if !has_phy, set callback to perform mii device
+	 * init/remove */
+	int (*mii_config)(struct net_device *dev, int probe,
+			  int (*mii_read)(struct net_device *dev,
+					  int phy_id, int reg),
+			  void (*mii_write)(struct net_device *dev,
+					    int phy_id, int reg, int val));
+
+	/* DMA channel enable mask */
+	u32 dma_chan_en_mask;
+
+	/* DMA channel interrupt mask */
+	u32 dma_chan_int_mask;
+
+	/* DMA engine has internal SRAM */
+	bool dma_has_sram;
+
+	/* DMA channel register width */
+	unsigned int dma_chan_width;
+
+	/* DMA descriptor shift */
+	unsigned int dma_desc_shift;
+};
+
+/*
  * on board ethernet switch platform data
  */
 #define ENETSW_MAX_PORT	8
 #define ENETSW_PORTS_6328 5 /* 4 FE PHY + 1 RGMII */
 #define ENETSW_PORTS_6368 6 /* 4 FE PHY + 2 RGMII */
+#define ENETSW_PORTS_63168 8 /* 4 FE PHY + 4 RGMII */
 
 #define ENETSW_RGMII_PORT0	4
 
@@ -96,6 +147,8 @@ struct bcm63xx_enetsw_platform_data {
 
 int __init bcm63xx_enet_register(int unit,
 				 const struct bcm63xx_enet_platform_data *pd);
+
+int bcm63xx_enetgmac_register(const struct bcm63xx_enetgmac_platform_data *pd);
 
 int bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd);
 

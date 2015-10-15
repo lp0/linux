@@ -49,13 +49,50 @@ static void __iomem *bcm_enet_shared_base[3];
  */
 static inline u32 enet_readl(struct bcm_enet_priv *priv, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	return bcm_readl(priv->base + off);
 }
 
 static inline void enet_writel(struct bcm_enet_priv *priv,
 			       u32 val, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	bcm_writel(val, priv->base + off);
+}
+
+/*
+ * io helpers to access gmac registers
+ */
+static inline u32 enetgmac_readl(struct bcm_enet_priv *priv, u32 off)
+{
+	u32 val;
+	if (!priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(!priv->enet_is_gmac);
+	rmb();
+	val = bcm_readl(priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off);
+	printk(KERN_INFO "readl %p = %08x\n", priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off, val);
+	return val;
+}
+
+static inline void enetgmac_writel(struct bcm_enet_priv *priv,
+			       u32 val, u32 off)
+{
+	u32 val2, val3;
+	if (!priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(!priv->enet_is_gmac);
+	rmb();
+	val2 = bcm_readl(priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off);
+	bcm_writel(val, priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off);
+	wmb();
+	rmb();
+	val3 = bcm_readl(priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off);
+	printk(KERN_INFO "writel %p = [%08x ->] %08x [-> %08x]\n", priv->base + (BCM_63168_GMAC_INTF_BASE - BCM_63168_GMAC_BASE) + off, val2, val, val3);
 }
 
 /*
@@ -63,34 +100,52 @@ static inline void enet_writel(struct bcm_enet_priv *priv,
  */
 static inline u32 enetsw_readl(struct bcm_enet_priv *priv, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	return bcm_readl(priv->base + off);
 }
 
 static inline void enetsw_writel(struct bcm_enet_priv *priv,
 				 u32 val, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	bcm_writel(val, priv->base + off);
 }
 
 static inline u16 enetsw_readw(struct bcm_enet_priv *priv, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	return bcm_readw(priv->base + off);
 }
 
 static inline void enetsw_writew(struct bcm_enet_priv *priv,
 				 u16 val, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	bcm_writew(val, priv->base + off);
 }
 
 static inline u8 enetsw_readb(struct bcm_enet_priv *priv, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	return bcm_readb(priv->base + off);
 }
 
 static inline void enetsw_writeb(struct bcm_enet_priv *priv,
 				 u8 val, u32 off)
 {
+	if (priv->enet_is_gmac)
+		printk(KERN_INFO "%s\n", __func__);
+	BUG_ON(priv->enet_is_gmac);
 	bcm_writeb(val, priv->base + off);
 }
 
@@ -98,37 +153,49 @@ static inline void enetsw_writeb(struct bcm_enet_priv *priv,
 /* io helpers to access shared registers */
 static inline u32 enet_dma_readl(struct bcm_enet_priv *priv, u32 off)
 {
-	return bcm_readl(bcm_enet_shared_base[0] + off);
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMA_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[0];
+	return bcm_readl(base + off);
 }
 
 static inline void enet_dma_writel(struct bcm_enet_priv *priv,
 				       u32 val, u32 off)
 {
-	bcm_writel(val, bcm_enet_shared_base[0] + off);
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMA_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[0];
+	bcm_writel(val, base + off);
 }
 
 static inline u32 enet_dmac_readl(struct bcm_enet_priv *priv, u32 off, int chan)
 {
-	return bcm_readl(bcm_enet_shared_base[1] +
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMAC_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[1];
+	return bcm_readl(base +
 		bcm63xx_enetdmacreg(off) + chan * priv->dma_chan_width);
 }
 
 static inline void enet_dmac_writel(struct bcm_enet_priv *priv,
 				       u32 val, u32 off, int chan)
 {
-	bcm_writel(val, bcm_enet_shared_base[1] +
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMAC_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[1];
+	bcm_writel(val, base +
 		bcm63xx_enetdmacreg(off) + chan * priv->dma_chan_width);
 }
 
 static inline u32 enet_dmas_readl(struct bcm_enet_priv *priv, u32 off, int chan)
 {
-	return bcm_readl(bcm_enet_shared_base[2] + off + chan * priv->dma_chan_width);
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMAS_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[2];
+	return bcm_readl(base + off + chan * priv->dma_chan_width);
 }
 
 static inline void enet_dmas_writel(struct bcm_enet_priv *priv,
 				       u32 val, u32 off, int chan)
 {
-	bcm_writel(val, bcm_enet_shared_base[2] + off + chan * priv->dma_chan_width);
+	const void __iomem *base = (priv->enet_is_gmac) ? priv->base + (BCM_63168_GMAC_DMAS_BASE - BCM_63168_GMAC_BASE)
+					: bcm_enet_shared_base[2];
+	bcm_writel(val, base + off + chan * priv->dma_chan_width);
 }
 
 /*
@@ -345,6 +412,8 @@ static int bcm_enet_receive_queue(struct net_device *dev, int budget)
 		/* break if dma ownership belongs to hw */
 		if (len_stat & DMADESC_OWNER_MASK)
 			break;
+
+		/* source port is ENETDMAC_IR_PORT(len_stat) */
 
 		processed++;
 		priv->rx_curr_desc++;
@@ -623,7 +692,7 @@ static int bcm_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	len_stat = (skb->len << DMADESC_LENGTH_SHIFT) & DMADESC_LENGTH_MASK;
 	len_stat |= (DMADESC_ESOP_MASK >> priv->dma_desc_shift) |
-		DMADESC_APPEND_CRC |
+		DMADESC_APPEND_CRC | /* DMADESC_ETH_PORT(x) | */
 		DMADESC_OWNER_MASK;
 
 	priv->tx_curr_desc++;
@@ -668,14 +737,23 @@ static int bcm_enet_set_mac_address(struct net_device *dev, void *p)
 	priv = netdev_priv(dev);
 	memcpy(dev->dev_addr, addr->sa_data, ETH_ALEN);
 
-	/* use perfect match register 0 to store my mac address */
-	val = (dev->dev_addr[2] << 24) | (dev->dev_addr[3] << 16) |
-		(dev->dev_addr[4] << 8) | dev->dev_addr[5];
-	enet_writel(priv, val, ENET_PML_REG(0));
+	if (priv->enet_is_gmac) {
+		val = (dev->dev_addr[0] << 8 | dev->dev_addr[1])
+			| (dev->dev_addr[2] << 24) | (dev->dev_addr[3] << 16);
+		enetgmac_writel(priv, val, ENET_GMAC_MAC0_REG);
 
-	val = (dev->dev_addr[0] << 8 | dev->dev_addr[1]);
-	val |= ENET_PMH_DATAVALID_MASK;
-	enet_writel(priv, val, ENET_PMH_REG(0));
+		val = (dev->dev_addr[4] << 8) | dev->dev_addr[5];
+		enetgmac_writel(priv, val, ENET_GMAC_MAC1_REG);
+	} else {
+		/* use perfect match register 0 to store my mac address */
+		val = (dev->dev_addr[2] << 24) | (dev->dev_addr[3] << 16) |
+			(dev->dev_addr[4] << 8) | dev->dev_addr[5];
+		enet_writel(priv, val, ENET_PML_REG(0));
+
+		val = (dev->dev_addr[0] << 8 | dev->dev_addr[1]);
+		val |= ENET_PMH_DATAVALID_MASK;
+		enet_writel(priv, val, ENET_PMH_REG(0));
+	}
 
 	return 0;
 }
@@ -740,6 +818,26 @@ static void bcm_enet_set_multicast_list(struct net_device *dev)
 }
 
 /*
+ * Change rx mode (promiscuous/allmulti) and update multicast list
+ */
+static void bcm_enetgmac_set_multicast_list(struct net_device *dev)
+{
+	struct bcm_enet_priv *priv;
+	u32 val;
+
+	priv = netdev_priv(dev);
+
+	val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+
+	if (dev->flags & (IFF_PROMISC | IFF_ALLMULTI))
+		val |= ENET_GMAC_CMD_PROMISC_ENABLE;
+	else
+		val &= ENET_GMAC_CMD_PROMISC_ENABLE;
+
+	enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
+}
+
+/*
  * set mac duplex parameters
  */
 static void bcm_enet_set_duplex(struct bcm_enet_priv *priv, int fullduplex)
@@ -752,6 +850,21 @@ static void bcm_enet_set_duplex(struct bcm_enet_priv *priv, int fullduplex)
 	else
 		val &= ~ENET_TXCTL_FD_MASK;
 	enet_writel(priv, val, ENET_TXCTL_REG);
+}
+
+/*
+ * set mac duplex parameters
+ */
+static void bcm_enetgmac_set_duplex(struct bcm_enet_priv *priv, int fullduplex)
+{
+	u32 val;
+
+	val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+	if (fullduplex)
+		val &= ~ENET_GMAC_CMD_HD_ENABLE;
+	else
+		val |= ENET_GMAC_CMD_HD_ENABLE;
+	enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
 }
 
 /*
@@ -768,6 +881,37 @@ static void bcm_enet_set_flow(struct bcm_enet_priv *priv, int rx_en, int tx_en)
 	else
 		val &= ~ENET_RXCFG_ENFLOW_MASK;
 	enet_writel(priv, val, ENET_RXCFG_REG);
+
+	if (!priv->dma_has_sram)
+		return;
+
+	/* tx flow control (pause frame generation) */
+	val = enet_dma_readl(priv, ENETDMA_CFG_REG);
+	if (tx_en)
+		val |= ENETDMA_CFG_FLOWCH_MASK(priv->rx_chan);
+	else
+		val &= ~ENETDMA_CFG_FLOWCH_MASK(priv->rx_chan);
+	enet_dma_writel(priv, val, ENETDMA_CFG_REG);
+}
+
+/*
+ * set mac flow control parameters
+ */
+static void bcm_enetgmac_set_flow(struct bcm_enet_priv *priv, int rx_en, int tx_en)
+{
+	u32 val;
+
+	/* rx/tx flow control (pause frame handling) */
+	val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+	if (rx_en)
+		val &= ~ENET_GMAC_CMD_RX_PAUSE_IGNORE;
+	else
+		val |= ENET_GMAC_CMD_RX_PAUSE_IGNORE;
+	if (tx_en)
+		val &= ~ENET_GMAC_CMD_TX_PAUSE_IGNORE;
+	else
+		val |= ENET_GMAC_CMD_TX_PAUSE_IGNORE;
+	enetgmac_writel(priv, val, ENET_RXCFG_REG);
 
 	if (!priv->dma_has_sram)
 		return;
@@ -850,8 +994,13 @@ static void bcm_enet_adjust_link(struct net_device *dev)
 	struct bcm_enet_priv *priv;
 
 	priv = netdev_priv(dev);
-	bcm_enet_set_duplex(priv, priv->force_duplex_full);
-	bcm_enet_set_flow(priv, priv->pause_rx, priv->pause_tx);
+	if (priv->enet_is_gmac) {
+		bcm_enetgmac_set_duplex(priv, priv->force_duplex_full);
+		bcm_enetgmac_set_flow(priv, priv->pause_rx, priv->pause_tx);
+	} else {
+		bcm_enet_set_duplex(priv, priv->force_duplex_full);
+		bcm_enet_set_flow(priv, priv->pause_rx, priv->pause_tx);
+	}
 	netif_carrier_on(dev);
 
 	pr_info("%s: link forced UP - %d/%s - flow control %s/%s\n",
@@ -918,7 +1067,10 @@ static int bcm_enet_open(struct net_device *dev)
 	}
 
 	/* mask all interrupts and request them */
-	enet_writel(priv, 0, ENET_IRMASK_REG);
+	if (priv->enet_is_gmac)
+		enetgmac_writel(priv, 0, ENET_GMAC_IRMASK_REG);
+	else
+		enet_writel(priv, 0, ENET_IRMASK_REG);
 	enet_dmac_writel(priv, 0, ENETDMAC_IRMASK, priv->rx_chan);
 	enet_dmac_writel(priv, 0, ENETDMAC_IRMASK, priv->tx_chan);
 
@@ -936,10 +1088,12 @@ static int bcm_enet_open(struct net_device *dev)
 	if (ret)
 		goto out_freeirq_rx;
 
-	/* initialize perfect match registers */
-	for (i = 0; i < 4; i++) {
-		enet_writel(priv, 0, ENET_PML_REG(i));
-		enet_writel(priv, 0, ENET_PMH_REG(i));
+	if (!priv->enet_is_gmac) {
+		/* initialize perfect match registers */
+		for (i = 0; i < 4; i++) {
+			enet_writel(priv, 0, ENET_PML_REG(i));
+			enet_writel(priv, 0, ENET_PMH_REG(i));
+		}
 	}
 
 	/* write device mac address */
@@ -1033,8 +1187,12 @@ static int bcm_enet_open(struct net_device *dev)
 	}
 
 	/* set max rx/tx length */
-	enet_writel(priv, priv->hw_mtu, ENET_RXMAXLEN_REG);
-	enet_writel(priv, priv->hw_mtu, ENET_TXMAXLEN_REG);
+	if (priv->enet_is_gmac) {
+		enetgmac_writel(priv, priv->hw_mtu, ENET_GMAC_MAXLEN_REG);
+	} else {
+		enet_writel(priv, priv->hw_mtu, ENET_RXMAXLEN_REG);
+		enet_writel(priv, priv->hw_mtu, ENET_TXMAXLEN_REG);
+	}
 
 	/* set dma maximum burst len */
 	enet_dmac_writel(priv, priv->dma_maxburst,
@@ -1043,7 +1201,15 @@ static int bcm_enet_open(struct net_device *dev)
 			 ENETDMAC_MAXBURST, priv->tx_chan);
 
 	/* set correct transmit fifo watermark */
-	enet_writel(priv, BCMENET_TX_FIFO_TRESH, ENET_TXWMARK_REG);
+	if (priv->enet_is_gmac) {
+		dev_info(&priv->pdev->dev, "ENET_GMAC_TXFIFOFLUSH_REG=%08x\n", enetgmac_readl(priv, ENET_GMAC_TXFIFOFLUSH_REG));
+/*
+    gmac_config_flow_control( 1, GMAC_RB_BP_THRESH_LO_DEF,
+        GMAC_RB_BP_THRESH_LO_DEF, 1, 0xffff, 0xffff );
+*/
+	} else {
+		enet_writel(priv, BCMENET_TX_FIFO_TRESH, ENET_TXWMARK_REG);
+	}
 
 	/* set flow control low/high threshold to 1/3 / 2/3 */
 	if (priv->dma_has_sram) {
@@ -1060,16 +1226,44 @@ static int bcm_enet_open(struct net_device *dev)
 	/* all set, enable mac and interrupts, start dma engine and
 	 * kick rx dma channel */
 	wmb();
-	val = enet_readl(priv, ENET_CTL_REG);
-	val |= ENET_CTL_ENABLE_MASK;
-	enet_writel(priv, val, ENET_CTL_REG);
+	if (priv->enet_is_gmac) {
+		val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+		val &= ~(ENET_GMAC_CMD_PAD_REM_ENABLE
+			| ENET_GMAC_CMD_RX_PAUSE_IGNORE
+			| ENET_GMAC_CMD_TX_ADDR_INS
+			| ENET_GMAC_CMD_LOC_LOOPBACK_EN
+			| ENET_GMAC_CMD_ENABLE_EXT_CFG
+			| ENET_GMAC_CMD_CTRL_FRM_ENABLE
+			| ENET_GMAC_CMD_REM_LOOPBACK_EN
+			| ENET_GMAC_CMD_TX_PAUSE_IGNORE
+			| ENET_GMAC_CMD_TXRX_EN_CFG
+			| ENET_GMAC_CMD_RUNT_FILT_DISABLE
+			| ENET_GMAC_CMD_SPEED_MASK);
+//		val |= ENET_GMAC_CMD_PROMISC_ENABLE;
+		val |= ENET_GMAC_CMD_CRC_FWD;
+		val |= ENET_GMAC_CMD_PAUSE_FWD;
+		val |= ENET_GMAC_CMD_LEN_CHECK_DISABLE;
+
+		/* TODO defer until link up */
+		val &= ~ENET_GMAC_CMD_HD_ENABLE;
+		val |= ENET_GMAC_CMD_RX_ENABLE;
+		val |= ENET_GMAC_CMD_TX_ENABLE;
+		val |= ENET_GMAC_SPEED_1000 << ENET_GMAC_CMD_SPEED_SHIFT;
+		enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
+	} else {
+		val = enet_readl(priv, ENET_CTL_REG);
+		val |= ENET_CTL_ENABLE_MASK;
+		enet_writel(priv, val, ENET_CTL_REG);
+	}
 	enet_dma_writel(priv, ENETDMA_CFG_EN_MASK, ENETDMA_CFG_REG);
 	enet_dmac_writel(priv, priv->dma_chan_en_mask,
 			 ENETDMAC_CHANCFG, priv->rx_chan);
 
-	/* watch "mib counters about to overflow" interrupt */
-	enet_writel(priv, ENET_IR_MIB, ENET_IR_REG);
-	enet_writel(priv, ENET_IR_MIB, ENET_IRMASK_REG);
+	if (!priv->enet_is_gmac) {
+		/* watch "mib counters about to overflow" interrupt */
+		enet_writel(priv, ENET_IR_MIB, ENET_IR_REG);
+		enet_writel(priv, ENET_IR_MIB, ENET_IRMASK_REG);
+	}
 
 	/* watch "packet transferred" interrupt in rx and tx */
 	enet_dmac_writel(priv, priv->dma_chan_int_mask,
@@ -1141,19 +1335,25 @@ static void bcm_enet_disable_mac(struct bcm_enet_priv *priv)
 	int limit;
 	u32 val;
 
-	val = enet_readl(priv, ENET_CTL_REG);
-	val |= ENET_CTL_DISABLE_MASK;
-	enet_writel(priv, val, ENET_CTL_REG);
-
-	limit = 1000;
-	do {
-		u32 val;
-
+	if (priv->enet_is_gmac) {
+		val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+		val &= ~(ENET_GMAC_CMD_RX_ENABLE | ENET_GMAC_CMD_TX_ENABLE);
+		enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
+	} else {
 		val = enet_readl(priv, ENET_CTL_REG);
-		if (!(val & ENET_CTL_DISABLE_MASK))
-			break;
-		udelay(1);
-	} while (limit--);
+		val |= ENET_CTL_DISABLE_MASK;
+		enet_writel(priv, val, ENET_CTL_REG);
+
+		limit = 1000;
+		do {
+			u32 val;
+
+			val = enet_readl(priv, ENET_CTL_REG);
+			if (!(val & ENET_CTL_DISABLE_MASK))
+				break;
+			udelay(1);
+		} while (limit--);
+	}
 }
 
 /*
@@ -1195,7 +1395,10 @@ static int bcm_enet_stop(struct net_device *dev)
 	del_timer_sync(&priv->rx_timeout);
 
 	/* mask all interrupts */
-	enet_writel(priv, 0, ENET_IRMASK_REG);
+	if (priv->enet_is_gmac)
+		enetgmac_writel(priv, 0, ENET_GMAC_IRMASK_REG);
+	else
+		enet_writel(priv, 0, ENET_IRMASK_REG);
 	enet_dmac_writel(priv, 0, ENETDMAC_IRMASK, priv->rx_chan);
 	enet_dmac_writel(priv, 0, ENETDMAC_IRMASK, priv->tx_chan);
 
@@ -1753,6 +1956,7 @@ static int bcm_enet_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	priv = netdev_priv(dev);
 
+	priv->enet_is_gmac = false;
 	priv->enet_is_sw = false;
 	priv->dma_maxburst = BCMENET_DMA_MAXBURST;
 
@@ -1830,7 +2034,6 @@ static int bcm_enet_probe(struct platform_device *pdev)
 
 	/* MII bus registration */
 	if (priv->has_phy) {
-
 		priv->mii_bus = mdiobus_alloc();
 		if (!priv->mii_bus) {
 			ret = -ENOMEM;
@@ -1981,6 +2184,322 @@ struct platform_driver bcm63xx_enet_driver = {
 	.remove	= bcm_enet_remove,
 	.driver	= {
 		.name	= "bcm63xx_enet",
+		.owner  = THIS_MODULE,
+	},
+};
+
+/*
+ * preinit hardware to allow mii operation while device is down
+ */
+static void bcm_enetgmac_hw_preinit(struct bcm_enet_priv *priv)
+{
+	u32 val;
+
+	/* soft reset intf */
+	val = enetgmac_readl(priv, ENET_GMAC_CMD_REG);
+	val |= ENET_GMAC_CMD_SW_RESET;
+	enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
+	wmb();
+	val &= ~ENET_GMAC_CMD_SW_RESET;
+	enetgmac_writel(priv, val, ENET_GMAC_CMD_REG);
+	wmb();
+
+	/* soft reset mac */
+	val = enetgmac_readl(priv, ENET_GMAC_MAC_RESET_REG);
+	val |= ENET_GMAC_MAC_RX_FIFO_FLUSH | ENET_GMAC_MAC_TX_FIFO_FLUSH;
+	enetgmac_writel(priv, val, ENET_GMAC_MAC_RESET_REG);
+	wmb();
+	val |= ENET_GMAC_MAC_SW_RESET;
+	enetgmac_writel(priv, val, ENET_GMAC_MAC_RESET_REG);
+	wmb();
+	val &= ~ENET_GMAC_MAC_SW_RESET;
+	enetgmac_writel(priv, val, ENET_GMAC_MAC_RESET_REG);
+	wmb();
+	val = 0;
+	enetgmac_writel(priv, val, ENET_GMAC_MAC_RESET_REG);
+	wmb();
+
+	/* make sure mac is disabled */
+	bcm_enet_disable_mac(priv);
+
+#if 0
+	/* set mib counters to self-clear when read */
+	val = enet_readl(priv, ENET_MIBCTL_REG);
+	val |= ENET_MIBCTL_RDCLEAR_MASK;
+	enet_writel(priv, val, ENET_MIBCTL_REG);
+#endif
+}
+
+static const struct net_device_ops bcm_enetgmac_ops = {
+	.ndo_open		= bcm_enet_open,
+	.ndo_stop		= bcm_enet_stop,
+	.ndo_start_xmit		= bcm_enet_start_xmit,
+	.ndo_set_mac_address	= bcm_enet_set_mac_address,
+	.ndo_set_rx_mode	= bcm_enetgmac_set_multicast_list,
+//	.ndo_do_ioctl		= bcm_enet_ioctl,
+	.ndo_change_mtu		= bcm_enet_change_mtu,
+};
+
+/*
+ * allocate netdevice, request register memory and register device.
+ */
+static int bcm_enetgmac_probe(struct platform_device *pdev)
+{
+	struct bcm_enet_priv *priv;
+	struct net_device *dev;
+	struct bcm63xx_enet_platform_data *pd;
+	struct resource *res_mem, *res_irq, *res_irq_rx, *res_irq_tx;
+	struct mii_bus *bus;
+	const char *clk_name;
+	int ret;
+
+	res_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+	res_irq_rx = platform_get_resource(pdev, IORESOURCE_IRQ, 1);
+	res_irq_tx = platform_get_resource(pdev, IORESOURCE_IRQ, 2);
+	if (!res_irq || !res_irq_rx || !res_irq_tx)
+		return -ENODEV;
+
+	ret = 0;
+	dev = alloc_etherdev(sizeof(*priv));
+	if (!dev)
+		return -ENOMEM;
+	priv = netdev_priv(dev);
+
+	priv->enet_is_gmac = true;
+	priv->enet_is_sw = false;
+	priv->dma_maxburst = BCMENET_DMA_MAXBURST;
+
+	ret = compute_hw_mtu(priv, dev->mtu);
+	if (ret)
+		goto out;
+
+	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	priv->base = devm_ioremap_resource(&pdev->dev, res_mem);
+	if (IS_ERR(priv->base)) {
+		ret = PTR_ERR(priv->base);
+		goto out;
+	}
+
+	dev->irq = priv->irq = res_irq->start;
+	priv->irq_rx = res_irq_rx->start;
+	priv->irq_tx = res_irq_tx->start;
+	priv->mac_id = pdev->id;
+
+	/* get rx & tx dma channel id for this mac */
+	if (priv->mac_id == 0) {
+		priv->rx_chan = 0;
+		priv->tx_chan = 1;
+		clk_name = "enetgmac";
+	}
+
+	priv->mac_clk = clk_get(&pdev->dev, clk_name);
+	if (IS_ERR(priv->mac_clk)) {
+		ret = PTR_ERR(priv->mac_clk);
+		goto out;
+	}
+	clk_prepare_enable(priv->mac_clk);
+
+	/* initialize default and fetch platform data */
+	priv->rx_ring_size = BCMENET_DEF_RX_DESC;
+	priv->tx_ring_size = BCMENET_DEF_TX_DESC;
+
+	pd = dev_get_platdata(&pdev->dev);
+	if (pd) {
+		memcpy(dev->dev_addr, pd->mac_addr, ETH_ALEN);
+		priv->has_phy = pd->has_phy;
+		priv->phy_id = pd->phy_id;
+		priv->has_phy_interrupt = pd->has_phy_interrupt;
+		priv->phy_interrupt = pd->phy_interrupt;
+		priv->use_external_mii = !pd->use_internal_phy;
+		priv->pause_auto = pd->pause_auto;
+		priv->pause_rx = pd->pause_rx;
+		priv->pause_tx = pd->pause_tx;
+		priv->force_duplex_full = pd->force_duplex_full;
+		priv->force_speed_100 = pd->force_speed_100;
+		priv->dma_chan_en_mask = pd->dma_chan_en_mask;
+		priv->dma_chan_int_mask = pd->dma_chan_int_mask;
+		priv->dma_chan_width = pd->dma_chan_width;
+		priv->dma_has_sram = pd->dma_has_sram;
+		priv->dma_desc_shift = pd->dma_desc_shift;
+	}
+
+	if (priv->mac_id == 0 && priv->has_phy && !priv->use_external_mii) {
+		/* using internal PHY, enable clock */
+		priv->phy_clk = clk_get(&pdev->dev, "ephy");
+		if (IS_ERR(priv->phy_clk)) {
+			ret = PTR_ERR(priv->phy_clk);
+			priv->phy_clk = NULL;
+			goto out_put_clk_mac;
+		}
+		clk_prepare_enable(priv->phy_clk);
+	}
+
+	/* do minimal hardware init to be able to probe mii bus */
+	bcm_enetgmac_hw_preinit(priv);
+
+	/* MII bus registration */
+	if (priv->has_phy) {
+		priv->mii_bus = mdiobus_alloc();
+		if (!priv->mii_bus) {
+			ret = -ENOMEM;
+			goto out_uninit_hw;
+		}
+
+		bus = priv->mii_bus;
+		bus->name = "bcm63xx_enet MII bus";
+		bus->parent = &pdev->dev;
+		bus->priv = priv;
+		bus->read = bcm_enet_mdio_read_phylib;
+		bus->write = bcm_enet_mdio_write_phylib;
+		sprintf(bus->id, "%s-%d", pdev->name, priv->mac_id);
+
+		/* only probe bus where we think the PHY is, because
+		 * the mdio read operation return 0 instead of 0xffff
+		 * if a slave is not present on hw */
+		bus->phy_mask = ~(1 << priv->phy_id);
+
+		bus->irq = devm_kzalloc(&pdev->dev, sizeof(int) * PHY_MAX_ADDR,
+					GFP_KERNEL);
+		if (!bus->irq) {
+			ret = -ENOMEM;
+			goto out_free_mdio;
+		}
+
+		if (priv->has_phy_interrupt)
+			bus->irq[priv->phy_id] = priv->phy_interrupt;
+		else
+			bus->irq[priv->phy_id] = PHY_POLL;
+
+		ret = mdiobus_register(bus);
+		if (ret) {
+			dev_err(&pdev->dev, "unable to register mdio bus\n");
+			goto out_free_mdio;
+		}
+	} else {
+
+		/* run platform code to initialize PHY device */
+		if (pd->mii_config &&
+		    pd->mii_config(dev, 1, bcm_enet_mdio_read_mii,
+				   bcm_enet_mdio_write_mii)) {
+			dev_err(&pdev->dev, "unable to configure mdio bus\n");
+			goto out_uninit_hw;
+		}
+	}
+
+	spin_lock_init(&priv->rx_lock);
+
+	/* init rx timeout (used for oom) */
+	init_timer(&priv->rx_timeout);
+	priv->rx_timeout.function = bcm_enet_refill_rx_timer;
+	priv->rx_timeout.data = (unsigned long)dev;
+
+#if 0
+	/* init the mib update lock&work */
+	mutex_init(&priv->mib_update_lock);
+	INIT_WORK(&priv->mib_update_task, bcm_enet_update_mib_counters_defer);
+
+	/* zero mib counters */
+	for (i = 0; i < ENET_MIB_REG_COUNT; i++)
+		enet_writel(priv, 0, ENET_MIB_REG(i));
+#endif
+
+	/* register netdevice */
+	dev->netdev_ops = &bcm_enetgmac_ops;
+	netif_napi_add(dev, &priv->napi, bcm_enet_poll, 16);
+
+#if 0
+	dev->ethtool_ops = &bcm_enetgmac_ethtool_ops;
+#endif
+	SET_NETDEV_DEV(dev, &pdev->dev);
+
+	ret = register_netdev(dev);
+	if (ret)
+		goto out_unregister_mdio;
+
+	netif_carrier_off(dev);
+	platform_set_drvdata(pdev, dev);
+	priv->pdev = pdev;
+	priv->net_dev = dev;
+
+	priv->force_duplex_full = true;
+
+	dev_info(&priv->pdev->dev, "%s at MMIO 0x%08x, %pM, RX IRQ %d, TX IRQ %d\n", dev->name, res_mem->start, dev->dev_addr, priv->irq_rx, priv->irq_tx);
+	return 0;
+
+out_unregister_mdio:
+	if (priv->mii_bus)
+		mdiobus_unregister(priv->mii_bus);
+
+out_free_mdio:
+	if (priv->mii_bus)
+		mdiobus_free(priv->mii_bus);
+
+out_uninit_hw:
+#if 0
+	/* turn off mdc clock */
+	enet_writel(priv, 0, ENET_MIISC_REG);
+	if (priv->phy_clk) {
+		clk_disable_unprepare(priv->phy_clk);
+		clk_put(priv->phy_clk);
+	}
+#endif
+
+out_put_clk_mac:
+	clk_disable_unprepare(priv->mac_clk);
+	clk_put(priv->mac_clk);
+out:
+	free_netdev(dev);
+	return ret;
+}
+
+
+/*
+ * exit func, stops hardware and unregisters netdevice
+ */
+static int bcm_enetgmac_remove(struct platform_device *pdev)
+{
+	struct bcm_enet_priv *priv;
+	struct net_device *dev;
+
+	/* stop netdevice */
+	dev = platform_get_drvdata(pdev);
+	priv = netdev_priv(dev);
+	unregister_netdev(dev);
+
+#if 0
+	/* turn off mdc clock */
+	enet_writel(priv, 0, ENET_MIISC_REG);
+#endif
+
+	if (priv->has_phy) {
+		mdiobus_unregister(priv->mii_bus);
+		mdiobus_free(priv->mii_bus);
+	} else {
+		struct bcm63xx_enet_platform_data *pd;
+
+		pd = dev_get_platdata(&pdev->dev);
+		if (pd && pd->mii_config)
+			pd->mii_config(dev, 0, bcm_enet_mdio_read_mii,
+				       bcm_enet_mdio_write_mii);
+	}
+
+	/* disable hw block clocks */
+	if (priv->phy_clk) {
+		clk_disable_unprepare(priv->phy_clk);
+		clk_put(priv->phy_clk);
+	}
+	clk_disable_unprepare(priv->mac_clk);
+	clk_put(priv->mac_clk);
+
+	free_netdev(dev);
+	return 0;
+}
+
+struct platform_driver bcm63xx_enetgmac_driver = {
+	.probe	= bcm_enetgmac_probe,
+	.remove	= bcm_enetgmac_remove,
+	.driver	= {
+		.name	= "bcm63xx_enetgmac",
 		.owner  = THIS_MODULE,
 	},
 };
@@ -2254,6 +2773,30 @@ static int bcm_enetsw_open(struct net_device *dev)
 	enetsw_writel(priv, 0x1ff, ENETSW_JMBCTL_PORT_REG);
 	enetsw_writew(priv, 9728, ENETSW_JMBCTL_MAXSIZE_REG);
 
+	/* enable all ports and forward all ports to all ports */
+	val = 0;
+	for (i = 0; i < priv->num_ports; i++)
+		if (priv->used_ports[i].used)
+			val |= (1 << i);
+	enetsw_writeb(priv, val, ENETSW_PORT_ENABLE_REG);
+
+	val = (1 << ENETSW_MAX_PORT); /* host port */
+	for (i = 0; i < priv->num_ports; i++) {
+		if (priv->used_ports[i].used)
+			enetsw_writew(priv, val, ENETSW_PORT_BASED_VLAN(i));
+		else
+			enetsw_writew(priv, 0, ENETSW_PORT_BASED_VLAN(i));
+	}
+
+#if 0
+	{
+		u32 advertise = bcmenet_sw_mdio_read(priv, 0, 4, MII_CTRL1000);
+		advertise |= ADVERTISE_1000FULL;
+		advertise |= ADVERTISE_1000HALF;
+		bcmenet_sw_mdio_write(priv, 0, 4, MII_CTRL1000, advertise);
+	}
+#endif
+
 	/* initialize flow control buffer allocation */
 	enet_dma_writel(priv, ENETDMA_BUFALLOC_FORCE_MASK | 0,
 			ENETDMA_BUFALLOC_REG(priv->rx_chan));
@@ -2346,7 +2889,6 @@ static int bcm_enetsw_open(struct net_device *dev)
 
 		if (port->force_duplex_full)
 			override |= ENETSW_IMPOV_FDX_MASK;
-
 
 		enetsw_writeb(priv, override, ENETSW_PORTOV_REG(i));
 		enetsw_writeb(priv, 0, ENETSW_PTCTRL_REG(i));
@@ -2734,6 +3276,7 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 	memset(priv, 0, sizeof(*priv));
 
 	/* initialize default and fetch platform data */
+	priv->enet_is_gmac = false;
 	priv->enet_is_sw = true;
 	priv->irq_rx = irq_rx;
 	priv->irq_tx = irq_tx;
@@ -2802,6 +3345,7 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 	priv->pdev = pdev;
 	priv->net_dev = dev;
 
+	dev_info(&priv->pdev->dev, "%s at MMIO 0x%08x, %pM, RX IRQ %d, TX IRQ %d\n", dev->name, res_mem->start, dev->dev_addr, priv->irq_rx, priv->irq_tx);
 	return 0;
 
 out_put_clk:
@@ -2893,24 +3437,40 @@ static int __init bcm_enet_init(void)
 
 	ret = platform_driver_register(&bcm63xx_enet_shared_driver);
 	if (ret)
-		return ret;
+		goto out_enet_shared;
 
 	ret = platform_driver_register(&bcm63xx_enet_driver);
 	if (ret)
-		platform_driver_unregister(&bcm63xx_enet_shared_driver);
+		goto out_enet;
+
+	ret = platform_driver_register(&bcm63xx_enetgmac_driver);
+	if (ret)
+		goto out_enetgmac;
 
 	ret = platform_driver_register(&bcm63xx_enetsw_driver);
-	if (ret) {
-		platform_driver_unregister(&bcm63xx_enet_driver);
-		platform_driver_unregister(&bcm63xx_enet_shared_driver);
-	}
+	if (ret)
+		goto out_enetsw;
 
+out_enetsw:
+	if (ret)
+		platform_driver_unregister(&bcm63xx_enetgmac_driver);
+
+out_enetgmac:
+	if (ret)
+		platform_driver_unregister(&bcm63xx_enet_driver);
+
+out_enet:
+	if (ret)
+		platform_driver_unregister(&bcm63xx_enet_shared_driver);
+
+out_enet_shared:
 	return ret;
 }
 
 static void __exit bcm_enet_exit(void)
 {
 	platform_driver_unregister(&bcm63xx_enet_driver);
+	platform_driver_unregister(&bcm63xx_enetgmac_driver);
 	platform_driver_unregister(&bcm63xx_enetsw_driver);
 	platform_driver_unregister(&bcm63xx_enet_shared_driver);
 }
