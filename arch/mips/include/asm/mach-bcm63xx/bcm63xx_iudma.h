@@ -19,6 +19,7 @@ struct bcm_enet_desc {
 #define DMADESC_SOP_MASK	(1 << 13)
 #define DMADESC_ESOP_MASK	(DMADESC_EOP_MASK | DMADESC_SOP_MASK)
 #define DMADESC_WRAP_MASK	(1 << 12)
+#define DMADESC_ETH_PORT(x)	(1 << (x))
 #define DMADESC_USB_NOZERO_MASK (1 << 1)
 #define DMADESC_USB_ZERO_MASK	(1 << 0)
 
