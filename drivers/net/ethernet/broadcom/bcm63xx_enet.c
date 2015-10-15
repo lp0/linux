@@ -346,6 +346,8 @@ static int bcm_enet_receive_queue(struct net_device *dev, int budget)
 		if (len_stat & DMADESC_OWNER_MASK)
 			break;
 
+		/* source port is ENETDMAC_IR_PORT(len_stat) */
+
 		processed++;
 		priv->rx_curr_desc++;
 		if (priv->rx_curr_desc == priv->rx_ring_size)
@@ -623,7 +625,7 @@ static int bcm_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	len_stat = (skb->len << DMADESC_LENGTH_SHIFT) & DMADESC_LENGTH_MASK;
 	len_stat |= (DMADESC_ESOP_MASK >> priv->dma_desc_shift) |
-		DMADESC_APPEND_CRC |
+		DMADESC_APPEND_CRC | /* DMADESC_ETH_PORT(x) | */
 		DMADESC_OWNER_MASK;
 
 	priv->tx_curr_desc++;
@@ -2254,6 +2256,21 @@ static int bcm_enetsw_open(struct net_device *dev)
 	enetsw_writel(priv, 0x1ff, ENETSW_JMBCTL_PORT_REG);
 	enetsw_writew(priv, 9728, ENETSW_JMBCTL_MAXSIZE_REG);
 
+	/* enable all ports and forward all ports to all ports */
+	val = 0;
+	for (i = 0; i < priv->num_ports; i++)
+		if (priv->used_ports[i].used)
+			val |= (1 << i);
+	enetsw_writeb(priv, val, ENETSW_PORT_ENABLE_REG);
+
+	val = (1 << ENETSW_MAX_PORT); /* host port */
+	for (i = 0; i < priv->num_ports; i++) {
+		if (priv->used_ports[i].used)
+			enetsw_writew(priv, val, ENETSW_PORT_BASED_VLAN(i));
+		else
+			enetsw_writew(priv, 0, ENETSW_PORT_BASED_VLAN(i));
+	}
+
 	/* initialize flow control buffer allocation */
 	enet_dma_writel(priv, ENETDMA_BUFALLOC_FORCE_MASK | 0,
 			ENETDMA_BUFALLOC_REG(priv->rx_chan));
@@ -2802,6 +2819,7 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 	priv->pdev = pdev;
 	priv->net_dev = dev;
 
+	dev_info(&priv->pdev->dev, "%s at MMIO 0x%08x, %pM, RX IRQ %d, TX IRQ %d\n", dev->name, res_mem->start, dev->dev_addr, priv->irq_rx, priv->irq_tx);
 	return 0;
 
 out_put_clk:
