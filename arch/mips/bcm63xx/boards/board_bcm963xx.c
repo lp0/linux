@@ -677,6 +677,50 @@ static struct board_info __initdata board_DWVS0 = {
 #endif
 
 /*
+ * known 63168 boards
+ */
+#ifdef CONFIG_BCM63XX_CPU_63168
+static struct board_info __initdata board_963168vx = {
+	.name				= "963168VX",
+	.expected_cpu_id		= 0x63168,
+
+	.has_uart0			= 1,
+	.has_uart1			= 1,
+	.has_enetsw			= 1,
+	.has_ohci0			= 1,
+	.has_ehci0			= 1,
+
+	/* PCIE only, but there are no devices */
+	.has_pci			= 0,
+
+	.enetsw = {
+		.used_ports = {
+			{
+				.used 	= 1,
+				.phy_id = 1,
+				.name 	= "fe2",
+			},
+			{
+				.used 	= 1,
+				.phy_id = 2,
+				.name 	= "fe3",
+			},
+			{
+				.used 	= 1,
+				.phy_id = 3,
+				.name 	= "fe4",
+			},
+			{
+				.used 	= 1,
+				.phy_id = 4,
+				.name 	= "fe1",
+			},
+		},
+	},
+};
+#endif
+
+/*
  * all boards
  */
 static const struct board_info __initconst *bcm963xx_boards[] = {
@@ -703,12 +747,14 @@ static const struct board_info __initconst *bcm963xx_boards[] = {
 	&board_96348gw_a,
 	&board_rta1025w_16,
 #endif
-
 #ifdef CONFIG_BCM63XX_CPU_6358
 	&board_96358vw,
 	&board_96358vw2,
 	&board_AGPFS0,
 	&board_DWVS0,
+#endif
+#ifdef CONFIG_BCM63XX_CPU_63168
+	&board_963168vx,
 #endif
 };
 
