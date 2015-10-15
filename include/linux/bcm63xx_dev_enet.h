@@ -1,10 +1,13 @@
-#ifndef BCM63XX_DEV_ENET_H_
-#define BCM63XX_DEV_ENET_H_
+#ifndef LINUX_BCM63XX_DEV_ENET_H_
+#define LINUX_BCM63XX_DEV_ENET_H_
 
 #include <linux/if_ether.h>
 #include <linux/init.h>
 
-#include <bcm63xx_regs.h>
+struct bcm63xx_enet_platform_dma_data {
+	struct device *dma_dev;
+	int chan_id;
+};
 
 /*
  * on board ethernet platform data
@@ -40,20 +43,11 @@ struct bcm63xx_enet_platform_data {
 			  void (*mii_write)(struct net_device *dev,
 					    int phy_id, int reg, int val));
 
-	/* DMA channel enable mask */
-	u32 dma_chan_en_mask;
-
-	/* DMA channel interrupt mask */
-	u32 dma_chan_int_mask;
-
-	/* DMA engine has internal SRAM */
-	bool dma_has_sram;
-
-	/* DMA channel register width */
-	unsigned int dma_chan_width;
-
-	/* DMA descriptor shift */
-	unsigned int dma_desc_shift;
+	/* dma configuration */
+	struct bcm63xx_enet_platform_dma_data rx_dma;
+	struct bcm63xx_enet_platform_dma_data tx_dma;
+	unsigned int rx_max_ring_size;
+	unsigned int tx_max_ring_size;
 };
 
 /*
@@ -81,41 +75,16 @@ struct bcm63xx_enetsw_platform_data {
 	int num_ports;
 	struct bcm63xx_enetsw_port used_ports[ENETSW_MAX_PORT];
 
-	/* DMA channel enable mask */
-	u32 dma_chan_en_mask;
-
-	/* DMA channel interrupt mask */
-	u32 dma_chan_int_mask;
-
-	/* DMA channel register width */
-	unsigned int dma_chan_width;
-
-	/* DMA engine has internal SRAM */
-	bool dma_has_sram;
+	/* dma configuration */
+	struct bcm63xx_enet_platform_dma_data rx_dma;
+	struct bcm63xx_enet_platform_dma_data tx_dma;
+	unsigned int rx_max_ring_size;
+	unsigned int tx_max_ring_size;
 };
 
 int __init bcm63xx_enet_register(int unit,
 				 const struct bcm63xx_enet_platform_data *pd);
 
 int bcm63xx_enetsw_register(const struct bcm63xx_enetsw_platform_data *pd);
-
-enum bcm63xx_regs_enetdmac {
-	ENETDMAC_CHANCFG,
-	ENETDMAC_IR,
-	ENETDMAC_IRMASK,
-	ENETDMAC_MAXBURST,
-	ENETDMAC_BUFALLOC,
-	ENETDMAC_RSTART,
-	ENETDMAC_FC,
-	ENETDMAC_LEN,
-};
-
-static inline unsigned long bcm63xx_enetdmacreg(enum bcm63xx_regs_enetdmac reg)
-{
-	extern const unsigned long *bcm63xx_regs_enetdmac;
-
-	return bcm63xx_regs_enetdmac[reg];
-}
-
 
 #endif /* ! BCM63XX_DEV_ENET_H_ */
