@@ -87,6 +87,25 @@ config SB1XXX_CORELIS
 	  Select compile flags that produce code that can be processed by the
 	  Corelis mksym utility and UDB Emulator.
 
+config ZBOOT_LOAD_ADDRESS_BOOL
+	bool "Configure compressed kernel load address"
+	depends on SYS_SUPPORTS_ZBOOT_LOAD_ADDRESS
+	help
+	  By default the compressed kernel support is loaded immediately
+	  after the location of the uncompressed kernel.
+
+	  Some bootloaders may be incompatible with this location depending
+	  on their memory layout at boot. Select this option to allow the
+	  load address to be overridden.
+
+if ZBOOT_LOAD_ADDRESS_BOOL
+
+config ZBOOT_LOAD_ADDRESS
+	hex "Compressed kernel load address"
+	depends on ZBOOT_LOAD_ADDRESS_BOOL
+
+endif
+
 config DEBUG_ZBOOT
 	bool "Enable compressed kernel support debugging"
 	depends on DEBUG_KERNEL && SYS_SUPPORTS_ZBOOT
