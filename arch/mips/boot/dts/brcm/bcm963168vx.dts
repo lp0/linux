@@ -1,0 +1,48 @@
+/dts-v1/;
+
+/include/ "bcm63168.dtsi"
+
+/ {
+	compatible = "brcm,bcm963168vx", "brcm,bcm63168";
+	model = "Broadcom BCM963168VX";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x04000000>;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200";
+		stdout-path = &uart0;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&eth0 {
+	status = "okay";
+};
+
+/*
+&ehci0 {
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+};
+
+&hsspi0 {
+	status = "okay";
+};
+*/

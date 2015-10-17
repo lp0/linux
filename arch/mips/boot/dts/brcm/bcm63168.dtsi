@@ -1,0 +1,170 @@
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "brcm,bcm63168";
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		mips-hpt-frequency = <200000000>;
+
+		cpu@0 {
+			compatible = "brcm,bmips4350";
+			device_type = "cpu";
+			reg = <0>;
+		};
+
+		cpu@1 {
+			compatible = "brcm,bmips4350";
+			device_type = "cpu";
+			reg = <1>;
+		};
+
+	};
+
+	clocks {
+		periph_clk: periph_clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <50000000>;
+		};
+	};
+
+	aliases {
+		uart0 = &uart0;
+		uart1 = &uart1;
+	};
+
+	cpu_intc: interrupt-controller {
+		#address-cells = <0>;
+		compatible = "mti,cpu-interrupt-controller";
+
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+
+	ubus {
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		compatible = "simple-bus";
+		ranges;
+
+		periph_intc: interrupt-controller@0x10000000 {
+			compatible = "brcm,bcm63xx-l1-intc";
+			reg = <0x10000020 0x20>,
+			      <0x10000040 0x20>;
+
+			interrupt-controller;
+			#interrupt-cells = <1>;
+
+			interrupt-parent = <&cpu_intc>;
+			interrupts = <2>, <3>;
+		};
+
+		/* TODO rtc, leds */
+
+		perf: syscon@0x10000000 {
+			compatible = "syscon";
+			reg = <0x10000000 0x14>;
+			little-endian;
+		};
+
+		reboot {
+			compatible = "syscon-reboot";
+			regmap = <&perf>;
+			offset = <0x8>;
+			mask = <0x1>;
+		};
+
+		timer: timer@0x10000080 {
+			compatible = "brcm,bcm63xx-timer";
+			reg = <0x10000080 0x1c>;
+			clock-frequency = <50000000>;
+
+			interrupt-controller;
+			#interrupt-cells = <1>;
+
+			interrupt-parent = <&periph_intc>;
+			interrupts = <0>;
+		};
+
+		wdt: watchdog@0x1000009c {
+			compatible = "brcm,bcm63xx-wdt";
+			reg = <0x1000009c 0x0c>;
+
+			interrupt-parent = <&timer>;
+			interrupts = <3>;
+/*
+			interrupt-parent = <&periph_intc>;
+			interrupts = <0>;
+*/
+			clocks = <&periph_clk>;
+		};
+
+		uart0: serial@0x10000180 {
+			compatible = "brcm,bcm6345-uart";
+			reg = <0x10000180 0x20>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <5>;
+			clocks = <&periph_clk>;
+			status = "disabled";
+		};
+
+		uart1: serial@0x100001a0 {
+			compatible = "brcm,bcm6345-uart";
+			reg = <0x100001a0 0x20>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <34>;
+			clocks = <&periph_clk>;
+			status = "disabled";
+		};
+
+		eth0: ethernet@0x10700000 {
+			compatible = "brcm,bcm63168-enetsw", "brcm,bcm63xx-enetsw";
+			reg = <0x100001a0 0x20>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <34>;
+			clocks = <&periph_clk>;
+			brcm,phy-ids = <1>, <2>, <3>, <4>;
+			brcm,port-names = "fe2", "fe3", "fe4", "fe1";
+			status = "disabled";
+		};
+
+		ehci0: usb@0x10002500 {
+			compatible = "brcm,bcm63168-ehci", "generic-ehci";
+			reg = <0x10002500 0x100>;
+			big-endian;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <7>;
+			status = "disabled";
+		};
+
+		ohci0: usb@0x10002600 {
+			compatible = "brcm,bcm63168-ohci", "generic-ohci";
+			reg = <0x10002600 0x100>;
+			big-endian;
+			no-big-frame-no;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <5>;
+			status = "disabled";
+		};
+
+		spi0: spi@0x10000800 {
+			compatible = "brcm,bcm63168-spi", "brcm,bcm63xx-spi";
+			reg = <0x10000800 0x70c>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <80>;
+			status = "disabled";
+		};
+
+		hsspi0: spi-master@0x10001000 {
+			compatible = "brcm,bcm63168-spi", "brcm,bcm63xx-hsspi";
+			reg = <0x10000800 0x600>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <6>;
+			status = "disabled";
+		};
+	};
+};
