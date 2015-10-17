@@ -1,0 +1,402 @@
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "brcm,bcm63168";
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		mips-hpt-frequency = <200000000>;
+
+		cpu@0 {
+			compatible = "brcm,bmips4350";
+			device_type = "cpu";
+			reg = <0>;
+		};
+
+		cpu@1 {
+			compatible = "brcm,bmips4350";
+			device_type = "cpu";
+			reg = <1>;
+		};
+	};
+
+	clocks {
+		periph_osc: periph_osc {
+			compatible = "fixed-clock";
+
+			#clock-cells = <0>;
+			clock-frequency = <50000000>;
+			clock-output-names = "periph";
+		};
+
+		periph_clk: periph_clk {
+			compatible = "brcm,bcm63168-gate-clk", "brcm,bcm6345-gate-clk";
+			regmap = <&periph_cntl>;
+			offset = <0x4>;
+
+			#clock-cells = <1>;
+			clock-indices =
+				<1>,          <2>,        <3>,       <4>,     <5>,
+				<6>,          <7>,        <8>,       <9>,     <10>,
+				<11>,         <12>,       <13>,      <14>,    <15>,
+				<16>,         <17>,       <18>,      <19>,    <20>,
+				<27>,         <31>;
+			clock-output-names =
+				"vdsl_qproc", "vdsl_afe", "vdsl",    "mips",  "wlan_ocp",
+				"dect",       "fap0",     "fap1",    "sar",   "robosw",
+				"pcm",        "usbd",     "usbh",    "ipsec", "spi",
+				"hsspi",      "pcie",     "phymips", "gmac",  "nand",
+				"tbus",       "robosw250";
+		};
+
+		timer_clk: timer_clk {
+			compatible = "brcm,bcm63168-gate-clk", "brcm,bcm6345-gate-clk";
+			regmap = <&timer_cntl>;
+			offset = <0x4>;
+
+			#clock-cells = <1>;
+			clock-indices = <11>, <15>, <17>, <18>;
+			clock-output-names = "fap1_pll", "fap2_pll", "uto_extin", "usb_ref";
+		};
+	};
+
+	regulators {
+		compatible = "simple-bus";
+		#address-cells = <0>;
+		#size-cells = <0>;
+
+		sar {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "sar_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x1>;
+			startup-delay-us = <100000>;
+		};
+
+		ipsec {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "ipsec_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x2>;
+			startup-delay-us = <100000>;
+		};
+
+		mips {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "mips_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x4>;
+			startup-delay-us = <100000>;
+		};
+
+		dect {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "dect_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x8>;
+			startup-delay-us = <100000>;
+		};
+
+		usbh_power: usbh {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "usbh_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x10>;
+			startup-delay-us = <100000>;
+		};
+
+		usbd {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "usbd_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x20>;
+			startup-delay-us = <100000>;
+		};
+
+		robosw_power: robosw {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "robosw_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x40>;
+			startup-delay-us = <100000>;
+		};
+
+		pcm {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "pcm_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x80>;
+			startup-delay-us = <100000>;
+		};
+
+		periph {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "periph_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x100>;
+			startup-delay-us = <100000>;
+		};
+
+		vdsl_phy {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "vdsl_phy_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x200>;
+			startup-delay-us = <100000>;
+		};
+
+		vdsl_mips {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "vdsl_mips_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x400>;
+			startup-delay-us = <100000>;
+		};
+
+		fap {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "fap_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x800>;
+			startup-delay-us = <100000>;
+		};
+
+		pcie {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "pcie_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x1000>;
+			startup-delay-us = <100000>;
+		};
+
+		wlan_pads {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "wlan_pads_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x2000>;
+			startup-delay-us = <100000>;
+		};
+
+		gmac {
+			compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+			regulator-name = "gmac_power";
+			regmap = <&misc>;
+			offset = <0x4c>;
+			mask = <0x40000>;
+			startup-delay-us = <100000>;
+		};
+	};
+
+	aliases {
+		uart0 = &uart0;
+		uart1 = &uart1;
+	};
+
+	cpu_intc: interrupt-controller {
+		#address-cells = <0>;
+		compatible = "mti,cpu-interrupt-controller";
+
+		interrupt-controller;
+		#interrupt-cells = <1>;
+	};
+
+	ubus {
+		compatible = "brcm,ubus", "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		periph_intc: interrupt-controller@10000000 {
+			compatible = "brcm,bcm63168-l1-intc", "brcm,bcm6345-l1-intc";
+			reg = <0x10000020 0x20>,
+			      <0x10000040 0x20>;
+			interrupt-parent = <&cpu_intc>;
+			interrupts = <2>, <3>;
+
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		/* TODO dsl, gmac */
+
+		periph_cntl: syscon@10000000 {
+			compatible = "syscon";
+			reg = <0x10000000 0x14>;
+		};
+
+		timer_cntl: syscon@10000080 {
+			compatible = "syscon";
+			reg = <0x100000a8 0x8>;
+		};
+
+		misc: syscon@10001800 {
+			compatible = "syscon";
+			reg = <0x10001800 0xd0>;
+		};
+
+		reboot {
+			compatible = "syscon-reboot";
+			regmap = <&periph_cntl>;
+			offset = <0x8>;
+			mask = <0x1>;
+		};
+
+		periph_soft_rst: reset-controller {
+			compatible = "brcm,bcm63168-reset", "brcm,bcm6345-reset";
+			regmap = <&periph_cntl>;
+			offset = <0x10>;
+
+			#reset-cells = <1>;
+		};
+
+		timer: timer@10000080 {
+			compatible = "brcm,bcm63168-timer", "brcm,bcm6345-timer";
+			reg = <0x10000080 0x0c>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <0>;
+			clocks = <&periph_osc>;
+
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		wdt: watchdog@1000009c {
+			compatible = "brcm,bcm63168-wdt", "brcm,bcm6345-wdt";
+			reg = <0x1000009c 0x0c>;
+			interrupt-parent = <&timer>;
+			interrupts = <3>;
+			clocks = <&periph_osc>;
+		};
+
+		leds0: led-controller@10001900 {
+			compatible = "brcm,bcm63168-leds", "brcm,bcm6328-leds";
+			reg = <0x10001900 0x24>;
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+			brcm,serial-leds;
+			brcm,serial-dat-low;
+		};
+
+		uart0: serial@10000180 {
+			compatible = "brcm,bcm63168-uart", "brcm,bcm6345-uart";
+			reg = <0x10000180 0x20>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <5>;
+			clocks = <&periph_osc>;
+			status = "disabled";
+		};
+
+		uart1: serial@100001a0 {
+			compatible = "brcm,bcm63168-uart", "brcm,bcm6345-uart";
+			reg = <0x100001a0 0x20>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <34>;
+			clocks = <&periph_osc>;
+			status = "disabled";
+		};
+
+		nand@10000200 {
+			compatible = "brcm,nand-bcm63168", "brcm,nand-bcm6368",
+				"brcm,brcmnand-v4.0", "brcm,brcmnand";
+			reg = <0x10000200 0x180>,
+			      <0x10000600 0x200>,
+			      <0x100000b0 0x10>;
+			reg-names = "nand", "nand-cache", "nand-intr-base";
+			interrupt-parent = <&periph_intc>;
+			interrupts = <50>;
+			clocks = <&periph_clk 20>;
+			clock-names = "nand";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			nand0: nandcs@0 {
+				compatible = "brcm,nandcs";
+				reg = <0>;
+				nand-on-flash-bbt;
+				nand-ecc-strength = <1>;
+				nand-ecc-step-size = <512>;
+
+				status = "disabled";
+			};
+		};
+
+		enetdma0: dma-controller@1000d800 {
+			compatible = "brcm,bcm63168-iudma", "brcm,bcm63xx-iudma";
+			reg = <0x1000d800 0x600>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <1>, <64>, <2>, <65>, <3>, <66>, <4>, <67>;
+			#dma-cells = <1>;
+			dma-channels = <8>;
+			dma-requests = <512>;
+			status = "disabled";
+		};
+
+		enetsw0: ethernet@10700000 {
+			compatible = "brcm,bcm63168-enetsw", "brcm,bcm63xx-enetsw";
+			reg = <0x10700000 0x10000>;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <48>;
+			clocks = <&periph_clk 10>, <&periph_clk 31>;
+			resets = <&periph_soft_rst 4>;
+			power-supply = <&robosw_power>;
+			dmas = <&enetdma0 0	/* read channel */
+				&enetdma0 1>;	/* write channel */
+			dma-names = "rx", "tx";
+			brcm,phy-ids = <1>, <2>, <3>, <4>;
+			brcm,port-names = "fe2", "fe3", "fe4", "fe1";
+			status = "disabled";
+		};
+
+		ehci0: usb@10002500 {
+			compatible = "brcm,bcm63168-ehci", "generic-ehci";
+			reg = <0x10002500 0x100>;
+			big-endian;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <10>;
+			clocks = <&periph_clk 13>, <&timer_clk 18>;
+			phys = <&usbh>;
+			status = "disabled";
+		};
+
+		ohci0: usb@10002600 {
+			compatible = "brcm,bcm63168-ohci", "generic-ohci";
+			reg = <0x10002600 0x100>;
+			big-endian;
+			no-big-frame-no;
+			interrupt-parent = <&periph_intc>;
+			interrupts = <9>;
+			clocks = <&periph_clk 13>, <&timer_clk 18>;
+			phys = <&usbh>;
+			status = "disabled";
+		};
+
+		usbh: usbphy@10002700 {
+			compatible = "brcm,bcm63168-usbh", "brcm,bcm6328-usbh";
+			reg = <0x10002700 0x38>;
+			clocks = <&periph_clk 13>, <&timer_clk 18>;
+			clock-names = "usbh", "usb_ref";
+			resets = <&periph_soft_rst 6>;
+			power-supply = <&usbh_power>;
+			#phy-cells = <0>;
+			status = "disabled";
+		};
+	};
+};
