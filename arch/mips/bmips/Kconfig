@@ -21,6 +21,16 @@ config DT_BCM93384WVG_VIPER
 	bool "BCM93384WVG Viper CPU (EXPERIMENTAL)"
 	select BUILTIN_DTB
 
+config DT_BCM963168VX
+	bool "BCM963168VX"
+	select BUILTIN_DTB
+	help
+	  BCM63168 chip with:
+	      4 Fast Ethernet ports on a configurable switch interface
+	      ADSL/ADSL2/VDSL2 modem
+	      2.4GHz 802.11 b/g/n WiFi
+	      USB 2.0 port
+
 config DT_BCM96368MVWG
 	bool "BCM96368MVWG"
 	select BUILTIN_DTB
