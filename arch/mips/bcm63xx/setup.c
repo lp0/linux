@@ -21,6 +21,7 @@
 #include <bcm63xx_regs.h>
 #include <bcm63xx_io.h>
 #include <bcm63xx_gpio.h>
+#include <linux/bcm63xx_wdt.h>
 
 void bcm63xx_machine_halt(void)
 {
