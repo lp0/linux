@@ -1,0 +1,123 @@
+/dts-v1/;
+
+/include/ "bcm63168.dtsi"
+
+/ {
+	compatible = "brcm,bcm963168vx", "brcm,bcm63168";
+	model = "Broadcom BCM963168VX";
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x04000000>;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,115200";
+		stdout-path = &uart0;
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&enetdma0 {
+	status = "okay";
+};
+
+&enetsw0 {
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&usbh {
+	status = "okay";
+};
+
+&leds0 {
+	/* supresses wan_green when active */
+	wan_not_green@8 {
+		reg = <8>;
+		// brcm,hardware-controlled;
+		label = "system:power:~green";
+		default-state = "off";
+	};
+
+
+	lan1@9 {
+		reg = <9>;
+		active-low;
+		brcm,hardware-controlled;
+	};
+
+	lan2@10 {
+		reg = <10>;
+		active-low;
+		brcm,hardware-controlled;
+	};
+
+	lan3@11 {
+		reg = <11>;
+		active-low;
+		brcm,hardware-controlled;
+	};
+
+	lan0@12 {
+		reg = <12>;
+		active-low;
+		brcm,hardware-controlled;
+	};
+
+	wan_green@14 {
+		reg = <14>;
+		label = "system:internet:green";
+		default-state = "off";
+	};
+
+	dsl@15 {
+		reg = <15>;
+		label = "system:dsl:green";
+		default-state = "off";
+	};
+
+	wifi@16 {
+		reg = <16>;
+		label = "system:wifi:yellow";
+		default-state = "off";
+	};
+
+	wan_red@18 {
+		reg = <18>;
+		label = "system:internet:red";
+		default-state = "off";
+	};
+
+	power_green@20 {
+		reg = <20>;
+		label = "system:power:green";
+		default-state = "on";
+	};
+
+	power_red@21 {
+		reg = <21>;
+		active-low;
+		label = "system:power:red";
+		default-state = "off";
+	};
+
+	usb@23 {
+		reg = <23>;
+		brcm,hardware-controlled;
+	};
+};
