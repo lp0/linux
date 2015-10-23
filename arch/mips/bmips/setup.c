@@ -141,6 +141,9 @@ void __init plat_time_init(void)
 	of_node_put(np);
 
 	mips_hpt_frequency = freq;
+
+	of_clk_init(NULL);
+	clocksource_of_init();
 }
 
 void __init plat_mem_setup(void)

@@ -234,6 +234,7 @@ static inline void __clocksource_update_freq_khz(struct clocksource *cs, u32 khz
 extern int timekeeping_notify(struct clocksource *clock);
 
 extern cycle_t clocksource_mmio_readl_up(struct clocksource *);
+extern cycle_t clocksource_mmio_raw_readl_up(struct clocksource *);
 extern cycle_t clocksource_mmio_readl_down(struct clocksource *);
 extern cycle_t clocksource_mmio_readw_up(struct clocksource *);
 extern cycle_t clocksource_mmio_readw_down(struct clocksource *);
