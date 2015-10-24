@@ -9,12 +9,17 @@
  * Gated clock implementation
  */
 
+#define pr_fmt(fmt)     KBUILD_MODNAME  ": " fmt
+
 #include <linux/clk-provider.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <linux/err.h>
 #include <linux/string.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/resource.h>
 
 /**
  * DOC: basic gatable clock which can gate and ungate it's ouput
@@ -61,7 +66,6 @@ static void clk_gate_endisable(struct clk_hw *hw, int enable)
 			reg |= BIT(gate->bit_idx);
 	} else {
 		reg = clk_readl(gate->reg);
-
 		if (set)
 			reg |= BIT(gate->bit_idx);
 		else
@@ -180,3 +184,92 @@ void clk_unregister_gate(struct clk *clk)
 	kfree(gate);
 }
 EXPORT_SYMBOL_GPL(clk_unregister_gate);
+
+#ifdef CONFIG_OF
+static void __init of_mmio_gate_clk_setup(struct device_node *node)
+{
+	struct clk_onecell_data *clk_data;
+	const char *parent_name = NULL;
+	struct resource res;
+	void __iomem *reg = NULL;
+	spinlock_t *lock = NULL;
+	unsigned int clocks = 0;
+	int i;
+
+	clk_data = kzalloc(sizeof(*clk_data), GFP_KERNEL);
+	if (!clk_data)
+		goto out;
+
+	lock = kzalloc(sizeof(*lock), GFP_KERNEL);
+	if (!lock)
+		goto out;
+	spin_lock_init(lock);
+
+	if (of_clk_get_parent_count(node) > 0)
+		parent_name = of_clk_get_parent_name(node, 0);
+
+	if (of_address_to_resource(node, 0, &res))
+		goto out;
+
+	reg = ioremap(res.start, resource_size(&res));
+	if (!reg)
+		goto out;
+
+	clk_data->clk_num = (resource_size(&res) / 4) * 32;
+	if (!clk_data->clk_num)
+		goto out;
+
+	clk_data->clks = kzalloc(sizeof(*clk_data->clks) * clk_data->clk_num,
+				GFP_KERNEL);
+
+	for (i = 0; i < clk_data->clk_num; i++)
+		clk_data->clks[i] = ERR_PTR(-ENODEV);
+
+	/* clks[] is sparse, indexed by bit, maximum clocks checked using i */
+	for (i = 0; i < clk_data->clk_num; i++) {
+		u32 bit;
+		const char *clk_name;
+
+		if (of_property_read_u32_index(node, "clock-indices",
+				i, &bit))
+			goto out;
+
+		if (of_property_read_string_index(node, "clock-output-names",
+				i, &clk_name))
+			goto out;
+
+		if (bit >= clk_data->clk_num) {
+			pr_err("%s: clock bit %u out of range\n",
+				node->full_name, bit);
+			continue;
+		}
+
+		if (!IS_ERR(clk_data->clks[bit])) {
+			pr_err("%s: clock bit %u already exists\n",
+				node->full_name, bit);
+			continue;
+		}
+
+		clk_data->clks[bit] = clk_register_gate(NULL, clk_name,
+				parent_name, 0, reg + (bit / 32), bit,
+				bit == 0 ? CLK_GATE_SET_TO_DISABLE : 0, lock);
+		if (!IS_ERR(clk_data->clks[bit]))
+			clocks++;
+	}
+
+out:
+	if (clocks) {
+		of_clk_add_provider(node, of_clk_src_onecell_get, clk_data);
+		pr_info("registered %u clocks at MMIO 0x%p\n", clocks, reg);
+	} else {
+		if (clk_data)
+			kfree(clk_data->clks);
+		kfree(clk_data);
+		kfree(lock);
+		if (reg)
+			iounmap(reg);
+	}
+}
+
+CLK_OF_DECLARE(mmio_gate_clk, "mmio-gate-clock", of_mmio_gate_clk_setup);
+#endif

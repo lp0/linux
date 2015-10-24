@@ -699,36 +699,15 @@ static inline const char *of_clk_get_parent_name(struct device_node *np,
 	{ while (0); }
 #endif /* CONFIG_OF */
 
-/*
- * wrap access to peripherals in accessor routines
- * for improved portability across platforms
- */
-
-#if IS_ENABLED(CONFIG_PPC)
-
 static inline u32 clk_readl(u32 __iomem *reg)
 {
-	return ioread32be(reg);
+	return __raw_readl(reg);
 }
 
 static inline void clk_writel(u32 val, u32 __iomem *reg)
 {
-	iowrite32be(val, reg);
+	__raw_writel(val, reg);
 }
-
-#else	/* platform dependent I/O accessors */
-
-static inline u32 clk_readl(u32 __iomem *reg)
-{
-	return readl(reg);
-}
-
-static inline void clk_writel(u32 val, u32 __iomem *reg)
-{
-	writel(val, reg);
-}
-
-#endif	/* platform dependent I/O accessors */
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *clk_debugfs_add_file(struct clk_hw *hw, char *name, umode_t mode,
