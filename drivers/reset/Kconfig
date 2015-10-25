@@ -12,4 +12,13 @@ menuconfig RESET_CONTROLLER
 
 	  If unsure, say no.
 
+if RESET_CONTROLLER
+
+config RESET_BCM63XX
+	bool "BCM63xx Reset Controller"
+	help
+	  Support resetting of devices on BCM63xx boards.
+
+endif
+
 source "drivers/reset/sti/Kconfig"
