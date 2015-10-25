@@ -1,0 +1,10 @@
+if RESET_CONTROLLER
+
+config RESET_BCM6345
+	bool "BCM6345 Reset Controller"
+	depends on BMIPS_GENERIC
+	default BMIPS_GENERIC
+	help
+	  Support resetting of devices on BCM6345 boards.
+
+endif
