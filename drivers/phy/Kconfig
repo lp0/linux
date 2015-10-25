@@ -371,4 +371,12 @@ config PHY_BRCMSTB_SATA
 	  Enable this to support the SATA3 PHY on 28nm Broadcom STB SoCs.
 	  Likely useful only with CONFIG_SATA_BRCMSTB enabled.
 
+config PHY_BCM63XX_USBH
+	tristate "BCM63xx USBH PHY driver"
+	depends on OF
+	select GENERIC_PHY
+	help
+	  Enable this to support the BCM63xx USBH PHY on the BCM6318, BCM6362,
+	  BCM6816, BCM63168, BCM63168 and BCM68220.
+
 endmenu
