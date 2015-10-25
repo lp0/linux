@@ -142,6 +142,7 @@ config ATH79
 
 config BMIPS_GENERIC
 	bool "Broadcom Generic BMIPS kernel"
+	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select BOOT_RAW
 	select NO_EXCEPT_FILL
 	select USE_OF

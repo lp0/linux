@@ -625,7 +625,7 @@ static int bgpio_pdev_probe(struct platform_device *pdev)
 	void __iomem *dirout;
 	void __iomem *dirin;
 	unsigned long sz;
-	unsigned long flags = pdev->id_entry->driver_data;
+	unsigned long flags = pdev->id_entry ? pdev->id_entry->driver_data : 0;
 	int err;
 	struct bgpio_chip *bgc;
 	struct bgpio_pdata *pdata = dev_get_platdata(dev);
@@ -659,6 +659,13 @@ static int bgpio_pdev_probe(struct platform_device *pdev)
 	bgc = devm_kzalloc(&pdev->dev, sizeof(*bgc), GFP_KERNEL);
 	if (!bgc)
 		return -ENOMEM;
+
+	if (pdev->dev.of_node) {
+		if (of_device_is_big_endian(pdev->dev.of_node))
+			flags |= BGPIOF_BIG_ENDIAN_BYTE_ORDER;
+		else
+			flags &= ~BGPIOF_BIG_ENDIAN_BYTE_ORDER;
+	}
 
 	err = bgpio_init(bgc, dev, sz, dat, set, clr, dirout, dirin, flags);
 	if (err)
@@ -696,9 +703,17 @@ static const struct platform_device_id bgpio_id_table[] = {
 };
 MODULE_DEVICE_TABLE(platform, bgpio_id_table);
 
+static const struct of_device_id bgpio_of_table[] = {
+        { .compatible = "brcm,bcm63xx-gpio" },
+        { }
+};
+
+MODULE_DEVICE_TABLE(of, bgpio_of_table);
+
 static struct platform_driver bgpio_driver = {
 	.driver = {
 		.name = "basic-mmio-gpio",
+		.of_match_table = bgpio_of_table,
 	},
 	.id_table = bgpio_id_table,
 	.probe = bgpio_pdev_probe,
