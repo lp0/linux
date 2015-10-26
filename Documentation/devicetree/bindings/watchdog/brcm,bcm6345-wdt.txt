@@ -1,0 +1,35 @@
+BCM6345 Watchdog timer
+
+Required properties:
+
+- compatible: should be "brcm,bcm63<soc>-wdt", "brcm,bcm6345-wdt"
+- reg: Specifies base physical address and size of the registers.
+- clocks: Specify the clock used for timing
+
+Optional properties:
+
+- interrupt-parent: phandle to the interrupt controller
+- interrupts: Specify the interrupt used for the watchdog timout warning
+- timeout-sec: Contains the default watchdog timeout in seconds
+
+Example:
+
+watchdog {
+	compatible = "brcm,bcm63168-wdt", "brcm,bcm6345-wdt";
+	reg = <0x1000009c 0x0c>;
+	clocks = <&periph_clk>;
+
+	interrupt-parent = <&timer>;
+	interrupts = <3>;
+	timeout-sec = <30>;
+};
+
+watchdog {
+	compatible = "brcm,bcm6318-wdt", "brcm,bcm6345-wdt";
+	reg = <0x10000068 0x0c>;
+	clocks = <&periph_clk>;
+
+	interrupt-parent = <&timer>;
+	interrupts = <3>;
+	timeout-sec = <30>;
+};
