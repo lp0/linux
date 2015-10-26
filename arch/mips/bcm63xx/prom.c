@@ -17,6 +17,7 @@
 #include <bcm63xx_cpu.h>
 #include <bcm63xx_io.h>
 #include <bcm63xx_regs.h>
+#include <linux/bcm63xx_wdt.h>
 
 void __init prom_init(void)
 {
