@@ -1,0 +1,58 @@
+* BCM63xx IUDMA controller
+
+The BCM63xx IUDMA controller has 8, 16 or 32 channels, with one IRQ
+per channel.
+
+This is shared by different peripherals which will all provide their
+own IUDMA interface registers but with only the channels and IRQs
+they require (indexed from 0).
+
+Supported chip variants:
+	8 channels: 6345
+	16 channels: 3368, 6338, 6348, 6358
+	32 channels: 6318, 6328, 6368, 63168, 63268, 6816, 68280
+
+Required properties:
+- compatible: Should be "brcm,bcm<chip>-iudma".
+- reg: Should contain the IUDMA registers location and length.
+- interrupts: Should contain the IUDMA interrupts associated
+		with the IUDMA channels in channel ID order.
+- #dma-cells: Must be <1>, the cell in the dmas property of the
+		client device represents the DMA channel.
+
+Optional properties:
+- dma-channels: Should contain the number of channels.
+- dma-requests: Should contain the maximum number of buffers to allow
+		in the receive/transmit rings.
+
+Example:
+
+enetdma0: dma-controller@1000d800 {
+	compatible = "brcm,bcm63168-iudma";
+	reg = <0x1000d800 0x600>;
+	interrupt-parent = <&periph_intc>;
+	interrupts = <1>, <64>, <2>, <65>, <3>, <66>, <4>, <67>;
+	#dma-cells = <1>;
+	dma-channels = <8>;
+	dma-requests = <512>;
+};
+
+DMA clients connected to the BCM63xx IUDMA controller must use the format
+described in the dma.txt file, using a two-cell specifier for each channel.
+
+Example:
+
+enetsw0: ethernet@10700000 {
+	compatible = "brcm,bcm63168-enetsw";
+	reg = <0x10700000 0x10000>;
+	interrupt-parent = <&periph_intc>;
+	interrupts = <48>;
+	clocks = <&periph_clk 10>;
+	reset = <&periph_soft_rst 4>;
+	power-supply = <&power_robosw>;
+	dmas = <&enetdma0 0	/* read channel */
+		&enetdma0 1>;	/* write channel */
+	dma-names = "rx", "tx";
+	brcm,phy-ids = <1>, <2>, <3>, <4>;
+	brcm,port-names = "fe2", "fe3", "fe4", "fe1";
+};
