@@ -112,6 +112,12 @@ config DMA_BCM2835
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
 
+config BCM63XX_IUDMA
+	tristate "BCM63xx IUDMA engine support"
+	depends on BCM63XX || BMIPS_GENERIC
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+
 config DMA_JZ4740
 	tristate "JZ4740 DMA support"
 	depends on MACH_JZ4740
