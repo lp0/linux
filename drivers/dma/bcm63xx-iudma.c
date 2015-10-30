@@ -34,8 +34,6 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
-#include "virt-dma.h"
-
 /* Channel configuration */
 #define IUDMA_C_CHANNEL_BASE_REG(x)	(0x10 * (x))
 #define IUDMA_C_CFG_REG			0x00
@@ -78,17 +76,53 @@
 #define IUDMA_S_DESC_LEN_STATUS_REG	0x08	/* buffer descriptor status and len */
 #define IUDMA_S_DESC_BASE_BUFPTR_REG	0x0c	/* buffer descriptor current processing */
 
-#define IUDMA_MAX_LEN			0xfff
+struct bcm63xx_iudma_hw_desc {
+	u16 length;
+#define IUDMA_D_LEN_MAX			0xfff
+	union {
+		u16 control;
+/* client device specific */
+#define IUDMA_D_CTL_USBD_ZERO		BIT(0)		/* usbd: send zero length packet */
+#define IUDMA_D_CTL_ENETSW_PORT(x)	BIT(x)		/* enetsw: tx port 0-7 */
+#define IUDMA_D_CTL_ENETSW_APPEND_CRC	BIT(8)		/* enetsw: append CRC */
+#define IUDMA_D_CTL_ENETSW_APPEND_TAG	BIT(9)		/* enetsw: append BRCM tag */
+#define IUDMA_D_CTL_ENETSW_PRIO(x)	((x) << 10)	/* enetsw: tx priority 0-3 */
+
+/* DMA controller */
+#define IUDMA_D_CTL_WRAP		BIT(12)
+#define IUDMA_D_CTL_SOP			BIT(13)		/* first buffer in packet */
+#define IUDMA_D_CTL_EOP			BIT(14)		/* last buffer in packet */
+#define IUDMA_D_CTL_ESOP_MASK		(IUDMA_D_CTL_EOP | IUDMA_D_CTL_SOP)
+#define IUDMA_D_CTL_OWNER		BIT(15)		/* cleared by hw, set by cpu */
+
+		u16 status;				/* client device specific */
+	};
+	u32 address;
+} __attribute__((packed));
 
 struct bcm63xx_iudma_chan {
 	unsigned int id;
+	char *name;
 	void __iomem *base_c;
 	void __iomem *base_s;
 	int irq;
 
 	spinlock_t lock;
-	struct virt_dma_chan vc;
+
+	struct dma_chan dchan;
 	struct dma_slave_config cfg;
+
+	dma_addr_t hw_desc;
+	unsigned int hw_desc_alloc_size;
+
+	/* number of dma desc in hw ring */
+	unsigned int ring_size;
+	/* current number of armed descriptor given to hardware for rx */
+	unsigned int desc_count;
+	/* next rx descriptor to fetch from hardware */
+	unsigned int curr_desc;
+	/* next dirty rx descriptor to refill */
+	unsigned int dirty_desc;
 };
 
 struct bcm63xx_iudma {
@@ -102,8 +136,8 @@ struct bcm63xx_iudma {
 };
 
 struct bcm63xx_iudma_desc {
-	struct virt_dma_desc vd;
 	enum dma_transfer_direction dir;
+	struct dma_async_tx_descriptor tx;
 };
 
 struct bcm63xx_iudma_of_data {
@@ -119,13 +153,13 @@ static inline struct bcm63xx_iudma *to_bcm63xx_iduma(struct dma_device *d)
 
 static inline struct bcm63xx_iudma_chan *to_bcm63xx_iudma_chan(struct dma_chan *c)
 {
-	return container_of(c, struct bcm63xx_iudma_chan, vc.chan);
+	return container_of(c, struct bcm63xx_iudma_chan, dchan);
 }
 
 static inline struct bcm63xx_iudma_desc *to_bcm63xx_iudma_desc(
 	struct dma_async_tx_descriptor *t)
 {
-	return container_of(t, struct bcm63xx_iudma_desc, vd.tx);
+	return container_of(t, struct bcm63xx_iudma_desc, tx);
 }
 
 static inline bool bcm63xx_iudma_has_sram(struct bcm63xx_iudma *iudma)
@@ -176,14 +210,31 @@ static inline void bcm63xx_iudma_dma_enable(struct bcm63xx_iudma_chan *chan)
 			chan->base_c + IUDMA_N_CFG_REG);
 }
 
+static irqreturn_t bcm63xx_iudma_interrupt(int irq, void *data)
+{
+	struct bcm63xx_iudma_chan *ch = data;
+	struct device *dev = ch->dchan.device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return IRQ_HANDLED;
+}
+
 static int bcm63xx_iudma_alloc_chan(struct dma_chan *chan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
 	struct device *dev = chan->device->dev;
+	int ret;
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
-	return -ENOSYS;
+	ret = request_irq(ch->irq, bcm63xx_iudma_interrupt, 0, ch->name, ch);
+	if (ret)
+		return ret;
+
+	
+
+	return ret;
 }
 
 static void bcm63xx_iudma_free_chan(struct dma_chan *chan)
@@ -248,11 +299,17 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *chan)
 	return -ENOSYS;
 }
 
-static void bcm63xx_iudma_desc_free(struct virt_dma_desc *vd)
+static int bcm63xx_iudma_chan_name(struct bcm63xx_iudma_chan *ch,
+	struct device *dev)
 {
-//	struct bcm63xx_iudma_desc *desc = container_of(vd,
-//					struct bcm63xx_iudma_desc, vd);
+	const char *prefix = dev_name(dev);
+	size_t name_len = strlen(prefix) + 5 /* ":chan" */ + 32 /* "%u" */ + 1;
 
+	ch->name = devm_kzalloc(dev, name_len, GFP_KERNEL);
+	if (!ch->name)
+		return -ENOMEM;
+
+	return snprintf(ch->name, name_len, "%s:chan%u", prefix, ch->id);
 }
 
 static int bcm63xx_iudma_probe(struct platform_device *pdev)
@@ -291,7 +348,7 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	dma_set_max_seg_size(dev, IUDMA_MAX_LEN);
+	dma_set_max_seg_size(dev, IUDMA_D_LEN_MAX);
 
 	ddev = &iudma->ddev;
 	ddev->dev = dev;
@@ -315,6 +372,12 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 	for (i = 0; i < of_data->n_channels; i++) {
 		struct bcm63xx_iudma_chan *ch = &iudma->chan[i];
 
+		ch->id = i;
+
+		ret = bcm63xx_iudma_chan_name(ch, dev);
+		if (ret)
+			return ret;
+
 		ch->irq = platform_get_irq(pdev, i);
 		if (ch->irq >= 0) {
 			spin_lock_init(&ch->lock);
@@ -332,9 +395,6 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 			bcm63xx_iudma_int_disable(ch);
 			bcm63xx_iudma_dma_disable(ch);
-
-			ch->vc.desc_free = bcm63xx_iudma_desc_free;
-			vchan_init(&ch->vc, ddev);
 
 			iudma->n_channels++;
 		} else
