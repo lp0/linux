@@ -34,6 +34,8 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 
+#include "virt-dma.h"
+
 /* Channel configuration */
 #define IUDMA_C_CHANNEL_BASE_REG(x)	(0x10 * (x))
 #define IUDMA_C_CFG_REG			0x00
@@ -76,12 +78,17 @@
 #define IUDMA_S_DESC_LEN_STATUS_REG	0x08	/* buffer descriptor status and len */
 #define IUDMA_S_DESC_BASE_BUFPTR_REG	0x0c	/* buffer descriptor current processing */
 
-struct bcm63xx_iudma_ch {
+#define IUDMA_MAX_LEN			0xfff
+
+struct bcm63xx_iudma_chan {
 	unsigned int id;
 	void __iomem *base_c;
 	void __iomem *base_s;
 	int irq;
+
 	spinlock_t lock;
+	struct virt_dma_chan vc;
+	struct dma_slave_config cfg;
 };
 
 struct bcm63xx_iudma {
@@ -91,7 +98,12 @@ struct bcm63xx_iudma {
 
 	struct dma_device ddev;
 	unsigned int n_channels;
-	struct bcm63xx_iudma_ch chan[];
+	struct bcm63xx_iudma_chan chan[];
+};
+
+struct bcm63xx_iudma_desc {
+	struct virt_dma_desc vd;
+	enum dma_transfer_direction dir;
 };
 
 struct bcm63xx_iudma_of_data {
@@ -100,27 +112,43 @@ struct bcm63xx_iudma_of_data {
 	unsigned int dmas_offset;
 };
 
+static inline struct bcm63xx_iudma *to_bcm63xx_iduma(struct dma_device *d)
+{
+	return container_of(d, struct bcm63xx_iudma, ddev);
+}
+
+static inline struct bcm63xx_iudma_chan *to_bcm63xx_iudma_chan(struct dma_chan *c)
+{
+	return container_of(c, struct bcm63xx_iudma_chan, vc.chan);
+}
+
+static inline struct bcm63xx_iudma_desc *to_bcm63xx_iudma_desc(
+	struct dma_async_tx_descriptor *t)
+{
+	return container_of(t, struct bcm63xx_iudma_desc, vd.tx);
+}
+
 static inline bool bcm63xx_iudma_has_sram(struct bcm63xx_iudma *iudma)
 {
 	return iudma->base_s != NULL;
 }
 
-static inline bool bcm63xx_iudma_ch_has_sram(struct bcm63xx_iudma_ch *chan)
+static inline bool bcm63xx_iudma_chan_has_sram(struct bcm63xx_iudma_chan *chan)
 {
 	return chan->base_s != NULL;
 }
 
-static inline void bcm63xx_iudma_int_disable(struct bcm63xx_iudma_ch *chan)
+static inline void bcm63xx_iudma_int_disable(struct bcm63xx_iudma_chan *chan)
 {
-	if (bcm63xx_iudma_ch_has_sram(chan))
+	if (bcm63xx_iudma_chan_has_sram(chan))
 		__raw_writel(0, chan->base_c + IUDMA_C_INT_ENABLE_REG);
 	else
 		__raw_writel(0, chan->base_c + IUDMA_N_INT_ENABLE_REG);
 }
 
-static inline void bcm63xx_iudma_int_enable(struct bcm63xx_iudma_ch *chan)
+static inline void bcm63xx_iudma_int_enable(struct bcm63xx_iudma_chan *chan)
 {
-	if (bcm63xx_iudma_ch_has_sram(chan))
+	if (bcm63xx_iudma_chan_has_sram(chan))
 		__raw_writel(IUDMA_C_INT_PKT_DONE,
 			chan->base_c + IUDMA_C_INT_ENABLE_REG);
 	else
@@ -129,17 +157,17 @@ static inline void bcm63xx_iudma_int_enable(struct bcm63xx_iudma_ch *chan)
 			chan->base_c + IUDMA_N_INT_ENABLE_REG);
 }
 
-static inline void bcm63xx_iudma_dma_disable(struct bcm63xx_iudma_ch *chan)
+static inline void bcm63xx_iudma_dma_disable(struct bcm63xx_iudma_chan *chan)
 {
-	if (bcm63xx_iudma_ch_has_sram(chan))
+	if (bcm63xx_iudma_chan_has_sram(chan))
 		__raw_writel(0, chan->base_c + IUDMA_C_CFG_REG);
 	else
 		__raw_writel(0, chan->base_c + IUDMA_N_CFG_REG);
 }
 
-static inline void bcm63xx_iudma_dma_enable(struct bcm63xx_iudma_ch *chan)
+static inline void bcm63xx_iudma_dma_enable(struct bcm63xx_iudma_chan *chan)
 {
-	if (bcm63xx_iudma_ch_has_sram(chan))
+	if (bcm63xx_iudma_chan_has_sram(chan))
 		__raw_writel(IUDMA_C_CFG_ENABLE,
 			chan->base_c + IUDMA_C_CFG_REG);
 	else
@@ -148,14 +176,95 @@ static inline void bcm63xx_iudma_dma_enable(struct bcm63xx_iudma_ch *chan)
 			chan->base_c + IUDMA_N_CFG_REG);
 }
 
+static int bcm63xx_iudma_alloc_chan(struct dma_chan *chan)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return -ENOSYS;
+}
+
+static void bcm63xx_iudma_free_chan(struct dma_chan *chan)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+}
+
+static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
+	struct dma_chan *chan,
+	struct scatterlist *sgl, unsigned int sg_len,
+	enum dma_transfer_direction direction,
+	unsigned long flags, void *context)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return ERR_PTR(-ENOSYS);
+}
+
+static void bcm63xx_iudma_issue_pending(struct dma_chan *chan)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+}
+
+static enum dma_status bcm63xx_iudma_tx_status(struct dma_chan *chan,
+	dma_cookie_t cookie, struct dma_tx_state *txstate)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return DMA_ERROR;
+}
+
+static int bcm63xx_iudma_config(struct dma_chan *chan,
+	struct dma_slave_config *config)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return -ENOSYS;
+}
+
+static int bcm63xx_iudma_terminate_all(struct dma_chan *chan)
+{
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(chan);
+	struct device *dev = chan->device->dev;
+
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	return -ENOSYS;
+}
+
+static void bcm63xx_iudma_desc_free(struct virt_dma_desc *vd)
+{
+//	struct bcm63xx_iudma_desc *desc = container_of(vd,
+//					struct bcm63xx_iudma_desc, vd);
+
+}
+
 static int bcm63xx_iudma_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct bcm63xx_iudma *iudma;
+	struct dma_device *ddev;
 	const struct bcm63xx_iudma_of_data *of_data;
 	struct resource *res;
 	bool has_sram;
 	unsigned int i;
+	int ret;
 
 	of_data = of_device_get_match_data(dev);
 	if (!of_data)
@@ -164,6 +273,8 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 	iudma = devm_kzalloc(dev,
 		sizeof(*iudma) + sizeof(*iudma->chan) * of_data->n_channels,
 		GFP_KERNEL);
+	if (!iudma)
+		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	iudma->base = devm_ioremap_resource(dev, res);
@@ -176,8 +287,33 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 	has_sram = bcm63xx_iudma_has_sram(iudma);
 
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+	if (ret)
+		return ret;
+
+	dma_set_max_seg_size(dev, IUDMA_MAX_LEN);
+
+	ddev = &iudma->ddev;
+	ddev->dev = dev;
+	INIT_LIST_HEAD(&ddev->channels);
+	ddev->src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
+	ddev->dst_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
+	ddev->directions = BIT(DMA_DEV_TO_MEM) | BIT(DMA_MEM_TO_DEV);
+	ddev->residue_granularity = DMA_RESIDUE_GRANULARITY_DESCRIPTOR;
+
+	dma_cap_set(DMA_PRIVATE, ddev->cap_mask);
+	dma_cap_set(DMA_SLAVE, ddev->cap_mask);
+
+	ddev->device_alloc_chan_resources = bcm63xx_iudma_alloc_chan;
+	ddev->device_free_chan_resources = bcm63xx_iudma_free_chan;
+	ddev->device_prep_slave_sg = bcm63xx_iudma_prep_slave_sg;
+	ddev->device_issue_pending = bcm63xx_iudma_issue_pending;
+	ddev->device_tx_status = bcm63xx_iudma_tx_status;
+	ddev->device_config = bcm63xx_iudma_config;
+	ddev->device_terminate_all = bcm63xx_iudma_terminate_all;
+
 	for (i = 0; i < of_data->n_channels; i++) {
-		struct bcm63xx_iudma_ch *ch = &iudma->chan[i];
+		struct bcm63xx_iudma_chan *ch = &iudma->chan[i];
 
 		ch->irq = platform_get_irq(pdev, i);
 		if (ch->irq >= 0) {
@@ -196,6 +332,9 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 			bcm63xx_iudma_int_disable(ch);
 			bcm63xx_iudma_dma_disable(ch);
+
+			ch->vc.desc_free = bcm63xx_iudma_desc_free;
+			vchan_init(&ch->vc, ddev);
 
 			iudma->n_channels++;
 		} else
