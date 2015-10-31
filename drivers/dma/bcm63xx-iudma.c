@@ -59,7 +59,6 @@
 /* at 8B per hw descriptor => one 4KB PAGE_SIZE per channel */
 #define IUDMA_DEFAULT_NUM_REQUESTS	512
 #define IUDMA_MAX_NUM_REQUESTS		8192
-#define IUDMA_MAX_BURST			16
 
 
 /* Global configuration */
@@ -251,13 +250,29 @@ static inline __pure bool bcm63xx_iudma_chan_has_sram(
 	return chan->base_s != NULL;
 }
 
+/* Even numbered channels are for receiving */
+static inline __pure bool bcm63xx_iudma_chan_is_rx(
+	struct bcm63xx_iudma_chan *chan)
+{
+	return !(chan->id & 1);
+}
+
+/* Odd numbered channels are for transmitting */
+static inline __pure bool bcm63xx_iudma_chan_is_tx(
+	struct bcm63xx_iudma_chan *chan)
+{
+	return (chan->id & 1);
+}
+
 /* Flow control is configurable for channels 0, 2, 4, 6
  * (used on Ethernet to enable PAUSE frame generation)
  */
 static inline __pure bool bcm63xx_iudma_chan_has_flowc(
 	struct bcm63xx_iudma_chan *chan)
 {
-	return chan->id < IUDMA_G_FLOWC_MAX && !(chan->id & 1);
+	return bcm63xx_iudma_chan_has_sram(chan) &&
+		bcm63xx_iudma_chan_is_rx(chan) &&
+		chan->id < IUDMA_G_FLOWC_MAX;
 }
 
 
@@ -328,12 +343,26 @@ static inline void s_writel(u32 val, struct bcm63xx_iudma_chan *chan, int reg)
 
 static inline void bcm63xx_iudma_disable_ctl(struct bcm63xx_iudma *iudma)
 {
-	g_writel(0, iudma, IUDMA_G_CFG_REG);
+	unsigned long flags;
+	u32 val;
+
+	spin_lock_irqsave(&iudma->lock, flags);
+	val = g_readl(iudma, IUDMA_G_CFG_REG);
+	val &= ~IUDMA_G_CFG_ENABLE;
+	g_writel(val, iudma, IUDMA_G_CFG_REG);
+	spin_unlock_irqrestore(&iudma->lock, flags);
 }
 
 static inline void bcm63xx_iudma_enable_ctl(struct bcm63xx_iudma *iudma)
 {
-	g_writel(IUDMA_G_CFG_ENABLE, iudma, IUDMA_G_CFG_REG);
+	unsigned long flags;
+	u32 val;
+
+	spin_lock_irqsave(&iudma->lock, flags);
+	val = g_readl(iudma, IUDMA_G_CFG_REG);
+	val |= IUDMA_G_CFG_ENABLE;
+	g_writel(val, iudma, IUDMA_G_CFG_REG);
+	spin_unlock_irqrestore(&iudma->lock, flags);
 }
 
 
@@ -355,12 +384,29 @@ static inline void bcm63xx_iudma_bufalloc_chan(struct bcm63xx_iudma_chan *chan,
 {
 	struct bcm63xx_iudma *iudma = chan->ctrl;
 
-	if (bcm63xx_iudma_chan_has_flowc(chan)) {
-		if (bcm63xx_iudma_chan_has_sram(chan))
-			g_writel(val, iudma,
-				IUDMA_G_FLOWC_BUFALLOC_REG(chan->id));
-	} else if (!bcm63xx_iudma_chan_has_sram(chan)) {
+	if (!bcm63xx_iudma_chan_has_sram(chan))
 		n_writel(val, chan, IUDMA_N_BUFALLOC_REG);
+	else if (bcm63xx_iudma_chan_has_flowc(chan))
+		g_writel(val, iudma, IUDMA_G_FLOWC_BUFALLOC_REG(chan->id));
+}
+
+static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *chan,
+	bool enable)
+{
+	struct bcm63xx_iudma *iudma = chan->ctrl;
+
+	if (bcm63xx_iudma_chan_has_flowc(chan)) {
+		unsigned long flags;
+		u32 val;
+
+		spin_lock_irqsave(&iudma->lock, flags);
+		val = g_readl(iudma, IUDMA_G_CFG_REG);
+		if (enable)
+			val |= IUDMA_G_FLOWC_ENABLE(chan->id);
+		else
+			val &= ~IUDMA_G_FLOWC_ENABLE(chan->id);
+		g_writel(val, iudma, IUDMA_G_CFG_REG);
+		spin_unlock_irqrestore(&iudma->lock, flags);
 	}
 }
 
@@ -397,6 +443,8 @@ static inline void bcm63xx_iudma_disable_chan(struct bcm63xx_iudma_chan *chan)
 
 static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
 {
+	struct bcm63xx_iudma *iudma = chan->ctrl;
+
 	bcm63xx_iudma_reset_chan(chan);
 
 	/* initialize flow control buffer allocation */
@@ -420,23 +468,24 @@ static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
 		n_writel(0, chan, IUDMA_N_FLOWC_REG);
 	}
 
-	/* set dma maximum burst len */
+	/* set safe initial dma maximum burst len */
 	if (bcm63xx_iudma_chan_has_sram(chan))
-		c_writel(IUDMA_MAX_BURST, chan, IUDMA_C_MAX_BURST_REG);
+		c_writel(1, chan, IUDMA_C_MAX_BURST_REG);
 	else
-		n_writel(IUDMA_MAX_BURST, chan, IUDMA_N_MAX_BURST_REG);
+		n_writel(1, chan, IUDMA_N_MAX_BURST_REG);
 
 	/* set flow control low/high threshold to 1/3 / 2/3 */
-	if (bcm63xx_iudma_chan_has_flowc(chan)) {
-		if (bcm63xx_iudma_chan_has_sram(chan)) {
-			c_writel(chan->hw_ring_size / 3, chan,
-				IUDMA_G_FLOWC_LO_THRESH_REG(chan->id));
-			c_writel((chan->hw_ring_size * 2) / 3, chan,
-				IUDMA_G_FLOWC_HI_THRESH_REG(chan->id));
-		}
-	} else if (!bcm63xx_iudma_chan_has_sram(chan)) {
+	if (!bcm63xx_iudma_chan_has_sram(chan)) {
 		n_writel(5, chan, IUDMA_N_FLOWC_REG);
 		n_writel(chan->hw_ring_size, chan, IUDMA_N_LEN_REG);
+	} else if (bcm63xx_iudma_chan_has_flowc(chan)) {
+		/* disable flow control unless requested by slave config */
+		bcm63xx_iudma_chan_set_flowc(chan, false);
+
+		g_writel(chan->hw_ring_size / 3, iudma,
+			IUDMA_G_FLOWC_LO_THRESH_REG(chan->id));
+		g_writel((chan->hw_ring_size * 2) / 3, iudma,
+			IUDMA_G_FLOWC_HI_THRESH_REG(chan->id));
 	}
 
 	wmb();
@@ -552,6 +601,34 @@ static int bcm63xx_iudma_config(struct dma_chan *dchan,
 	struct device *dev = dchan->device->dev;
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+
+	if (bcm63xx_iudma_chan_is_rx(ch)) {
+		if (config->src_addr_width != DMA_SLAVE_BUSWIDTH_4_BYTES)
+			return -EINVAL;
+
+		bcm63xx_iudma_chan_set_flowc(ch, config->device_fc);
+
+		if (bcm63xx_iudma_chan_has_sram(ch))
+			c_writel(config->src_maxburst, ch,
+				IUDMA_C_MAX_BURST_REG);
+		else
+			n_writel(config->src_maxburst, ch,
+				IUDMA_N_MAX_BURST_REG);
+	} else if (bcm63xx_iudma_chan_is_tx(ch)) {
+		if (config->dst_addr_width != DMA_SLAVE_BUSWIDTH_4_BYTES)
+			return -EINVAL;
+
+		if (bcm63xx_iudma_chan_has_sram(ch))
+			c_writel(config->dst_maxburst, ch,
+				IUDMA_C_MAX_BURST_REG);
+		else
+			n_writel(config->dst_maxburst, ch,
+				IUDMA_N_MAX_BURST_REG);
+	}
+
+	ch->cfg = *config;
+
+	wmb();
 
 	return -ENOSYS;
 }
