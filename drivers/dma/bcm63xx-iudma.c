@@ -16,10 +16,10 @@
  * Derived from drivers/net/ethernet/broadcom/bcm63xx_enet.c:
  * Copyright (C) 2008 Maxime Bizon <mbizon@freebox.fr>
  *
- * Derived from shared/opensource/include/bcm963xx/63268_map_part.h:
+ * Derived from bcm963xx_4.12L.06B_consumer/shared/opensource/include/bcm963xx/63268_map_part.h:
  * Copyright 2000-2010 Broadcom Corporation
  *
- * Derived from bcmdrivers/opensource/net/enet/impl4/bcmenet.c:
+ * Derived from bcm963xx_4.12L.06B_consumer/bcmdrivers/opensource/net/enet/impl4/bcmenet.c:
  * Copyright 2010 Broadcom Corporation
  *
  * The DMA controller processes requests from an arbitrarily sized
@@ -178,10 +178,11 @@ struct bcm63xx_iudma_hw_desc {
 struct bcm63xx_iudma;
 
 struct bcm63xx_iudma_chan {
+	struct device *dev;
 	struct bcm63xx_iudma *ctrl;
 
 	unsigned int id;
-	char *name;
+	const char *name;
 	union {
 		void __iomem *base_c; /* with state RAM */
 		void __iomem *base_n; /* no state RAM */
@@ -190,9 +191,9 @@ struct bcm63xx_iudma_chan {
 	int irq;
 
 	struct virt_dma_chan vc;
-	struct dma_slave_config cfg;
+	unsigned int maxburst;
+	bool flowc;
 
-	spinlock_t hw_ring_lock;
 	dma_addr_t hw_ring_base;
 	unsigned int hw_ring_alloc;
 	unsigned int hw_ring_size;
@@ -207,6 +208,7 @@ struct bcm63xx_iudma_chan {
 };
 
 struct bcm63xx_iudma {
+	struct device *dev;
 	void __iomem *base_g;
 	spinlock_t lock;
 
@@ -217,7 +219,6 @@ struct bcm63xx_iudma {
 
 struct bcm63xx_iudma_desc {
 	struct virt_dma_desc vd;
-	enum dma_transfer_direction dir;
 };
 
 struct bcm63xx_iudma_of_data {
@@ -390,8 +391,7 @@ static inline void bcm63xx_iudma_bufalloc_chan(struct bcm63xx_iudma_chan *chan,
 		g_writel(val, iudma, IUDMA_G_FLOWC_BUFALLOC_REG(chan->id));
 }
 
-static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *chan,
-	bool enable)
+static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *chan)
 {
 	struct bcm63xx_iudma *iudma = chan->ctrl;
 
@@ -401,7 +401,7 @@ static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *chan,
 
 		spin_lock_irqsave(&iudma->lock, flags);
 		val = g_readl(iudma, IUDMA_G_CFG_REG);
-		if (enable)
+		if (chan->flowc)
 			val |= IUDMA_G_FLOWC_ENABLE(chan->id);
 		else
 			val &= ~IUDMA_G_FLOWC_ENABLE(chan->id);
@@ -410,42 +410,9 @@ static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *chan,
 	}
 }
 
-static inline void bcm63xx_iudma_disable_chan(struct bcm63xx_iudma_chan *chan)
-{
-	unsigned int limit = 1000;
-
-	if (bcm63xx_iudma_chan_has_sram(chan))
-		c_writel(0, chan, IUDMA_C_INT_ENABLE_REG);
-	else
-		c_writel(0, chan, IUDMA_N_INT_ENABLE_REG);
-
-	do {
-		u32 val;
-
-		if (bcm63xx_iudma_chan_has_sram(chan)) {
-			c_writel(IUDMA_C_CFG_PKT_HALT, chan, IUDMA_C_CFG_REG);
-			val = c_readl(chan, IUDMA_C_CFG_REG);
-			if (!(val & IUDMA_C_CFG_ENABLE))
-				break;
-		} else {
-			n_writel(IUDMA_N_CFG_PKT_HALT, chan, IUDMA_N_CFG_REG);
-			val = n_readl(chan, IUDMA_N_CFG_REG);
-			if (!(val & IUDMA_N_CFG_ENABLE))
-				break;
-		}
-
-		udelay(1);
-	} while (--limit);
-	WARN_ON(!limit);
-
-	bcm63xx_iudma_reset_chan(chan);
-}
-
-static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
+static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *chan)
 {
 	struct bcm63xx_iudma *iudma = chan->ctrl;
-
-	bcm63xx_iudma_reset_chan(chan);
 
 	/* initialize flow control buffer allocation */
 	if (bcm63xx_iudma_chan_has_sram(chan))
@@ -468,19 +435,18 @@ static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
 		n_writel(0, chan, IUDMA_N_FLOWC_REG);
 	}
 
-	/* set safe initial dma maximum burst len */
+	/* set dma maximum burst len */
 	if (bcm63xx_iudma_chan_has_sram(chan))
-		c_writel(1, chan, IUDMA_C_MAX_BURST_REG);
+		c_writel(chan->maxburst, chan, IUDMA_C_MAX_BURST_REG);
 	else
-		n_writel(1, chan, IUDMA_N_MAX_BURST_REG);
+		n_writel(chan->maxburst, chan, IUDMA_N_MAX_BURST_REG);
 
 	/* set flow control low/high threshold to 1/3 / 2/3 */
 	if (!bcm63xx_iudma_chan_has_sram(chan)) {
 		n_writel(5, chan, IUDMA_N_FLOWC_REG);
 		n_writel(chan->hw_ring_size, chan, IUDMA_N_LEN_REG);
 	} else if (bcm63xx_iudma_chan_has_flowc(chan)) {
-		/* disable flow control unless requested by slave config */
-		bcm63xx_iudma_chan_set_flowc(chan, false);
+		bcm63xx_iudma_chan_set_flowc(chan);
 
 		g_writel(chan->hw_ring_size / 3, iudma,
 			IUDMA_G_FLOWC_LO_THRESH_REG(chan->id));
@@ -489,6 +455,51 @@ static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
 	}
 
 	wmb();
+}
+
+static inline void bcm63xx_iudma_disable_chan(struct bcm63xx_iudma_chan *chan,
+	bool shutdown)
+{
+	unsigned int timeout = 5000;
+
+	if (bcm63xx_iudma_chan_has_sram(chan))
+		c_writel(0, chan, IUDMA_C_INT_ENABLE_REG);
+	else
+		c_writel(0, chan, IUDMA_N_INT_ENABLE_REG);
+
+	do {
+		u32 val;
+
+		if (bcm63xx_iudma_chan_has_sram(chan)) {
+			c_writel(IUDMA_C_CFG_PKT_HALT, chan, IUDMA_C_CFG_REG);
+			val = c_readl(chan, IUDMA_C_CFG_REG);
+			if (!(val & IUDMA_C_CFG_ENABLE))
+				break;
+		} else {
+			n_writel(IUDMA_N_CFG_PKT_HALT, chan, IUDMA_N_CFG_REG);
+			val = n_readl(chan, IUDMA_N_CFG_REG);
+			if (!(val & IUDMA_N_CFG_ENABLE))
+				break;
+		}
+
+		udelay(1);
+	} while (--timeout);
+
+	if (!timeout) {
+		dev_err(chan->dev, "Unable to stop channel %u\n", chan->id);
+
+		if (!shutdown) {
+			bcm63xx_iudma_reset_chan(chan);
+			memset(chan->hw_desc, 0, chan->hw_ring_alloc);
+			bcm63xx_iudma_configure_chan(chan);
+		}
+	}
+}
+
+static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
+{
+	bcm63xx_iudma_reset_chan(chan);
+	bcm63xx_iudma_configure_chan(chan);
 
 	if (bcm63xx_iudma_chan_has_sram(chan))
 		c_writel(IUDMA_C_CFG_ENABLE, chan, IUDMA_C_CFG_REG);
@@ -507,9 +518,8 @@ static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *chan)
 static irqreturn_t bcm63xx_iudma_interrupt(int irq, void *data)
 {
 	struct bcm63xx_iudma_chan *ch = data;
-	struct device *dev = ch->vc.chan.device->dev;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
 	return IRQ_HANDLED;
 }
@@ -520,12 +530,11 @@ static irqreturn_t bcm63xx_iudma_interrupt(int irq, void *data)
 static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
 	int ret;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
-	ch->hw_desc = dma_zalloc_coherent(dev, ch->hw_ring_alloc,
+	ch->hw_desc = dma_zalloc_coherent(ch->dev, ch->hw_ring_alloc,
 					&ch->hw_ring_base, GFP_KERNEL);
 	if (!ch->hw_desc)
 		return -ENOMEM;
@@ -538,11 +547,17 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	if (ret)
 		goto free_hw_desc;
 
+	/* set safe initial dma maximum burst len */
+	ch->maxburst = 1;
+
+	/* disable flow control unless requested by slave config */
+	ch->flowc = false;
+
 	bcm63xx_iudma_enable_chan(ch);
 	return 0;
 
 free_hw_desc:
-	dma_free_coherent(dev, ch->hw_ring_alloc,
+	dma_free_coherent(ch->dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
 	return ret;
 }
@@ -550,14 +565,14 @@ free_hw_desc:
 static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
-	bcm63xx_iudma_disable_chan(ch);
+	bcm63xx_iudma_disable_chan(ch, true);
+	bcm63xx_iudma_reset_chan(ch);
 	vchan_free_chan_resources(&ch->vc);
 	free_irq(ch->irq, ch);
-	dma_free_coherent(dev, ch->hw_ring_alloc,
+	dma_free_coherent(ch->dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
 }
 
@@ -568,9 +583,8 @@ static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
 	unsigned long flags, void *context)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
 	return ERR_PTR(-ENOSYS);
 }
@@ -578,92 +592,118 @@ static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
 static void bcm63xx_iudma_issue_pending(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
+
+	// TODO
 }
 
 static enum dma_status bcm63xx_iudma_tx_status(struct dma_chan *dchan,
 	dma_cookie_t cookie, struct dma_tx_state *txstate)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
+
+	// TODO
 
 	return DMA_ERROR;
+}
+
+static void bcm63xx_iudma_desc_free(struct virt_dma_desc *vd)
+{
+	struct bcm63xx_iudma_desc *desc = container_of(vd,
+					struct bcm63xx_iudma_desc, vd);
+
+	// TODO free resources from prep_slave_sg
+	kfree(desc);
 }
 
 static int bcm63xx_iudma_config(struct dma_chan *dchan,
 	struct dma_slave_config *config)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
+	unsigned int maxburst;
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
 	if (bcm63xx_iudma_chan_is_rx(ch)) {
 		if (config->src_addr_width != DMA_SLAVE_BUSWIDTH_4_BYTES)
 			return -EINVAL;
 
-		bcm63xx_iudma_chan_set_flowc(ch, config->device_fc);
-
-		if (bcm63xx_iudma_chan_has_sram(ch))
-			c_writel(config->src_maxburst, ch,
-				IUDMA_C_MAX_BURST_REG);
-		else
-			n_writel(config->src_maxburst, ch,
-				IUDMA_N_MAX_BURST_REG);
+		maxburst = config->src_maxburst;
 	} else if (bcm63xx_iudma_chan_is_tx(ch)) {
 		if (config->dst_addr_width != DMA_SLAVE_BUSWIDTH_4_BYTES)
 			return -EINVAL;
 
-		if (bcm63xx_iudma_chan_has_sram(ch))
-			c_writel(config->dst_maxburst, ch,
-				IUDMA_C_MAX_BURST_REG);
-		else
-			n_writel(config->dst_maxburst, ch,
-				IUDMA_N_MAX_BURST_REG);
+		maxburst = config->dst_maxburst;
 	}
 
-	ch->cfg = *config;
+	if (maxburst < 1 || maxburst > IUDMA_D_LEN_MAX)
+		return -EINVAL;
+
+	ch->flowc = config->device_fc;
+	ch->maxburst = maxburst;
+
+	bcm63xx_iudma_chan_set_flowc(ch);
+
+	if (bcm63xx_iudma_chan_has_sram(ch))
+		c_writel(ch->maxburst, ch, IUDMA_C_MAX_BURST_REG);
+	else
+		n_writel(ch->maxburst, ch, IUDMA_N_MAX_BURST_REG);
 
 	wmb();
 
-	return -ENOSYS;
+	return 0;
 }
 
 static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	struct device *dev = dchan->device->dev;
+	unsigned long flags;
+	LIST_HEAD(head);
 
-	dev_info(dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(ch->dev, "%s(%u)\n", __func__, ch->id);
 
-	return -ENOSYS;
-}
+	spin_lock_irqsave(&ch->vc.lock, flags);
 
-static void bcm63xx_iudma_desc_free(struct virt_dma_desc *vd)
-{
-//	struct bcm63xx_iudma_desc *desc = container_of(vd,
-//					struct bcm63xx_iudma_desc, vd);
+	bcm63xx_iudma_disable_chan(ch, false);
+	memset(ch->hw_desc, 0, ch->hw_ring_alloc);
 
+	vchan_get_all_descriptors(&ch->vc, &head);
+
+	spin_unlock_irqrestore(&ch->vc.lock, flags);
+
+	vchan_dma_desc_free_list(&ch->vc, &head);
+
+	return 0;
 }
 
 
 /* Driver functions */
 
-static int bcm63xx_iudma_set_chan_name(struct bcm63xx_iudma_chan *ch,
+static void bcm63xx_iudma_set_chan_name(struct bcm63xx_iudma_chan *ch,
 	struct device *dev)
 {
 	const char *prefix = dev_name(dev);
+	char *name;
 	size_t name_len = strlen(prefix) + 5 /* ":chan" */ + 32 /* "%u" */ + 1;
+	int ret;
 
-	ch->name = devm_kzalloc(dev, name_len, GFP_KERNEL);
-	if (!ch->name)
-		return -ENOMEM;
+	name = devm_kzalloc(dev, name_len, GFP_KERNEL);
+	if (!name) {
+		ch->name = prefix;
+		return;
+	}
 
-	return snprintf(ch->name, name_len, "%s:chan%u", prefix, ch->id);
+	ret = snprintf(name, name_len, "%s:chan%u", prefix, ch->id);
+	if (ret < 0) {
+		devm_kfree(dev, name);
+		ch->name = prefix;
+		return;
+	}
+
+	ch->name = name;
 }
 
 static int bcm63xx_iudma_probe(struct platform_device *pdev)
@@ -690,8 +730,11 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	iudma->base_g = devm_ioremap_resource(dev, res);
-	if (IS_ERR(iudma->base_g))
-		return PTR_ERR(iudma->base_g);
+	if (IS_ERR(iudma->base_g)) {
+		ret = PTR_ERR(iudma->base_g);
+		dev_err(dev, "failed to get register base: %d\n", ret);
+		return ret;
+	}
 
 	ret = of_property_read_u32(np, "dma-requests", &dma_requests);
 	if (ret || dma_requests == 0 || dma_requests > IUDMA_MAX_NUM_REQUESTS)
@@ -700,8 +743,10 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 	spin_lock_init(&iudma->lock);
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
-	if (ret)
+	if (ret) {
+		dev_err(dev, "failed to set DMA bit mask: %d\n", ret);
 		return ret;
+	}
 
 	dma_set_max_seg_size(dev, IUDMA_D_LEN_MAX);
 
@@ -732,9 +777,7 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		ch->ctrl = iudma;
 		ch->id = i;
 
-		ret = bcm63xx_iudma_set_chan_name(ch, dev);
-		if (ret)
-			return ret;
+		bcm63xx_iudma_set_chan_name(ch, dev);
 
 		ch->irq = platform_get_irq(pdev, i);
 		if (ch->irq < 0)
@@ -753,11 +796,11 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 			ch->base_s = 0;
 		}
 
-		spin_lock_init(&ch->hw_ring_lock);
 		ch->hw_ring_size = dma_requests;
 		ch->hw_ring_alloc = sizeof(*ch->hw_desc) * ch->hw_ring_size;
 
-		bcm63xx_iudma_disable_chan(ch);
+		bcm63xx_iudma_disable_chan(ch, true);
+		bcm63xx_iudma_reset_chan(ch);
 
 		ch->vc.desc_free = bcm63xx_iudma_desc_free;
 		vchan_init(&ch->vc, ddev);
@@ -770,11 +813,30 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	platform_set_drvdata(pdev, iudma);
+
 	bcm63xx_iudma_enable_ctl(iudma);
+
+	ret = of_dma_controller_register(np, of_dma_xlate_by_chan_id, iudma);
+	if (ret) {
+		dev_err(dev, "failed to register DMA controller: %d\n", ret);
+		return ret;
+	}
+
+	ret = dma_async_device_register(ddev);
+	if (ret) {
+		dev_err(dev, "failed to register DMA engine device: %d\n", ret);
+		goto of_dma_unregister;
+	}
 
 	dev_info(dev, "registered BCM63xx IUDMA controller at MMIO 0x%p (%u channels)",
 			iudma->base_g, iudma->n_channels);
 	return 0;
+
+
+of_dma_unregister:
+	of_dma_controller_free(np);
+	return ret;
 }
 
 static int bcm63xx_iudma_remove(struct platform_device *pdev)
@@ -782,6 +844,7 @@ static int bcm63xx_iudma_remove(struct platform_device *pdev)
 	struct bcm63xx_iudma *iudma = platform_get_drvdata(pdev);
 
 	dma_async_device_unregister(&iudma->ddev);
+	of_dma_controller_free(pdev->dev.of_node);
 	bcm63xx_iudma_disable_ctl(iudma);
 
 	return 0;
