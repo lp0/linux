@@ -296,8 +296,8 @@
 			reg = <0x10700000 0x10000>;
 			interrupt-parent = <&periph_intc>;
 			interrupts = <48>;
-			clocks = <&periph_clk 10>;
-			reset = <&perf_soft_rst 4>;
+			clocks = <&periph_clk 10>, <&periph_clk 31>;
+			resets = <&perf_soft_rst 4>;
 			power-supply = <&power_robosw>;
 			dmas = <&enetdma0 0	/* read channel */
 				&enetdma0 1	/* write channel */
