@@ -29,7 +29,7 @@ enetdma0: dma-controller@0x1000d800 {
 	interrupts = <1>, <64>, <2>, <65>, <3>, <66>, <4>, <67>;
 	#dma-cells = <1>;
 	dma-channels = <8>;
-	dma-requests = <127>;
+	dma-requests = <512>;
 	status = "disabled";
 };
 
