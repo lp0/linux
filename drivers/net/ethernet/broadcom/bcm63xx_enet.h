@@ -374,11 +374,13 @@ struct bcm_enet_priv {
 	/* mac irq */
 	int irq;
 
-	/* rx and tx dma channel/packet queue */
+	/* rx and tx dma channel/packet queues */
 	struct dma_chan *rx_dma;
 	struct dma_chan *tx_dma;
-	struct list_head rx_queue;
-	struct list_head tx_queue;
+	struct list_head rx_active;
+	struct list_head rx_inactive;
+	struct list_head tx_active;
+	struct list_head tx_inactive;
 	unsigned int rx_ring_size;
 	unsigned int tx_ring_size;
 	unsigned int rx_count;
