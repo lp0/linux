@@ -356,14 +356,14 @@ static void bcm_enet_tx_complete(void *data)
 
 	dma_unmap_single(kdev, pkt->buf, skb->len, DMA_TO_DEVICE);
 	dev_kfree_skb(pkt->skb);
-	pkt->skb = NULL;
 
 	spin_lock(&priv->tx_lock);
+	pkt->skb = NULL;
 	list_move_tail(&pkt->node, &priv->tx_inactive);
-	spin_unlock(&priv->tx_lock);
 
 	if (netif_queue_stopped(dev))
 		netif_wake_queue(dev);
+	spin_unlock(&priv->tx_lock);
 }
 
 /*
