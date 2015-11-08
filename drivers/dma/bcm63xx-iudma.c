@@ -509,15 +509,15 @@ static inline void bcm63xx_iudma_disable_chan(struct bcm63xx_iudma_chan *ch,
 
 static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *ch)
 {
-	if (ch->running)
-		return;
-
 	if (bcm63xx_iudma_chan_has_sram(ch))
 		c_writel(IUDMA_C_CFG_ENABLE, ch, IUDMA_C_CFG_REG);
 	else
 		n_writel(IUDMA_N_CFG_ENABLE | IUDMA_N_CFG_CHAINING |
 			IUDMA_N_CFG_WRAP_ENABLE | IUDMA_N_CFG_FLOWC_ENABLE,
 			ch, IUDMA_N_CFG_REG);
+
+	if (ch->running)
+		return;
 
 	if (bcm63xx_iudma_chan_has_sram(ch))
 		c_writel(IUDMA_C_INT_BUF_DONE, ch, IUDMA_C_INT_ENABLE_REG);
@@ -527,7 +527,7 @@ static inline void bcm63xx_iudma_enable_chan(struct bcm63xx_iudma_chan *ch)
 	ch->running = true;
 }
 
-static void bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
+static int bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 {
 	unsigned int packets = 0;
 
@@ -544,7 +544,7 @@ static void bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 		rmb();
 
 		if (hwd->status & IUDMA_D_CS_OWNER)
-			break;
+			return BIT(0) | (packets ? BIT(1) : 0);
 
 		/* ensure other fields of the descriptor were not read
 		 * before we checked ownership */
@@ -574,6 +574,8 @@ static void bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 
 //	if (ch->id == 0 && !ch->desc_count)
 //		dev_info_ratelimited(ch->ctrl->dev, "rx buffer empty\n");
+
+	return (packets ? BIT(1) : 0);
 }
 
 static void bcm63xx_iudma_start_transactions(struct bcm63xx_iudma_chan *ch)
@@ -623,9 +625,79 @@ static void bcm63xx_iudma_start_transactions(struct bcm63xx_iudma_chan *ch)
 		bcm63xx_iudma_enable_chan(ch);
 }
 
-static void bcm63xx_iudma_tasklet(unsigned long data)
+static void bcm63xx_iudma_rx_tasklet(unsigned long data)
 {
 	struct bcm63xx_iudma_chan *ch = (struct bcm63xx_iudma_chan *)data;
+	int progress;
+	bool reschedule;
+	u32 status;
+
+	if (bcm63xx_iudma_chan_has_sram(ch))
+		status = c_readl(ch, IUDMA_C_INT_STATUS_REG);
+	else
+		status = n_readl(ch, IUDMA_N_INT_STATUS_REG);
+
+	/* Ack interrupts */
+	if (bcm63xx_iudma_chan_has_sram(ch))
+		c_writel(status, ch, IUDMA_C_INT_STATUS_REG);
+	else
+		n_writel(status, ch, IUDMA_N_INT_STATUS_REG);
+
+	spin_lock(&ch->vc.lock);
+	progress = bcm63xx_iudma_complete_transactions(ch);
+	spin_unlock(&ch->vc.lock);
+
+	ch->vc.task.func(ch->vc.task.data);
+
+	spin_lock(&ch->vc.lock);
+	bcm63xx_iudma_start_transactions(ch);
+
+	if (progress & BIT(1)) {
+		/* packets processed */
+		reschedule = true;
+	} else {
+		reschedule = false;
+	}
+
+	ch->running = false;
+	if (!reschedule)
+		bcm63xx_iudma_enable_chan(ch);
+	spin_unlock(&ch->vc.lock);
+
+	if (reschedule)
+		tasklet_schedule(&ch->task);
+}
+
+static irqreturn_t bcm63xx_iudma_rx_interrupt(int irq, void *data)
+{
+	struct bcm63xx_iudma_chan *ch = data;
+
+	/* Disable interrupts */
+	if (bcm63xx_iudma_chan_has_sram(ch))
+		c_writel(0, ch, IUDMA_C_INT_ENABLE_REG);
+	else
+		n_writel(0, ch, IUDMA_N_INT_ENABLE_REG);
+
+	tasklet_schedule(&ch->task);
+
+	return IRQ_HANDLED;
+}
+
+static void bcm63xx_iudma_tx_tasklet(unsigned long data)
+{
+	struct bcm63xx_iudma_chan *ch = (struct bcm63xx_iudma_chan *)data;
+
+	ch->vc.task.func(ch->vc.task.data);
+
+	spin_lock(&ch->vc.lock);
+	if (ch->desc_count)
+		bcm63xx_iudma_enable_chan(ch);
+	spin_unlock(&ch->vc.lock);
+}
+
+static irqreturn_t bcm63xx_iudma_tx_interrupt(int irq, void *data)
+{
+	struct bcm63xx_iudma_chan *ch = data;
 	u32 status;
 
 	if (bcm63xx_iudma_chan_has_sram(ch))
@@ -642,42 +714,6 @@ static void bcm63xx_iudma_tasklet(unsigned long data)
 	spin_lock(&ch->vc.lock);
 	bcm63xx_iudma_complete_transactions(ch);
 	spin_unlock(&ch->vc.lock);
-
-	ch->vc.task.func(ch->vc.task.data);
-
-	spin_lock(&ch->vc.lock);
-	bcm63xx_iudma_start_transactions(ch);
-	ch->running = false;
-	if (ch->desc_count)
-		bcm63xx_iudma_enable_chan(ch);
-	spin_unlock(&ch->vc.lock);
-}
-
-static irqreturn_t bcm63xx_iudma_interrupt(int irq, void *data)
-{
-	struct bcm63xx_iudma_chan *ch = data;
-#if 0
-	u32 status;
-
-	if (bcm63xx_iudma_chan_has_sram(ch))
-		status = c_readl(ch, IUDMA_C_INT_STATUS_REG);
-	else
-		status = n_readl(ch, IUDMA_N_INT_STATUS_REG);
-
-	dev_info(ch->ctrl->dev, "%s(%u) pos=%08x %s%s%s%s\n", __func__, ch->id,
-		s_readl(ch, IUDMA_S_STATE_DATA_REG),
-		status & IUDMA_C_INT_BUF_DONE ? " buf_done" : "",
-		status & IUDMA_C_INT_PKT_DONE ? " pkt_done" : "",
-		status & IUDMA_C_INT_NO_DESC ? " no_desc" : "",
-		status & IUDMA_C_INT_RX_ERROR ? " rx_error" : ""
-	);
-#endif
-
-	/* Disable interrupts */
-	if (bcm63xx_iudma_chan_has_sram(ch))
-		c_writel(0, ch, IUDMA_C_INT_ENABLE_REG);
-	else
-		n_writel(0, ch, IUDMA_N_INT_ENABLE_REG);
 
 	tasklet_schedule(&ch->task);
 
@@ -710,7 +746,12 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	ch->read_desc = 0;
 	ch->write_desc = 0;
 
-	ret = request_irq(ch->irq, bcm63xx_iudma_interrupt, 0, ch->name, ch);
+	if (bcm63xx_iudma_chan_is_rx(ch))
+		ret = request_irq(ch->irq, bcm63xx_iudma_rx_interrupt,
+			0, ch->name, ch);
+	else
+		ret = request_irq(ch->irq, bcm63xx_iudma_tx_interrupt,
+			0, ch->name, ch);
 	if (ret)
 		goto free_hw_desc;
 
@@ -720,7 +761,12 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	/* disable flow control unless requested by slave config */
 	ch->flowc = false;
 
-	tasklet_init(&ch->task, bcm63xx_iudma_tasklet, (unsigned long)ch);
+	if (bcm63xx_iudma_chan_is_rx(ch))
+		tasklet_init(&ch->task, bcm63xx_iudma_rx_tasklet,
+			(unsigned long)ch);
+	else
+		tasklet_init(&ch->task, bcm63xx_iudma_tx_tasklet,
+			(unsigned long)ch);
 	ch->running = false;
 
 	bcm63xx_iudma_reset_chan(ch);
