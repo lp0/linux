@@ -173,7 +173,7 @@
 			#interrupt-cells = <1>;
 		};
 
-		/* TODO  iudma, ethsw, nvram, nand, dsl */
+		/* TODO iudma, ethsw, nvram, nand, dsl */
 
 		periph_clk: periph_clk@0x10000004 {
 			compatible = "mmio-gate-clock";
@@ -300,14 +300,8 @@
 			resets = <&perf_soft_rst 4>;
 			power-supply = <&power_robosw>;
 			dmas = <&enetdma0 0	/* read channel */
-				&enetdma0 1	/* write channel */
-				&enetdma0 2	/* read channel */
-				&enetdma0 3	/* write channel */
-				&enetdma0 4	/* read channel */
-				&enetdma0 5	/* write channel */
-				&enetdma0 6	/* read channel */
-				&enetdma0 7>;	/* write channel */
-			dma-names = "rx", "tx", "rx", "tx", "rx", "tx", "rx", "tx";
+				&enetdma0 1>;	/* write channel */
+			dma-names = "rx", "tx";
 			brcm,phy-ids = <1>, <2>, <3>, <4>;
 			brcm,port-names = "fe2", "fe3", "fe4", "fe1";
 			status = "disabled";
