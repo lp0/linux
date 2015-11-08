@@ -689,10 +689,10 @@ static void bcm63xx_iudma_tx_tasklet(unsigned long data)
 
 	ch->vc.task.func(ch->vc.task.data);
 
-	spin_lock(&ch->vc.lock);
+	spin_lock_irq(&ch->vc.lock);
 	if (ch->desc_count)
 		bcm63xx_iudma_enable_chan(ch);
-	spin_unlock(&ch->vc.lock);
+	spin_unlock_irq(&ch->vc.lock);
 }
 
 static irqreturn_t bcm63xx_iudma_tx_interrupt(int irq, void *data)
