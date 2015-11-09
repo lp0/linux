@@ -504,25 +504,29 @@ static inline void bcm63xx_iudma_enable_chan_int(struct bcm63xx_iudma_chan *ch)
 		n_writel(IUDMA_N_INT_BUF_DONE, ch, IUDMA_N_INT_ENABLE_REG);
 }
 
+#define IUDMA_STOP_TIMEOUT_US 500
+
 static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
 	bool shutdown)
 {
-	unsigned int timeout = 5000;
+	unsigned int timeout = IUDMA_STOP_TIMEOUT_US;
+	u32 cfg;
 
 	bcm63xx_iudma_disable_chan_int(ch);
 
 	do {
-		u32 val;
+		u32 halt = (timeout > IUDMA_STOP_TIMEOUT_US / 2)
+			? IUDMA_C_CFG_PKT_HALT : IUDMA_C_CFG_BURST_HALT;
 
 		if (bcm63xx_iudma_chan_has_sram(ch)) {
-			c_writel(IUDMA_C_CFG_PKT_HALT, ch, IUDMA_C_CFG_REG);
-			val = c_readl(ch, IUDMA_C_CFG_REG);
-			if (!(val & IUDMA_C_CFG_ENABLE))
+			c_writel(halt, ch, IUDMA_C_CFG_REG);
+			cfg = c_readl(ch, IUDMA_C_CFG_REG);
+			if (!(cfg & IUDMA_C_CFG_ENABLE))
 				break;
 		} else {
-			n_writel(IUDMA_N_CFG_PKT_HALT, ch, IUDMA_N_CFG_REG);
-			val = n_readl(ch, IUDMA_N_CFG_REG);
-			if (!(val & IUDMA_N_CFG_ENABLE))
+			n_writel(halt, ch, IUDMA_N_CFG_REG);
+			cfg = n_readl(ch, IUDMA_N_CFG_REG);
+			if (!(cfg & IUDMA_N_CFG_ENABLE))
 				break;
 		}
 
@@ -530,8 +534,16 @@ static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
 	} while (--timeout);
 
 	if (!timeout) {
+		u32 hw_pos;
+
+		if (bcm63xx_iudma_chan_has_sram(ch))
+			hw_pos = s_readl(ch, IUDMA_S_STATE_DATA_REG);
+		else
+			hw_pos = ~0;
+
 		dev_err(ch->ctrl->dev,
-			"Unable to stop channel %u\n", ch->id);
+			"Unable to stop channel %u (desc_count=%u, read_desc=%u, write_desc=%u, hw_pos=%08x, cfg=%08x)\n",
+			ch->id, ch->desc_count, ch->read_desc, ch->write_desc, hw_pos, cfg);
 
 		if (!shutdown) {
 			bcm63xx_iudma_reset_chan(ch);
@@ -808,7 +820,7 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
-	spin_lock_bh(&ch->vc.lock);
+	spin_lock_irq(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, true);
 	bcm63xx_iudma_reset_chan(ch);
 	vchan_free_chan_resources(&ch->vc);
@@ -825,6 +837,7 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	ch->desc = NULL;
 	ch->hw_desc = NULL;
 	ch->hw_ring_base = 0;
+	spin_unlock_irq(&ch->vc.lock);
 
 	spin_lock_bh(&ch->pool_lock);
 	while (!list_empty(&ch->desc_pool)) {
@@ -834,7 +847,6 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 		devm_kfree(dev, desc);
 	}
 	spin_unlock_bh(&ch->pool_lock);
-	spin_unlock_bh(&ch->vc.lock);
 }
 
 static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
