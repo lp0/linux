@@ -9,8 +9,8 @@
 #include <linux/platform_device.h>
 
 /* default number of descriptor */
-#define BCMENET_DEF_RX_DESC	512
-#define BCMENET_DEF_TX_DESC	512
+#define BCMENET_DEF_RX_DESC	16
+#define BCMENET_DEF_TX_DESC	16
 
 /* maximum burst len for dma (4 bytes unit) */
 #define BCMENET_DMA_MAXBURST	16
