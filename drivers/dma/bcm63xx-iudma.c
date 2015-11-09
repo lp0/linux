@@ -709,10 +709,15 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
+	spin_lock_bh(&ch->vc.lock);
+	spin_lock_bh(&ch->pool_lock);
+
 	ch->hw_desc = dma_alloc_coherent(dev, ch->hw_ring_alloc,
 					&ch->hw_ring_base, GFP_KERNEL);
-	if (!ch->hw_desc)
-		return -ENOMEM;
+	if (!ch->hw_desc) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
 
 	ch->desc = devm_kcalloc(dev, ch->hw_ring_size,
 					sizeof(*ch->desc), GFP_KERNEL);
@@ -731,6 +736,7 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 		desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
 		if (!desc) {
 			ret = -ENOMEM;
+			spin_unlock_bh(&ch->pool_lock);
 			goto free_pool;
 		}
 		list_add_tail(&desc->node, &ch->desc_pool);
@@ -756,7 +762,8 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	bcm63xx_iudma_reset_chan(ch);
 	bcm63xx_iudma_reset_ring(ch);
 	bcm63xx_iudma_configure_chan(ch);
-	return 0;
+	ret = 0;
+	goto out_unlock;
 
 free_pool:
 	while (!list_empty(&ch->desc_pool)) {
@@ -770,6 +777,10 @@ free_pool:
 free_hw_desc:
 	dma_free_coherent(dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
+
+out_unlock:
+	spin_unlock_bh(&ch->pool_lock);
+	spin_unlock_bh(&ch->vc.lock);
 	return ret;
 }
 
@@ -778,6 +789,9 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 
 	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
+
+	spin_lock_bh(&ch->vc.lock);
+	spin_lock_bh(&ch->pool_lock);
 
 	bcm63xx_iudma_stop_chan(ch, true);
 	bcm63xx_iudma_reset_chan(ch);
@@ -797,6 +811,9 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 		list_del(&desc->node);
 		kfree(desc);
 	}
+
+	spin_unlock_bh(&ch->pool_lock);
+	spin_unlock_bh(&ch->vc.lock);
 }
 
 static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
