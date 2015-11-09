@@ -43,6 +43,7 @@ static inline struct virt_dma_chan *to_virt_chan(struct dma_chan *chan)
 
 void vchan_dma_desc_free_list(struct virt_dma_chan *vc, struct list_head *head);
 void vchan_init(struct virt_dma_chan *vc, struct dma_device *dmadev);
+void vchan_complete_task(struct virt_dma_chan *vc);
 struct virt_dma_desc *vchan_find_desc(struct virt_dma_chan *, dma_cookie_t);
 
 /**
@@ -76,12 +77,13 @@ static inline bool vchan_issue_pending(struct virt_dma_chan *vc)
 }
 
 /**
- * vchan_cookie_complete - report completion of a descriptor
+ * vchan_cookie_complete_notask - report completion of a descriptor
+ *                                without scheduling the tasklet
  * @vd: virtual descriptor to update
  *
  * vc.lock must be held by caller
  */
-static inline void vchan_cookie_complete(struct virt_dma_desc *vd)
+static inline void vchan_cookie_complete_notask(struct virt_dma_desc *vd)
 {
 	struct virt_dma_chan *vc = to_virt_chan(vd->tx.chan);
 	dma_cookie_t cookie;
@@ -91,7 +93,19 @@ static inline void vchan_cookie_complete(struct virt_dma_desc *vd)
 	dev_vdbg(vc->chan.device->dev, "txd %p[%x]: marked complete\n",
 		 vd, cookie);
 	list_add_tail(&vd->node, &vc->desc_completed);
+}
 
+/**
+ * vchan_cookie_complete - report completion of a descriptor
+ * @vd: virtual descriptor to update
+ *
+ * vc.lock must be held by caller
+ */
+static inline void vchan_cookie_complete(struct virt_dma_desc *vd)
+{
+	struct virt_dma_chan *vc = to_virt_chan(vd->tx.chan);
+
+	vchan_cookie_complete_notask(vd);
 	tasklet_schedule(&vc->task);
 }
 
