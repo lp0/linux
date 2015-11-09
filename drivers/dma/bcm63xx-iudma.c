@@ -284,30 +284,6 @@ static inline __pure bool bcm63xx_iudma_chan_has_flowc(
 		ch->id < IUDMA_G_FLOWC_MAX;
 }
 
-/* Locking wrappers for vc.lock:
- * RX only accesses the channel data in user/softirq context
- * TX accesses the channel data in hardirq context
- *
- * Descriptor pool data (pool_lock) is only accessed from user/softirq context
- *
- * Avoid disabling interrupts while accessing the hardware for RX.
- */
-static inline void bcm63xx_iudma_chan_lock(struct bcm63xx_iudma_chan *ch)
-{
-	if (bcm63xx_iudma_chan_is_rx(ch))
-		spin_lock_bh(&ch->vc.lock);
-	else
-		spin_lock_irq(&ch->vc.lock);
-}
-
-static inline void bcm63xx_iudma_chan_unlock(struct bcm63xx_iudma_chan *ch)
-{
-	if (bcm63xx_iudma_chan_is_rx(ch))
-		spin_unlock_bh(&ch->vc.lock);
-	else
-		spin_unlock_irq(&ch->vc.lock);
-}
-
 
 /* Global configuration */
 static inline u32 g_readl(struct bcm63xx_iudma *iudma, int reg)
@@ -611,13 +587,7 @@ static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 				IUDMA_D_STA_CLIENT_MASK;
 		}
 
-		/* don't schedule virtdma tasklet for rx
-		 *
-		 * don't use vchan_cookie_complete for tx
-		 * (the maximum pps rate is 3% slower)
-		 */
-		dma_cookie_complete(&desc->vd.tx);
-		list_add_tail(&desc->vd.node, &ch->vc.desc_completed);
+		vchan_cookie_complete_notask(&desc->vd);
 		ch->desc[ch->read_desc] = NULL;
 
 		ch->read_desc++;
@@ -627,11 +597,6 @@ static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 
 		packets++;
 	}
-
-//	dev_info_ratelimited(ch->ctrl->dev, "chan %u processed %u packets\n", ch->id, packets);
-
-//	if (ch->id == 0 && !ch->desc_count)
-//		dev_info_ratelimited(ch->ctrl->dev, "rx buffer empty\n");
 
 	return packets > 0;
 }
@@ -694,8 +659,7 @@ static void bcm63xx_iudma_rx_tasklet(unsigned long data)
 	processed = bcm63xx_iudma_complete_transactions(ch);
 	spin_unlock(&ch->vc.lock);
 
-	/* invoke virtdma tasklet directly */
-	ch->vc.task.func(ch->vc.task.data);
+	vchan_complete_task(&ch->vc);
 
 	spin_lock(&ch->vc.lock);
 	if (!processed) {
@@ -924,12 +888,10 @@ static void bcm63xx_iudma_issue_pending(struct dma_chan *dchan)
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 	unsigned long flags;
 
-	//bcm63xx_iudma_chan_lock(ch);
 	spin_lock_irqsave(&ch->vc.lock, flags);
 	if (vchan_issue_pending(&ch->vc))
 		bcm63xx_iudma_issue_transactions(ch);
 	spin_unlock_irqrestore(&ch->vc.lock, flags);
-	//bcm63xx_iudma_chan_unlock(ch);
 }
 
 static int bcm63xx_iudma_config(struct dma_chan *dchan,
@@ -984,13 +946,13 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
 
 	// TODO review locking
-	bcm63xx_iudma_chan_lock(ch);
+	spin_lock(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, false);
 	bcm63xx_iudma_complete_transactions(ch);
 	bcm63xx_iudma_reset_ring(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
-	bcm63xx_iudma_chan_unlock(ch);
+	spin_unlock(&ch->vc.lock);
 
 	vchan_dma_desc_free_list(&ch->vc, &head);
 	// TODO flush desc_completed
