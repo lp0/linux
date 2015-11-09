@@ -982,18 +982,16 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 
 	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
 
-	// TODO review locking
-	spin_lock(&ch->vc.lock);
+	spin_lock_irq(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, false);
 	bcm63xx_iudma_complete_transactions(ch);
 	bcm63xx_iudma_reset_ring(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
-	spin_unlock(&ch->vc.lock);
+	spin_unlock_irq(&ch->vc.lock);
 
+	vchan_complete_task(&ch->vc);
 	vchan_dma_desc_free_list(&ch->vc, &head);
-	// TODO flush desc_completed
-
 	return 0;
 }
 
