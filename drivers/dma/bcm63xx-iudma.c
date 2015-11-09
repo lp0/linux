@@ -673,15 +673,15 @@ static void bcm63xx_iudma_tasklet(unsigned long data)
 	vchan_complete_task(&tx_ch->vc);
 
 	if (finished) {
+		/* re-enable interrupts */
+
 		spin_lock(&rx_ch->vc.lock);
-		/* re-enable interrupt */
 		rx_ch->running = false;
 		if (rx_ch->desc_count)
 			bcm63xx_iudma_start_chan(rx_ch);
 		spin_unlock(&rx_ch->vc.lock);
 
 		spin_lock(&tx_ch->vc.lock);
-		/* re-enable interrupt */
 		tx_ch->running = false;
 		if (tx_ch->desc_count)
 			bcm63xx_iudma_start_chan(tx_ch);
@@ -693,10 +693,12 @@ static void bcm63xx_iudma_tasklet(unsigned long data)
 
 static irqreturn_t bcm63xx_iudma_rx_interrupt(int irq, void *data)
 {
-	struct bcm63xx_iudma_chan *ch = data;
+	struct bcm63xx_iudma_chan *rx_ch = data;
+	struct bcm63xx_iudma_chan *tx_ch = rx_ch->pair;
 
-	bcm63xx_iudma_disable_chan_int(ch);
-	tasklet_schedule(&ch->task);
+	bcm63xx_iudma_disable_chan_int(tx_ch);
+	bcm63xx_iudma_disable_chan_int(rx_ch);
+	tasklet_schedule(&rx_ch->task);
 
 	return IRQ_HANDLED;
 }
@@ -706,6 +708,7 @@ static irqreturn_t bcm63xx_iudma_tx_interrupt(int irq, void *data)
 	struct bcm63xx_iudma_chan *tx_ch = data;
 	struct bcm63xx_iudma_chan *rx_ch = tx_ch->pair;
 
+	bcm63xx_iudma_disable_chan_int(rx_ch);
 	bcm63xx_iudma_disable_chan_int(tx_ch);
 	tasklet_schedule(&rx_ch->task);
 
