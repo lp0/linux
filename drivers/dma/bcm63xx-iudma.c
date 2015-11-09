@@ -33,7 +33,7 @@
  * won't move around the ring unless there are active requests to
  * process.
  *
- * WARNING: lockdep reduces performance by about 50%
+ * WARNING: lockdep reduces performance by over 50%
  */
 
 #include <linux/bcm63xx_iudma.h>
@@ -740,16 +740,17 @@ static irqreturn_t bcm63xx_iudma_tx_interrupt(int irq, void *data)
 static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	int ret;
+	struct device *dev = ch->ctrl->dev;
+	int ret, i;
 
-	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
-	ch->hw_desc = dma_alloc_coherent(ch->ctrl->dev, ch->hw_ring_alloc,
+	ch->hw_desc = dma_alloc_coherent(dev, ch->hw_ring_alloc,
 					&ch->hw_ring_base, GFP_KERNEL);
 	if (!ch->hw_desc)
 		return -ENOMEM;
 
-	ch->desc = devm_kcalloc(ch->ctrl->dev, ch->hw_ring_size,
+	ch->desc = devm_kcalloc(dev, ch->hw_ring_size,
 					sizeof(*ch->desc), GFP_KERNEL);
 	if (!ch->desc) {
 		ret = -ENOMEM;
@@ -760,6 +761,17 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	ch->read_desc = 0;
 	ch->write_desc = 0;
 
+	for (i = 0; i < ch->hw_ring_size; i++) {
+		struct bcm63xx_iudma_desc *desc;
+
+		desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
+		if (!desc) {
+			ret = -ENOMEM;
+			goto free_pool;
+		}
+		list_add_tail(&desc->node, &ch->desc_pool);
+	}
+
 	if (bcm63xx_iudma_chan_is_rx(ch))
 		ret = request_irq(ch->irq, bcm63xx_iudma_rx_interrupt,
 			0, ch->name, ch);
@@ -767,7 +779,7 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 		ret = request_irq(ch->irq, bcm63xx_iudma_tx_interrupt,
 			0, ch->name, ch);
 	if (ret)
-		goto free_hw_desc;
+		goto free_pool;
 
 	/* set safe initial dma maximum burst len */
 	ch->maxburst = 1;
@@ -775,9 +787,6 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	/* disable flow control unless requested by slave config */
 	ch->flowc = false;
 
-	if (bcm63xx_iudma_chan_is_rx(ch))
-		tasklet_init(&ch->rx_task, bcm63xx_iudma_rx_tasklet,
-			(unsigned long)ch);
 	ch->running = false;
 
 	bcm63xx_iudma_reset_chan(ch);
@@ -785,8 +794,17 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	bcm63xx_iudma_configure_chan(ch);
 	return 0;
 
+free_pool:
+	while (!list_empty(&ch->desc_pool)) {
+		struct bcm63xx_iudma_desc *desc = list_first_entry(
+			&ch->desc_pool, struct bcm63xx_iudma_desc, node);
+
+		list_del(&desc->node);
+		devm_kfree(dev, desc);
+	}
+
 free_hw_desc:
-	dma_free_coherent(ch->ctrl->dev, ch->hw_ring_alloc,
+	dma_free_coherent(dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
 	return ret;
 }
@@ -808,6 +826,13 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	ch->desc = NULL;
 	ch->hw_desc = NULL;
 	ch->hw_ring_base = 0;
+
+	while (!list_empty(&ch->desc_pool)) {
+		struct bcm63xx_iudma_desc *desc = list_first_entry(
+			&ch->desc_pool, struct bcm63xx_iudma_desc, node);
+		list_del(&desc->node);
+		kfree(desc);
+	}
 }
 
 static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
@@ -1073,7 +1098,6 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 	for (i = 0; i < of_data->n_channels; i++) {
 		struct bcm63xx_iudma_chan *ch = &iudma->chan[i];
-		int j;
 
 		ch->ctrl = iudma;
 		ch->id = i;
@@ -1101,18 +1125,19 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		ch->hw_ring_alloc = sizeof(*ch->hw_desc) * ch->hw_ring_size;
 
 		spin_lock_init(&ch->pool_lock);
-
 		INIT_LIST_HEAD(&ch->desc_pool);
-		for (j = 0; j < ch->hw_ring_size; j++) {
-			struct bcm63xx_iudma_desc *desc;
-
-			desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
-			if (!desc)
-				return -ENOMEM;
-			list_add_tail(&desc->node, &ch->desc_pool);
-		}
+		if (bcm63xx_iudma_chan_is_rx(ch))
+			tasklet_init(&ch->rx_task, bcm63xx_iudma_rx_tasklet,
+				(unsigned long)ch);
 
 		ch->vc.desc_free = bcm63xx_iudma_desc_put;
+
+		vchan_init(&ch->vc, ddev);
+
+		if (bcm63xx_iudma_chan_is_rx(ch))
+			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_rx_lock);
+		else
+			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_tx_lock);
 
 		bcm63xx_iudma_stop_chan(ch, true);
 		bcm63xx_iudma_reset_chan(ch);
@@ -1123,17 +1148,6 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 	if (!iudma->n_channels) {
 		dev_err(dev, "device has no channel IRQs\n");
 		return -EINVAL;
-	}
-
-	for (i = 0; i < iudma->n_channels; i++) {
-		struct bcm63xx_iudma_chan *ch = &iudma->chan[i];
-
-		vchan_init(&ch->vc, ddev);
-
-		if (bcm63xx_iudma_chan_is_rx(ch))
-			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_rx_lock);
-		else
-			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_tx_lock);
 	}
 
 	platform_set_drvdata(pdev, iudma);
