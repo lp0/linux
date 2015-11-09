@@ -183,6 +183,7 @@ struct bcm63xx_iudma_desc {
 
 struct bcm63xx_iudma_chan {
 	struct bcm63xx_iudma *ctrl;
+	struct bcm63xx_iudma_chan *pair; /* opposite transfer direction */
 
 	unsigned int id;
 	const char *name;
@@ -195,7 +196,7 @@ struct bcm63xx_iudma_chan {
 
 	struct dma_chan dchan;
 	struct virt_dma_chan vc;
-	struct tasklet_struct rx_task;
+	struct tasklet_struct task; /* rx chan only */
 	bool running;
 
 	unsigned int maxburst;
@@ -598,7 +599,7 @@ static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 		packets++;
 	}
 
-	return packets > 0;
+	return packets == 0;
 }
 
 static void bcm63xx_iudma_issue_transactions(struct bcm63xx_iudma_chan *ch)
@@ -648,30 +649,44 @@ static void bcm63xx_iudma_issue_transactions(struct bcm63xx_iudma_chan *ch)
 		bcm63xx_iudma_start_chan(ch);
 }
 
-static void bcm63xx_iudma_rx_tasklet(unsigned long data)
+static void bcm63xx_iudma_tasklet(unsigned long data)
 {
-	struct bcm63xx_iudma_chan *ch = (struct bcm63xx_iudma_chan *)data;
-	bool processed;
+	struct bcm63xx_iudma_chan *rx_ch = (struct bcm63xx_iudma_chan *)data;
+	struct bcm63xx_iudma_chan *tx_ch = rx_ch->pair;
+	bool finished;
 
-	bcm63xx_iudma_ack_chan_int(ch);
+	bcm63xx_iudma_ack_chan_int(rx_ch);
+	bcm63xx_iudma_ack_chan_int(tx_ch);
 
-	spin_lock(&ch->vc.lock);
-	processed = bcm63xx_iudma_complete_transactions(ch);
-	spin_unlock(&ch->vc.lock);
+	spin_lock(&rx_ch->vc.lock);
+	finished = bcm63xx_iudma_complete_transactions(rx_ch);
+	spin_unlock(&rx_ch->vc.lock);
 
-	vchan_complete_task(&ch->vc);
+	vchan_complete_task(&rx_ch->vc);
 
-	spin_lock(&ch->vc.lock);
-	if (!processed) {
+	spin_lock(&tx_ch->vc.lock);
+	finished |= bcm63xx_iudma_complete_transactions(tx_ch);
+	spin_unlock(&tx_ch->vc.lock);
+
+	vchan_complete_task(&tx_ch->vc);
+
+	if (finished) {
+		spin_lock(&rx_ch->vc.lock);
 		/* re-enable interrupt */
-		ch->running = false;
-		if (ch->desc_count)
-			bcm63xx_iudma_start_chan(ch);
-	}
-	spin_unlock(&ch->vc.lock);
+		rx_ch->running = false;
+		if (rx_ch->desc_count)
+			bcm63xx_iudma_start_chan(rx_ch);
+		spin_unlock(&rx_ch->vc.lock);
 
-	if (processed)
-		tasklet_schedule(&ch->rx_task);
+		spin_lock(&tx_ch->vc.lock);
+		/* re-enable interrupt */
+		tx_ch->running = false;
+		if (tx_ch->desc_count)
+			bcm63xx_iudma_start_chan(tx_ch);
+		spin_unlock(&tx_ch->vc.lock);
+	} else {
+		tasklet_schedule(&rx_ch->task);
+	}
 }
 
 static irqreturn_t bcm63xx_iudma_rx_interrupt(int irq, void *data)
@@ -679,21 +694,18 @@ static irqreturn_t bcm63xx_iudma_rx_interrupt(int irq, void *data)
 	struct bcm63xx_iudma_chan *ch = data;
 
 	bcm63xx_iudma_disable_chan_int(ch);
-	tasklet_schedule(&ch->rx_task);
+	tasklet_schedule(&ch->task);
 
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t bcm63xx_iudma_tx_interrupt(int irq, void *data)
 {
-	struct bcm63xx_iudma_chan *ch = data;
+	struct bcm63xx_iudma_chan *tx_ch = data;
+	struct bcm63xx_iudma_chan *rx_ch = tx_ch->pair;
 
-	bcm63xx_iudma_ack_chan_int(ch);
-
-	spin_lock(&ch->vc.lock);
-	if (bcm63xx_iudma_complete_transactions(ch))
-		tasklet_schedule(&ch->vc.task);
-	spin_unlock(&ch->vc.lock);
+	bcm63xx_iudma_disable_chan_int(tx_ch);
+	tasklet_schedule(&rx_ch->task);
 
 	return IRQ_HANDLED;
 }
@@ -903,12 +915,11 @@ static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
 static void bcm63xx_iudma_issue_pending(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
-	unsigned long flags;
 
-	spin_lock_irqsave(&ch->vc.lock, flags);
+	spin_lock_bh(&ch->vc.lock);
 	if (vchan_issue_pending(&ch->vc))
 		bcm63xx_iudma_issue_transactions(ch);
-	spin_unlock_irqrestore(&ch->vc.lock, flags);
+	spin_unlock_bh(&ch->vc.lock);
 }
 
 static int bcm63xx_iudma_config(struct dma_chan *dchan,
@@ -1080,6 +1091,10 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 		ch->ctrl = iudma;
 		ch->id = i;
+		if (bcm63xx_iudma_chan_is_rx(ch))
+			ch->pair = &iudma->chan[i + 1];
+		else
+			ch->pair = &iudma->chan[i - 1];
 
 		bcm63xx_iudma_set_chan_name(ch, dev);
 
@@ -1106,7 +1121,7 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		spin_lock_init(&ch->pool_lock);
 		INIT_LIST_HEAD(&ch->desc_pool);
 		if (bcm63xx_iudma_chan_is_rx(ch))
-			tasklet_init(&ch->rx_task, bcm63xx_iudma_rx_tasklet,
+			tasklet_init(&ch->task, bcm63xx_iudma_tasklet,
 				(unsigned long)ch);
 
 		ch->vc.desc_free = bcm63xx_iudma_desc_put;
