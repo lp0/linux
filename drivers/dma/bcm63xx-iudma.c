@@ -820,11 +820,10 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
-	spin_lock_irq(&ch->vc.lock);
+	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, true);
 	bcm63xx_iudma_reset_chan(ch);
-	vchan_free_chan_resources(&ch->vc);
-	free_irq(ch->irq, ch);
+
 	devm_kfree(dev, ch->desc);
 	dma_free_coherent(dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
@@ -837,7 +836,10 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	ch->desc = NULL;
 	ch->hw_desc = NULL;
 	ch->hw_ring_base = 0;
-	spin_unlock_irq(&ch->vc.lock);
+	spin_unlock_bh(&ch->vc.lock);
+
+	free_irq(ch->irq, ch);
+	vchan_free_chan_resources(&ch->vc);
 
 	spin_lock_bh(&ch->pool_lock);
 	while (!list_empty(&ch->desc_pool)) {
@@ -870,9 +872,9 @@ static void bcm63xx_iudma_desc_put(struct virt_dma_desc *vd)
 					struct bcm63xx_iudma_desc, vd);
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(vd->tx.chan);
 
-	spin_lock(&ch->pool_lock);
+	spin_lock_bh(&ch->pool_lock);
 	list_add_tail(&desc->node, &ch->desc_pool);
-	spin_unlock(&ch->pool_lock);
+	spin_unlock_bh(&ch->pool_lock);
 }
 
 static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
@@ -994,13 +996,13 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 
 	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
 
-	spin_lock_irq(&ch->vc.lock);
+	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, false);
 	bcm63xx_iudma_complete_transactions(ch);
 	bcm63xx_iudma_reset_ring(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
-	spin_unlock_irq(&ch->vc.lock);
+	spin_unlock_bh(&ch->vc.lock);
 
 	vchan_complete_task(&ch->vc);
 	vchan_dma_desc_free_list(&ch->vc, &head);
