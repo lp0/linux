@@ -22,6 +22,7 @@
  * Derived from bcm963xx_4.12L.06B_consumer/bcmdrivers/opensource/net/enet/impl4/bcmenet.c:
  * Copyright 2010 Broadcom Corporation
  *
+ *
  * The DMA controller processes requests from an arbitrarily sized
  * ring buffer in CPU memory. By default this is set to the size of
  * a typical page (4KB). This will be the maximum number of active
@@ -33,7 +34,9 @@
  * won't move around the ring unless there are active requests to
  * process.
  *
- * WARNING: lockdep reduces performance by over 50%
+ *
+ * WARNING: lock debugging increases softirq CPU load, reduces network
+ * throughput by up to 50% and maximum packets per second by up to 75%
  */
 
 #include <linux/bcm63xx_iudma.h>
@@ -355,22 +358,22 @@ static inline void bcm63xx_iudma_disable_ctl(struct bcm63xx_iudma *iudma)
 {
 	u32 val;
 
-	spin_lock(&iudma->lock);
+	spin_lock_irq(&iudma->lock);
 	val = g_readl(iudma, IUDMA_G_CFG_REG);
 	val &= ~IUDMA_G_CFG_ENABLE;
 	g_writel(val, iudma, IUDMA_G_CFG_REG);
-	spin_unlock(&iudma->lock);
+	spin_unlock_irq(&iudma->lock);
 }
 
 static inline void bcm63xx_iudma_enable_ctl(struct bcm63xx_iudma *iudma)
 {
 	u32 val;
 
-	spin_lock(&iudma->lock);
+	spin_lock_irq(&iudma->lock);
 	val = g_readl(iudma, IUDMA_G_CFG_REG);
 	val |= IUDMA_G_CFG_ENABLE;
 	g_writel(val, iudma, IUDMA_G_CFG_REG);
-	spin_unlock(&iudma->lock);
+	spin_unlock_irq(&iudma->lock);
 }
 
 
@@ -380,10 +383,10 @@ static inline void bcm63xx_iudma_reset_chan(struct bcm63xx_iudma_chan *ch)
 {
 	struct bcm63xx_iudma *iudma = ch->ctrl;
 
-	spin_lock(&iudma->lock);
+	spin_lock_irq(&iudma->lock);
 	g_writel(BIT(ch->id), iudma, IUDMA_G_CHANNEL_RESET_REG);
 	g_writel(0, iudma, IUDMA_G_CHANNEL_RESET_REG);
-	spin_unlock(&iudma->lock);
+	spin_unlock_irq(&iudma->lock);
 }
 
 static inline void bcm63xx_iudma_reset_ring(struct bcm63xx_iudma_chan *ch)
@@ -409,17 +412,16 @@ static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *ch)
 	struct bcm63xx_iudma *iudma = ch->ctrl;
 
 	if (bcm63xx_iudma_chan_has_flowc(ch)) {
-		unsigned long flags;
 		u32 val;
 
-		spin_lock_irqsave(&iudma->lock, flags);
+		spin_lock_irq(&iudma->lock);
 		val = g_readl(iudma, IUDMA_G_CFG_REG);
 		if (ch->flowc)
 			val |= IUDMA_G_FLOWC_ENABLE(ch->id);
 		else
 			val &= ~IUDMA_G_FLOWC_ENABLE(ch->id);
 		g_writel(val, iudma, IUDMA_G_CFG_REG);
-		spin_unlock_irqrestore(&iudma->lock, flags);
+		spin_unlock_irq(&iudma->lock);
 	}
 }
 
@@ -717,19 +719,15 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 	struct device *dev = ch->ctrl->dev;
+	LIST_HEAD(alloc_desc_pool);
 	int ret, i;
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
-	spin_lock_bh(&ch->vc.lock);
-	spin_lock_bh(&ch->pool_lock);
-
 	ch->hw_desc = dma_alloc_coherent(dev, ch->hw_ring_alloc,
 					&ch->hw_ring_base, GFP_KERNEL);
-	if (!ch->hw_desc) {
-		ret = -ENOMEM;
-		goto out_unlock;
-	}
+	if (!ch->hw_desc)
+		return -ENOMEM;
 
 	ch->desc = devm_kcalloc(dev, ch->hw_ring_size,
 					sizeof(*ch->desc), GFP_KERNEL);
@@ -738,21 +736,33 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 		goto free_hw_desc;
 	}
 
-	ch->desc_count = 0;
-	ch->read_desc = 0;
-	ch->write_desc = 0;
-
 	for (i = 0; i < ch->hw_ring_size; i++) {
 		struct bcm63xx_iudma_desc *desc;
 
 		desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
 		if (!desc) {
 			ret = -ENOMEM;
-			spin_unlock_bh(&ch->pool_lock);
 			goto free_pool;
 		}
-		list_add_tail(&desc->node, &ch->desc_pool);
+		list_add_tail(&desc->node, &alloc_desc_pool);
 	}
+
+	spin_lock_bh(&ch->vc.lock);
+	ch->desc_count = 0;
+	ch->read_desc = 0;
+	ch->write_desc = 0;
+	ch->running = false;
+
+	/* set safe initial dma maximum burst len */
+	ch->maxburst = 1;
+
+	/* disable flow control unless requested by slave config */
+	ch->flowc = false;
+
+	bcm63xx_iudma_reset_chan(ch);
+	bcm63xx_iudma_reset_ring(ch);
+	bcm63xx_iudma_configure_chan(ch);
+	spin_unlock_bh(&ch->vc.lock);
 
 	if (bcm63xx_iudma_chan_is_rx(ch))
 		ret = request_irq(ch->irq, bcm63xx_iudma_rx_interrupt,
@@ -763,67 +773,63 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 	if (ret)
 		goto free_pool;
 
-	/* set safe initial dma maximum burst len */
-	ch->maxburst = 1;
-
-	/* disable flow control unless requested by slave config */
-	ch->flowc = false;
-
-	ch->running = false;
-
-	bcm63xx_iudma_reset_chan(ch);
-	bcm63xx_iudma_reset_ring(ch);
-	bcm63xx_iudma_configure_chan(ch);
-	ret = 0;
-	goto out_unlock;
+	spin_lock_bh(&ch->pool_lock);
+	list_splice_init(&alloc_desc_pool, &ch->desc_pool);
+	spin_unlock_bh(&ch->pool_lock);
+	return 0;
 
 free_pool:
-	while (!list_empty(&ch->desc_pool)) {
+	while (!list_empty(&alloc_desc_pool)) {
 		struct bcm63xx_iudma_desc *desc = list_first_entry(
-			&ch->desc_pool, struct bcm63xx_iudma_desc, node);
+			&alloc_desc_pool, struct bcm63xx_iudma_desc, node);
 
 		list_del(&desc->node);
 		devm_kfree(dev, desc);
 	}
 
+	devm_kfree(dev, ch->desc);
+	ch->desc = NULL;
+
 free_hw_desc:
 	dma_free_coherent(dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
-
-out_unlock:
-	spin_unlock_bh(&ch->pool_lock);
-	spin_unlock_bh(&ch->vc.lock);
+	ch->hw_desc = NULL;
+	ch->hw_ring_base = 0;
 	return ret;
 }
 
 static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
+	struct device *dev = ch->ctrl->dev;
 
-	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
+	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
 	spin_lock_bh(&ch->vc.lock);
-	spin_lock_bh(&ch->pool_lock);
-
 	bcm63xx_iudma_stop_chan(ch, true);
 	bcm63xx_iudma_reset_chan(ch);
 	vchan_free_chan_resources(&ch->vc);
 	free_irq(ch->irq, ch);
-	devm_kfree(ch->ctrl->dev, ch->desc);
-	dma_free_coherent(ch->ctrl->dev, ch->hw_ring_alloc,
+	devm_kfree(dev, ch->desc);
+	dma_free_coherent(dev, ch->hw_ring_alloc,
 		ch->hw_desc, ch->hw_ring_base);
+
+	ch->desc_count = 0;
+	ch->read_desc = 0;
+	ch->write_desc = 0;
+	ch->running = false;
 
 	ch->desc = NULL;
 	ch->hw_desc = NULL;
 	ch->hw_ring_base = 0;
 
+	spin_lock_bh(&ch->pool_lock);
 	while (!list_empty(&ch->desc_pool)) {
 		struct bcm63xx_iudma_desc *desc = list_first_entry(
 			&ch->desc_pool, struct bcm63xx_iudma_desc, node);
 		list_del(&desc->node);
-		kfree(desc);
+		devm_kfree(dev, desc);
 	}
-
 	spin_unlock_bh(&ch->pool_lock);
 	spin_unlock_bh(&ch->vc.lock);
 }
