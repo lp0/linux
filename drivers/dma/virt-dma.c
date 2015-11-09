@@ -59,6 +59,17 @@ EXPORT_SYMBOL_GPL(vchan_find_desc);
 static void vchan_complete(unsigned long arg)
 {
 	struct virt_dma_chan *vc = (struct virt_dma_chan *)arg;
+
+	vchan_complete_task(vc);
+}
+
+/*
+ * Direct call function (for use from a tasklet) to handle the
+ * completion of a DMA descriptor by calling its callback and
+ * freeing it.
+ */
+void vchan_complete_task(struct virt_dma_chan *vc)
+{
 	struct virt_dma_desc *vd;
 	dma_async_tx_callback cb = NULL;
 	void *cb_data = NULL;
@@ -90,6 +101,7 @@ static void vchan_complete(unsigned long arg)
 			cb(cb_data);
 	}
 }
+EXPORT_SYMBOL_GPL(vchan_complete_task);
 
 void vchan_dma_desc_free_list(struct virt_dma_chan *vc, struct list_head *head)
 {
