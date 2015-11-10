@@ -1151,6 +1151,12 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		iudma->n_channels++;
 	}
 
+	if (iudma->n_channels % 2) {
+		dev_warn(dev, "ignoring odd numbered channel, only pairs of channels are supported\n");
+		iudma->n_channels--;
+		list_del(&iudma->chan[iudma->n_channels].vc.chan.device_node);
+	}
+
 	if (!iudma->n_channels) {
 		dev_err(dev, "device has no channel IRQs\n");
 		return -EINVAL;
