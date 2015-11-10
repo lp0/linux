@@ -526,11 +526,13 @@ static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
 
 		if (bcm63xx_iudma_chan_has_sram(ch)) {
 			c_writel(halt, ch, IUDMA_C_CFG_REG);
+			mb();
 			cfg = c_readl(ch, IUDMA_C_CFG_REG);
 			if (!(cfg & IUDMA_C_CFG_ENABLE))
 				break;
 		} else {
 			n_writel(halt, ch, IUDMA_N_CFG_REG);
+			mb();
 			cfg = n_readl(ch, IUDMA_N_CFG_REG);
 			if (!(cfg & IUDMA_N_CFG_ENABLE))
 				break;
@@ -1020,7 +1022,10 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
 	spin_unlock_bh(&ch->vc.lock);
 
+	local_bh_disable();
 	vchan_complete_task(&ch->vc);
+	local_bh_enable();
+
 	vchan_dma_desc_free_list(&ch->vc, &head);
 	return 0;
 }
