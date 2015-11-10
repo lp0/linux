@@ -58,10 +58,6 @@
 #include "virt-dma.h"
 
 
-/* Check that the right register access functions are used */
-#define IUDMA_EXTRA_ASSERTS		1
-
-
 /* at 8B per hw descriptor => one 4KB PAGE_SIZE per channel */
 #define IUDMA_DEFAULT_NUM_REQUESTS	512
 /* Maximum ring size supported by the hardware */
@@ -303,51 +299,33 @@ static inline void g_writel(u32 val, struct bcm63xx_iudma *iudma, int reg)
 /* Channel configuration (with state RAM) */
 static inline u32 c_readl(struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(!bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_readl(ch->base_c + reg);
 }
 
 static inline void c_writel(u32 val, struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(!bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_writel(val, ch->base_c + reg);
 }
 
 /* Channel configuration (no state RAM) */
 static inline u32 n_readl(struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_readl(ch->base_n + reg);
 }
 
 static inline void n_writel(u32 val, struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_writel(val, ch->base_n + reg);
 }
 
 /* State RAM */
 static inline u32 s_readl(struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(!bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_readl(ch->base_s + reg);
 }
 
 static inline void s_writel(u32 val, struct bcm63xx_iudma_chan *ch, int reg)
 {
-#if IUDMA_EXTRA_ASSERTS
-	BUG_ON(!bcm63xx_iudma_chan_has_sram(ch));
-#endif
 	return __raw_writel(val, ch->base_s + reg);
 }
 
