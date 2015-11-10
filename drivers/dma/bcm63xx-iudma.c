@@ -47,7 +47,6 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
-#include <linux/lockdep.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -1036,9 +1035,6 @@ static void bcm63xx_iudma_set_chan_name(struct bcm63xx_iudma_chan *ch,
 	ch->name = name;
 }
 
-static struct lock_class_key bcm63xx_iudma_rx_lock;
-static struct lock_class_key bcm63xx_iudma_tx_lock;
-
 static int bcm63xx_iudma_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1148,11 +1144,6 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 		ch->vc.desc_free = bcm63xx_iudma_desc_put;
 
 		vchan_init(&ch->vc, ddev);
-
-		if (bcm63xx_iudma_chan_is_rx(ch))
-			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_rx_lock);
-		else
-			lockdep_set_class(&ch->vc.lock, &bcm63xx_iudma_tx_lock);
 
 		bcm63xx_iudma_stop_chan(ch, true);
 		bcm63xx_iudma_reset_chan(ch);
