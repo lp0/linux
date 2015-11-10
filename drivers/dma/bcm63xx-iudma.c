@@ -203,6 +203,7 @@ struct bcm63xx_iudma_chan {
 
 	unsigned int maxburst;
 	bool flowc;
+	unsigned int flowc_ring_size;
 
 	dma_addr_t hw_ring_base;
 	unsigned int hw_ring_alloc;
@@ -282,8 +283,8 @@ static inline __pure bool bcm63xx_iudma_chan_is_tx(
 static inline __pure bool bcm63xx_iudma_chan_has_flowc(
 	struct bcm63xx_iudma_chan *ch)
 {
-	return bcm63xx_iudma_chan_has_sram(ch) &&
-		bcm63xx_iudma_chan_is_rx(ch) &&
+	return bcm63xx_iudma_chan_is_rx(ch) &&
+		bcm63xx_iudma_chan_has_sram(ch) &&
 		ch->id < IUDMA_G_FLOWC_MAX;
 }
 
@@ -424,10 +425,21 @@ static inline void bcm63xx_iudma_chan_set_flowc(struct bcm63xx_iudma_chan *ch)
 	}
 }
 
-static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
+static inline void bcm63xx_iudma_chan_set_flowc_thresh(
+	struct bcm63xx_iudma_chan *ch)
 {
 	struct bcm63xx_iudma *iudma = ch->ctrl;
 
+	if (bcm63xx_iudma_chan_has_flowc(ch)) {
+		g_writel(ch->flowc_ring_size / 3, iudma,
+			IUDMA_G_FLOWC_LO_THRESH_REG(ch->id));
+		g_writel((ch->flowc_ring_size * 2) / 3, iudma,
+			IUDMA_G_FLOWC_HI_THRESH_REG(ch->id));
+	}
+}
+
+static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
+{
 	/* initialize flow control buffer allocation */
 	if (bcm63xx_iudma_chan_has_sram(ch))
 		bcm63xx_iudma_bufalloc_chan(ch, IUDMA_G_FLOWC_BUFALLOC_FORCE);
@@ -456,17 +468,12 @@ static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 		n_writel(ch->maxburst, ch, IUDMA_N_MAX_BURST_REG);
 
 	/* set flow control low/high threshold to 1/3 / 2/3 */
-	// TODO dynamically adjust this
 	if (!bcm63xx_iudma_chan_has_sram(ch)) {
 		n_writel(5, ch, IUDMA_N_FLOWC_REG);
 		n_writel(ch->hw_ring_size, ch, IUDMA_N_LEN_REG);
-	} else if (bcm63xx_iudma_chan_has_flowc(ch)) {
+	} else {
 		bcm63xx_iudma_chan_set_flowc(ch);
-
-		g_writel(ch->hw_ring_size / 3, iudma,
-			IUDMA_G_FLOWC_LO_THRESH_REG(ch->id));
-		g_writel((ch->hw_ring_size * 2) / 3, iudma,
-			IUDMA_G_FLOWC_HI_THRESH_REG(ch->id));
+		bcm63xx_iudma_chan_set_flowc_thresh(ch);
 	}
 
 	wmb();
@@ -772,6 +779,7 @@ static int bcm63xx_iudma_alloc_chan(struct dma_chan *dchan)
 
 	/* disable flow control unless requested by slave config */
 	ch->flowc = false;
+	ch->flowc_ring_size = 0;
 
 	bcm63xx_iudma_reset_chan(ch);
 	bcm63xx_iudma_reset_ring(ch);
@@ -939,8 +947,13 @@ static void bcm63xx_iudma_issue_pending(struct dma_chan *dchan)
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 
 	spin_lock_bh(&ch->vc.lock);
-	if (vchan_issue_pending(&ch->vc))
+	if (vchan_issue_pending(&ch->vc)) {
 		bcm63xx_iudma_issue_transactions(ch);
+		if (ch->desc_count > ch->flowc_ring_size) {
+			ch->flowc_ring_size = ch->desc_count;
+			bcm63xx_iudma_chan_set_flowc_thresh(ch);
+		}
+	}
 	spin_unlock_bh(&ch->vc.lock);
 }
 
@@ -973,10 +986,13 @@ static int bcm63xx_iudma_config(struct dma_chan *dchan,
 	if (maxburst < 1 || maxburst * 4 > IUDMA_D_LEN_MAX)
 		return -EINVAL;
 
+	spin_lock_bh(&ch->vc.lock);
 	ch->flowc = config->device_fc;
+	ch->flowc_ring_size = 0;
 	ch->maxburst = maxburst;
 
 	bcm63xx_iudma_chan_set_flowc(ch);
+	bcm63xx_iudma_chan_set_flowc_thresh(ch);
 
 	if (bcm63xx_iudma_chan_has_sram(ch))
 		c_writel(ch->maxburst, ch, IUDMA_C_MAX_BURST_REG);
@@ -984,6 +1000,7 @@ static int bcm63xx_iudma_config(struct dma_chan *dchan,
 		n_writel(ch->maxburst, ch, IUDMA_N_MAX_BURST_REG);
 
 	wmb();
+	spin_unlock_bh(&ch->vc.lock);
 
 	return 0;
 }
