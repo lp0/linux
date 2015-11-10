@@ -580,6 +580,7 @@ static void bcm_enet_set_duplex(struct bcm_enet_priv *priv, int fullduplex)
 static void bcm_enet_set_flow(struct bcm_enet_priv *priv, int rx_en, int tx_en)
 {
 	u32 val;
+	struct dma_slave_config dma_cfg;
 
 	/* rx flow control (pause frame handling) */
 	val = enet_readl(priv, ENET_RXCFG_REG);
@@ -589,18 +590,12 @@ static void bcm_enet_set_flow(struct bcm_enet_priv *priv, int rx_en, int tx_en)
 		val &= ~ENET_RXCFG_ENFLOW_MASK;
 	enet_writel(priv, val, ENET_RXCFG_REG);
 
-#if 0
-	if (!priv->dma_has_sram)
-		return;
+	memset(&dma_cfg, 0, sizeof(dma_cfg));
+	dma_cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+	dma_cfg.src_maxburst = priv->dma_maxburst;
+	dma_cfg.device_fc = tx_en;
 
-	/* tx flow control (pause frame generation) */
-	val = enet_dma_readl(priv, ENETDMA_CFG_REG);
-	if (tx_en)
-		val |= ENETDMA_CFG_FLOWCH_MASK(priv->rx_chan);
-	else
-		val &= ~ENETDMA_CFG_FLOWCH_MASK(priv->rx_chan);
-	enet_dma_writel(priv, val, ENETDMA_CFG_REG);
-#endif
+	dmaengine_slave_config(priv->rx_dma, &dma_cfg);
 }
 
 /*
@@ -1878,7 +1873,6 @@ static int bcm_enetsw_open(struct net_device *dev)
 	memset(&dma_cfg, 0, sizeof(dma_cfg));
 	dma_cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	dma_cfg.src_maxburst = priv->dma_maxburst;
-	//dma_cfg.device_fc = true;
 
 	ret = dmaengine_slave_config(priv->rx_dma, &dma_cfg);
 	if (ret)
