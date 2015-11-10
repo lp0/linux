@@ -388,6 +388,8 @@ struct bcm_enet_priv {
 	unsigned int tx_count;
 	spinlock_t rx_lock;
 	spinlock_t tx_lock;
+	bool rx_running;
+	bool tx_running;
 
 	/* maximum dma burst size */
 	int dma_maxburst;
