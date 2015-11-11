@@ -357,6 +357,35 @@ static inline void bcm63xx_iudma_enable_ctl(struct bcm63xx_iudma *iudma)
 
 /* Channel functions */
 
+static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
+	struct bcm63xx_iudma_chan *ch)
+{
+	struct bcm63xx_iudma_desc *desc;
+
+	spin_lock_bh(&ch->pool_lock);
+	desc = list_first_entry_or_null(&ch->desc_pool,
+		struct bcm63xx_iudma_desc, node);
+	if (desc)
+		list_del(&desc->node);
+	else
+		WARN_ONCE(1, "desc pool empty (hw_ring_size=%u, desc_count=%u)",
+			ch->hw_ring_size, ch->desc_count);
+	spin_unlock_bh(&ch->pool_lock);
+
+	return desc;
+}
+
+static void bcm63xx_iudma_desc_put(struct virt_dma_desc *vd)
+{
+	struct bcm63xx_iudma_desc *desc = container_of(vd,
+					struct bcm63xx_iudma_desc, vd);
+	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(vd->tx.chan);
+
+	spin_lock_bh(&ch->pool_lock);
+	list_add_tail(&desc->node, &ch->desc_pool);
+	spin_unlock_bh(&ch->pool_lock);
+}
+
 static inline void bcm63xx_iudma_reset_chan(struct bcm63xx_iudma_chan *ch)
 {
 	struct bcm63xx_iudma *iudma = ch->ctrl;
@@ -371,6 +400,22 @@ static inline void bcm63xx_iudma_reset_ring(struct bcm63xx_iudma_chan *ch)
 {
 	memset(ch->hw_desc, 0, ch->hw_ring_alloc);
 	ch->hw_desc[ch->hw_ring_size - 1].control = IUDMA_D_CS_WRAP;
+
+	while (ch->desc_count > 0) {
+		struct bcm63xx_iudma_desc *desc = ch->desc[ch->read_desc];
+
+		WARN_ON(desc == NULL);
+		if (desc)
+			bcm63xx_iudma_desc_put(&desc->vd);
+		ch->desc[ch->read_desc] = NULL;
+
+		ch->read_desc++;
+		if (ch->read_desc == ch->hw_ring_size)
+			ch->read_desc = 0;
+		ch->desc_count--;
+	}
+
+	ch->flowc_ring_size = 0;
 	wmb();
 }
 
@@ -418,6 +463,10 @@ static inline void bcm63xx_iudma_chan_set_flowc_thresh(
 
 static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 {
+	BUG_ON(ch->desc_count != 0);
+	ch->read_desc = 0;
+	ch->write_desc = 0;
+
 	/* initialize flow control buffer allocation */
 	if (bcm63xx_iudma_chan_has_sram(ch))
 		bcm63xx_iudma_bufalloc_chan(ch, IUDMA_G_FLOWC_BUFALLOC_FORCE);
@@ -446,6 +495,7 @@ static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 		n_writel(ch->maxburst, ch, IUDMA_N_MAX_BURST_REG);
 
 	/* set flow control low/high threshold to 1/3 / 2/3 */
+	// TODO dynamic set for N
 	if (!bcm63xx_iudma_chan_has_sram(ch)) {
 		n_writel(5, ch, IUDMA_N_FLOWC_REG);
 		n_writel(ch->hw_ring_size, ch, IUDMA_N_LEN_REG);
@@ -531,8 +581,8 @@ static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
 			"Unable to stop channel %u (desc_count=%u, read_desc=%u, write_desc=%u, hw_pos=%08x, cfg=%08x)\n",
 			ch->id, ch->desc_count, ch->read_desc, ch->write_desc, hw_pos, cfg);
 
+		bcm63xx_iudma_reset_chan(ch);
 		if (!shutdown) {
-			bcm63xx_iudma_reset_chan(ch);
 			bcm63xx_iudma_reset_ring(ch);
 			bcm63xx_iudma_configure_chan(ch);
 		}
@@ -838,32 +888,6 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	spin_unlock_bh(&ch->pool_lock);
 }
 
-static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
-	struct bcm63xx_iudma_chan *ch)
-{
-	struct bcm63xx_iudma_desc *desc;
-
-	spin_lock_bh(&ch->pool_lock);
-	desc = list_first_entry_or_null(&ch->desc_pool,
-		struct bcm63xx_iudma_desc, node);
-	if (desc)
-		list_del(&desc->node);
-	spin_unlock_bh(&ch->pool_lock);
-
-	return desc;
-}
-
-static void bcm63xx_iudma_desc_put(struct virt_dma_desc *vd)
-{
-	struct bcm63xx_iudma_desc *desc = container_of(vd,
-					struct bcm63xx_iudma_desc, vd);
-	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(vd->tx.chan);
-
-	spin_lock_bh(&ch->pool_lock);
-	list_add_tail(&desc->node, &ch->desc_pool);
-	spin_unlock_bh(&ch->pool_lock);
-}
-
 static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
 	struct dma_chan *dchan,
 	struct scatterlist *sgl, unsigned int sg_len,
@@ -990,18 +1014,19 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 	LIST_HEAD(head);
 
-	dev_info(ch->ctrl->dev, "%s(%u)\n", __func__, ch->id);
+	local_bh_disable();
 
 	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch, false);
 	bcm63xx_iudma_complete_transactions(ch);
 	bcm63xx_iudma_reset_ring(ch);
+	bcm63xx_iudma_configure_chan(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
 	spin_unlock_bh(&ch->vc.lock);
 
-	local_bh_disable();
 	vchan_complete_task(&ch->vc);
+
 	local_bh_enable();
 
 	vchan_dma_desc_free_list(&ch->vc, &head);
