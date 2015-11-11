@@ -381,6 +381,8 @@ struct bcm_enet_priv {
 	struct list_head rx_inactive;
 	struct list_head tx_active;
 	struct list_head tx_inactive;
+	unsigned int rx_max_ring_size;
+	unsigned int tx_max_ring_size;
 	unsigned int rx_ring_size;
 	unsigned int tx_ring_size;
 	unsigned int rx_count;
