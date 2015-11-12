@@ -413,7 +413,7 @@ static void bcm_enet_stop_tx_dma(struct net_device *dev)
 	/* discard active tx packets */
 	spin_lock_bh(&priv->tx_lock);
 	while (!list_empty(&priv->tx_active)) {
-		pkt = list_first_entry(&priv->tx_inactive,
+		pkt = list_first_entry(&priv->tx_active,
 			struct bcm_enet_pkt, node);
 
 		dma_unmap_single(kdev, pkt->buf, pkt->skb->len, DMA_TO_DEVICE);
@@ -903,6 +903,25 @@ static void bcm_enet_disable_mac(struct bcm_enet_priv *priv)
 	} while (limit--);
 }
 
+static void bcm_enet_free_queues(struct bcm_enet_priv *priv)
+{
+	struct device *kdev = &priv->pdev->dev;
+	LIST_HEAD(pkts);
+
+	list_splice_tail_init(&priv->rx_active, &pkts);
+	list_splice_tail_init(&priv->rx_inactive, &pkts);
+	WARN_ON(!list_empty(&priv->tx_active));
+	list_splice_tail_init(&priv->tx_inactive, &pkts);
+
+	while (!list_empty(&pkts)) {
+		struct bcm_enet_pkt *pkt;
+
+		pkt = list_first_entry(&pkts, struct bcm_enet_pkt, node);
+		list_del(&pkt->node);
+		devm_kfree(kdev, pkt);
+	}
+}
+
 /*
  * stop callback
  */
@@ -910,7 +929,6 @@ static int bcm_enet_stop(struct net_device *dev)
 {
 	struct bcm_enet_priv *priv;
 	struct device *kdev;
-	LIST_HEAD(pkts);
 
 	priv = netdev_priv(dev);
 	kdev = &priv->pdev->dev;
@@ -934,16 +952,7 @@ static int bcm_enet_stop(struct net_device *dev)
 	/* disable mac */
 	bcm_enet_disable_mac(priv);
 
-	list_splice_tail_init(&priv->rx_inactive, &pkts);
-	list_splice_tail_init(&priv->tx_inactive, &pkts);
-
-	while (!list_empty(&pkts)) {
-		struct bcm_enet_pkt *pkt;
-
-		pkt = list_first_entry(&pkts, struct bcm_enet_pkt, node);
-		list_del(&pkt->node);
-		devm_kfree(kdev, pkt);
-	}
+	bcm_enet_free_queues(priv);
 
 	free_irq(dev->irq, dev);
 
@@ -2219,16 +2228,7 @@ static int bcm_enetsw_stop(struct net_device *dev)
 	dma_release_channel(priv->rx_dma);
 	dma_release_channel(priv->tx_dma);
 
-	list_splice_tail_init(&priv->rx_inactive, &pkts);
-	list_splice_tail_init(&priv->tx_inactive, &pkts);
-
-	while (!list_empty(&pkts)) {
-		struct bcm_enet_pkt *pkt;
-
-		pkt = list_first_entry(&pkts, struct bcm_enet_pkt, node);
-		list_del(&pkt->node);
-		devm_kfree(kdev, pkt);
-	}
+	bcm_enet_free_queues(priv);
 
 	return 0;
 }
