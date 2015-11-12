@@ -848,12 +848,24 @@ free_hw_desc:
 static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
+	struct bcm63xx_iudma_chan *rx_ch;
 	struct device *dev = ch->ctrl->dev;
 
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
+	if (bcm63xx_iudma_chan_is_rx(ch))
+		rx_ch = ch;
+	else
+		rx_ch = ch->pair;
+
+	/* stop tasklet from calling completion callbacks after the channel
+	 * is stopped (see bcm63xx_iudma_terminate_all)
+	 */
+	tasklet_disable(&rx_ch->task);
+
 	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch);
+	bcm63xx_iudma_reset_ring(ch);
 
 	devm_kfree(dev, ch->desc);
 	dma_free_coherent(dev, ch->hw_ring_alloc,
@@ -868,6 +880,13 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	ch->hw_desc = NULL;
 	ch->hw_ring_base = 0;
 	spin_unlock_bh(&ch->vc.lock);
+
+	tasklet_enable(&rx_ch->task);
+
+	/* run the tasklet in case the other channel was using it with
+	 * interrupts disabled
+	 */
+	tasklet_schedule(&rx_ch->task);
 
 	free_irq(ch->irq, ch);
 	vchan_free_chan_resources(&ch->vc);
@@ -1016,6 +1035,7 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 		rx_ch = ch->pair;
 
 	tasklet_disable(&rx_ch->task);
+
 	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch);
 	while (!finished)
@@ -1066,7 +1086,13 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 	local_bh_disable();
 	vchan_complete_task(&ch->vc);
 	local_bh_enable();
+
 	tasklet_enable(&rx_ch->task);
+
+	/* run the tasklet in case the other channel was using it with
+	 * interrupts disabled
+	 */
+	tasklet_schedule(&rx_ch->task);
 
 	vchan_dma_desc_free_list(&ch->vc, &head);
 	return 0;
