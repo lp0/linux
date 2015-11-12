@@ -540,8 +540,7 @@ static inline void bcm63xx_iudma_enable_chan_int(struct bcm63xx_iudma_chan *ch)
 
 #define IUDMA_STOP_TIMEOUT_US 500
 
-static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
-	bool shutdown)
+static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch)
 {
 	unsigned int timeout = IUDMA_STOP_TIMEOUT_US;
 	u32 cfg;
@@ -580,15 +579,11 @@ static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch,
 		dev_err(ch->ctrl->dev,
 			"Unable to stop channel %u (desc_count=%u, read_desc=%u, write_desc=%u, hw_pos=%08x, cfg=%08x)\n",
 			ch->id, ch->desc_count, ch->read_desc, ch->write_desc, hw_pos, cfg);
-
-		bcm63xx_iudma_reset_chan(ch);
-		if (!shutdown) {
-			bcm63xx_iudma_reset_ring(ch);
-			bcm63xx_iudma_configure_chan(ch);
-		}
 	}
 
 	ch->running = false;
+
+	bcm63xx_iudma_reset_chan(ch);
 }
 
 static inline void bcm63xx_iudma_start_chan(struct bcm63xx_iudma_chan *ch)
@@ -858,8 +853,7 @@ static void bcm63xx_iudma_free_chan(struct dma_chan *dchan)
 	dev_info(dev, "%s(%u)\n", __func__, ch->id);
 
 	spin_lock_bh(&ch->vc.lock);
-	bcm63xx_iudma_stop_chan(ch, true);
-	bcm63xx_iudma_reset_chan(ch);
+	bcm63xx_iudma_stop_chan(ch);
 
 	devm_kfree(dev, ch->desc);
 	dma_free_coherent(dev, ch->hw_ring_alloc,
@@ -1012,22 +1006,67 @@ static int bcm63xx_iudma_config(struct dma_chan *dchan,
 static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
+	struct bcm63xx_iudma_chan *rx_ch;
+	bool finished = false;
 	LIST_HEAD(head);
 
-	local_bh_disable();
+	if (bcm63xx_iudma_chan_is_rx(ch))
+		rx_ch = ch;
+	else
+		rx_ch = ch->pair;
 
+	tasklet_disable(&rx_ch->task);
 	spin_lock_bh(&ch->vc.lock);
-	bcm63xx_iudma_stop_chan(ch, false);
-	bcm63xx_iudma_complete_transactions(ch);
+	bcm63xx_iudma_stop_chan(ch);
+	while (!finished)
+		finished = bcm63xx_iudma_complete_transactions(ch);
 	bcm63xx_iudma_reset_ring(ch);
 	bcm63xx_iudma_configure_chan(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
 	list_splice_tail_init(&ch->vc.desc_issued, &head);
 	spin_unlock_bh(&ch->vc.lock);
 
+	/* Run the completion task before returning so that the client can
+	 * safely free data associated with any completed descriptors.
+	 *
+	 * Do this with the tasklet disabled, otherwise it can acquire the
+	 * completed list before we return and process it after the client
+	 * starts freeing data.
+	 *
+	 * CPU 0                           | CPU 1
+	 * =====                           | =====
+	 *                                 |
+	 *                                 | tasklet:
+	 * terminate_all():                |
+	 *   spin_lock_bh(&ch->vc.lock)    |
+	 *                                 |   vchan_complete_task():
+	 *                                 |      spin_lock(&ch->vc.lock)
+	 *   spin_unlock_bh(&ch->vc.lock)  |      :: waiting on lock ::
+	 *                                 |      <move desc_completed list>
+	 *                                 |      spin_unlock_bh(&ch->vc.lock)
+	 *   vchan_complete_task():        |
+	 *     <desc_completed list empty> |
+	 *   return                        |
+	 *                                 |     for each completed desc:
+	 *                                 |       <client callback>:
+	 * spin_lock_bh(<client lock>)     |
+	 * <free client's data>            |
+	 *                                 |       spin_lock_bh(<client lock>)
+	 * spin_unlock_bh(<client lock>)   |       :: waiting on lock ::
+	 *                                 |       <callback runs>
+	 *                                 |       <access to free'd data>
+	 *
+	 * The tasklet has been disabled earlier on before we stop the channel
+	 * so that we're not waiting for it to finish while everything is
+	 * stopped.
+	 *
+	 * Callbacks are run with BH disabled so that we're in the same context
+	 * that a tasklet would have (otherwise it confuses lockdep).
+	 */
+	local_bh_disable();
 	vchan_complete_task(&ch->vc);
-
 	local_bh_enable();
+	tasklet_enable(&rx_ch->task);
 
 	vchan_dma_desc_free_list(&ch->vc, &head);
 	return 0;
@@ -1170,8 +1209,7 @@ static int bcm63xx_iudma_probe(struct platform_device *pdev)
 
 		vchan_init(&ch->vc, ddev);
 
-		bcm63xx_iudma_stop_chan(ch, true);
-		bcm63xx_iudma_reset_chan(ch);
+		bcm63xx_iudma_stop_chan(ch);
 
 		iudma->n_channels++;
 	}
