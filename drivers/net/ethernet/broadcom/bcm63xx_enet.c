@@ -222,17 +222,22 @@ static void bcm_enet_refill_rx(struct net_device *dev)
 			if (!pkt->skb)
 				break;
 
-			pkt->buf = dma_map_single(kdev,
-					pkt->skb->data, priv->rx_skb_size,
-					DMA_FROM_DEVICE);
+			pkt->buf = dma_map_single(kdev, pkt->skb->data,
+				priv->rx_skb_size, DMA_FROM_DEVICE);
+			if (unlikely(dma_mapping_error(kdev, pkt->buf))) {
+				dev_err_ratelimited(kdev, "rx dma map error\n");
+				dev_kfree_skb(pkt->skb);
+				pkt->skb = NULL;
+				break;
+			}
 		}
 
 		pkt->ctx.control = 0;
 
-		desc = dmaengine_prep_bcm63xx_single(priv->rx_dma, pkt->buf,
-			priv->rx_skb_size, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT,
-			&pkt->ctx);
-		if (IS_ERR(desc)) {
+		desc = dmaengine_prep_bcm63xx_single(priv->rx_dma,
+				pkt->buf, priv->rx_skb_size, DMA_DEV_TO_MEM,
+				DMA_PREP_INTERRUPT, &pkt->ctx);
+		if (unlikely(IS_ERR(desc))) {
 			dev_err_ratelimited(kdev,
 				"rx dma prep err=%ld\n", PTR_ERR(desc));
 			break;
@@ -241,7 +246,7 @@ static void bcm_enet_refill_rx(struct net_device *dev)
 		desc->callback = bcm_enet_rx_complete;
 		desc->callback_param = pkt;
 		cookie = dmaengine_submit(desc);
-		if (dma_submit_error(cookie)) {
+		if (unlikely(dma_submit_error(cookie))) {
 			dev_err_ratelimited(kdev,
 				"rx dma submit err=%ld\n", PTR_ERR(desc));
 			break;
@@ -257,6 +262,11 @@ static void bcm_enet_refill_rx(struct net_device *dev)
 	if (list_empty(&priv->rx_active) && netif_running(dev)) {
 		dev_warn(&priv->pdev->dev, "unable to refill rx queue\n");
 		priv->rx_timeout.expires = jiffies + HZ;
+
+		/* Timer could already be scheduled during a call to
+		 * adjust the mtu or ring size
+		 */
+		del_timer_sync(&priv->rx_timeout);
 		add_timer(&priv->rx_timeout);
 	}
 }
@@ -293,7 +303,8 @@ static void bcm_enet_rx_complete(void *data)
 		goto out;
 
 	if (!(pkt->ctx.status & IUDMA_D_CS_EOP)) {
-		dev->stats.rx_missed_errors++;
+		dev->stats.rx_errors++;
+		dev->stats.rx_over_errors++;
 		goto out;
 	}
 
@@ -303,7 +314,7 @@ static void bcm_enet_rx_complete(void *data)
 		dev->stats.rx_errors++;
 
 		if (pkt->ctx.status & IUDMA_D_STA_ENET_OVSIZE)
-			dev->stats.rx_length_errors++;
+			dev->stats.rx_over_errors++;
 		if (pkt->ctx.status & IUDMA_D_STA_ENET_CRC)
 			dev->stats.rx_crc_errors++;
 		if (pkt->ctx.status & IUDMA_D_STA_ENET_UNDER)
@@ -315,10 +326,18 @@ static void bcm_enet_rx_complete(void *data)
 
 	/* valid packet */
 	len = pkt->ctx.length;
+	if (len > priv->rx_skb_size) {
+		/* RX stops working when this happens */
+		dev_emerg_ratelimited(kdev, "receive buffer overflow: %u > %u\n",
+			len, priv->rx_skb_size);
+		dev->stats.rx_errors++;
+		dev->stats.rx_over_errors++;
+		goto out;
+	}
 	/* don't include FCS */
-	len -= 4;
+	len -= ETH_FCS_LEN;
 
-	if (len < copybreak)
+	if (len < copybreak && copybreak < priv->rx_skb_size)
 		nskb = netdev_alloc_skb(dev, len);
 	else
 		nskb = NULL;
@@ -476,8 +495,8 @@ static int bcm_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	/* pad small packets sent on a switch device */
-	if (priv->enet_is_sw && skb->len < 64) {
-		int needed = 64 - skb->len;
+	if (priv->enet_is_sw && skb->len < VLAN_ETH_ZLEN) {
+		int needed = VLAN_ETH_ZLEN - skb->len;
 		char *data;
 
 		if (unlikely(skb_tailroom(skb) < needed)) {
@@ -495,29 +514,41 @@ static int bcm_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		memset(data, 0, needed);
 	}
 
+	ret = skb_linearize(skb);
+	if (unlikely(ret)) {
+		dev_err_ratelimited(kdev, "tx skb linearize err=%d\n", ret);
+		ret = NETDEV_TX_BUSY;
+		goto out_unlock;
+	}
+
 	pkt = list_first_entry(&priv->tx_inactive, struct bcm_enet_pkt, node);
 
 	pkt->skb = skb;
 	pkt->buf = dma_map_single(kdev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (unlikely(dma_mapping_error(kdev, pkt->buf))) {
+		dev_err_ratelimited(kdev, "tx dma map error\n");
+		ret = NETDEV_TX_BUSY;
+		goto out_unlock;
+	}
 	pkt->ctx.control = IUDMA_D_CS_ESOP_MASK | IUDMA_D_CTL_ENET_APPEND_CRC;
 
 	desc = dmaengine_prep_bcm63xx_single(priv->tx_dma, pkt->buf,
 		skb->len, DMA_MEM_TO_DEV, DMA_PREP_INTERRUPT, &pkt->ctx);
-	if (IS_ERR(desc)) {
+	if (unlikely(IS_ERR(desc))) {
 		dev_err_ratelimited(kdev,
 			"tx dma prep err=%ld\n", PTR_ERR(desc));
 		ret = NETDEV_TX_BUSY;
-		goto out_unlock;
+		goto out_unmap;
 	}
 
 	desc->callback = bcm_enet_tx_complete;
 	desc->callback_param = pkt;
 	cookie = dmaengine_submit(desc);
-	if (dma_submit_error(cookie)) {
+	if (unlikely(dma_submit_error(cookie))) {
 		dev_err_ratelimited(kdev,
 			"tx dma submit err=%ld\n", PTR_ERR(desc));
 		ret = NETDEV_TX_BUSY;
-		goto out_unlock;
+		goto out_unmap;
 	}
 
 	list_move_tail(&pkt->node, &priv->tx_active);
@@ -533,12 +564,14 @@ static int bcm_enet_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	dev->stats.tx_packets++;
 	ret = NETDEV_TX_OK;
 
-out_unlock:
+out_unmap:
 	if (pkt) {
 		/* DMA submit failed, cleanup pkt */
-		dma_unmap_single(kdev, pkt->buf, skb->len, DMA_TO_DEVICE);
+		dma_unmap_single(kdev, pkt->buf, pkt->skb->len, DMA_TO_DEVICE);
 		pkt->skb = NULL;
 	}
+
+out_unlock:
 	spin_unlock(&priv->tx_lock);
 	return ret;
 }
@@ -836,10 +869,6 @@ static int bcm_enet_open(struct net_device *dev)
 	INIT_LIST_HEAD(&priv->tx_active);
 	INIT_LIST_HEAD(&priv->tx_inactive);
 
-	/* set max rx/tx length */
-	enet_writel(priv, priv->hw_mtu, ENET_RXMAXLEN_REG);
-	enet_writel(priv, priv->hw_mtu, ENET_TXMAXLEN_REG);
-
 	/* set correct transmit fifo watermark */
 	enet_writel(priv, BCMENET_TX_FIFO_TRESH, ENET_TXWMARK_REG);
 
@@ -903,15 +932,41 @@ static void bcm_enet_disable_mac(struct bcm_enet_priv *priv)
 	} while (limit--);
 }
 
+static void bcm_enet_free_rx_queue_skbs(struct bcm_enet_priv *priv)
+{
+	struct device *kdev = &priv->pdev->dev;
+	struct bcm_enet_pkt *pkt;
+
+	spin_lock_bh(&priv->rx_lock);
+	WARN_ON(!list_empty(&priv->rx_active));
+
+	list_for_each_entry(pkt, &priv->rx_inactive, node) {
+		if (pkt->skb) {
+			dma_unmap_single(kdev, pkt->buf, priv->rx_skb_size,
+				DMA_FROM_DEVICE);
+			dev_kfree_skb(pkt->skb);
+			pkt->skb = NULL;
+		}
+	}
+	spin_unlock_bh(&priv->rx_lock);
+}
+
 static void bcm_enet_free_queues(struct bcm_enet_priv *priv)
 {
 	struct device *kdev = &priv->pdev->dev;
 	LIST_HEAD(pkts);
 
-	list_splice_tail_init(&priv->rx_active, &pkts);
+	bcm_enet_free_rx_queue_skbs(priv);
+
+	spin_lock_bh(&priv->rx_lock);
+	WARN_ON(!list_empty(&priv->rx_active));
 	list_splice_tail_init(&priv->rx_inactive, &pkts);
+	spin_unlock_bh(&priv->rx_lock);
+
+	spin_lock_bh(&priv->tx_lock);
 	WARN_ON(!list_empty(&priv->tx_active));
 	list_splice_tail_init(&priv->tx_inactive, &pkts);
+	spin_unlock_bh(&priv->tx_lock);
 
 	while (!list_empty(&pkts)) {
 		struct bcm_enet_pkt *pkt;
@@ -1321,7 +1376,7 @@ static int bcm_enet_set_ringparam(struct net_device *dev,
 
 			if (pkt->skb) {
 				dma_unmap_single(kdev, pkt->buf,
-					pkt->skb->len, DMA_FROM_DEVICE);
+					priv->rx_skb_size, DMA_FROM_DEVICE);
 				dev_kfree_skb(pkt->skb);
 			}
 
@@ -1470,18 +1525,29 @@ static int bcm_enet_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 /*
  * calculate actual hardware mtu
  */
-static int compute_hw_mtu(struct bcm_enet_priv *priv, int mtu)
+static unsigned int __pure compute_hw_mtu(int mtu)
 {
-	int actual_mtu;
+	unsigned int actual_mtu;
+
+	if (mtu < 0)
+		return 0;
 
 	actual_mtu = mtu;
 
 	/* add ethernet header + vlan tag size */
-	actual_mtu += VLAN_ETH_HLEN + VLAN_HLEN;
+	actual_mtu += VLAN_ETH_HLEN;
 
-	if (actual_mtu < 64 || actual_mtu > BCMENET_MAX_MTU)
-		return -EINVAL;
+	if (actual_mtu < ETH_ZLEN || actual_mtu > BCMENET_MAX_MTU)
+		return 0;
 
+	return actual_mtu;
+}
+
+/*
+ * apply actual hardware mtu
+ */
+static void set_hw_mtu(struct bcm_enet_priv *priv, unsigned int actual_mtu)
+{
 	/*
 	 * setup maximum size before we get overflow mark in
 	 * descriptor, note that this will not prevent reception of
@@ -1491,29 +1557,47 @@ static int compute_hw_mtu(struct bcm_enet_priv *priv, int mtu)
 	priv->hw_mtu = actual_mtu;
 
 	/*
-	 * align rx buffer size to dma burst len, account FCS since
-	 * it's appended
+	 * align rx buffer size to double the dma burst len, and account
+	 * for the FCS as it's appended
 	 */
 	priv->rx_skb_size = ALIGN(actual_mtu + ETH_FCS_LEN,
-				  priv->dma_maxburst * 4);
-	return 0;
+				  priv->dma_maxburst * 4 * 2);
+
+	if (!priv->enet_is_sw) {
+		/* set max rx/tx length */
+		enet_writel(priv, priv->hw_mtu, ENET_RXMAXLEN_REG);
+		enet_writel(priv, priv->hw_mtu, ENET_TXMAXLEN_REG);
+	}
 }
 
 /*
- * adjust mtu, can't be called while device is running
+ * adjust mtu, temporarily stop rx if device is running
  */
 static int bcm_enet_change_mtu(struct net_device *dev, int new_mtu)
 {
-	int ret;
+	struct bcm_enet_priv *priv = netdev_priv(dev);
+	unsigned int hw_mtu;
 
-	// TODO allow MTU change by restarting rx DMA
-	if (netif_running(dev))
-		return -EBUSY;
+	hw_mtu = compute_hw_mtu(new_mtu);
+	if (!hw_mtu)
+		return -EINVAL;
 
-	ret = compute_hw_mtu(netdev_priv(dev), new_mtu);
-	if (ret)
-		return ret;
+	if (!netif_running(dev)) {
+		dev->mtu = new_mtu;
+		return 0;
+	}
+
+	bcm_enet_stop_rx_dma(dev);
+	bcm_enet_free_rx_queue_skbs(priv);
+
+	spin_lock_bh(&priv->rx_lock);
+	set_hw_mtu(priv, hw_mtu);
+	spin_unlock_bh(&priv->rx_lock);
+
 	dev->mtu = new_mtu;
+
+	bcm_enet_start_rx_dma(dev);
+
 	return 0;
 }
 
@@ -1580,6 +1664,7 @@ static int bcm_enet_probe(struct platform_device *pdev)
 	struct bcm63xx_enet_platform_data *pd;
 	struct resource *res_mem, *res_irq;
 	struct mii_bus *bus;
+	unsigned int hw_mtu;
 	const char *clk_name;
 	int i, clk, ret;
 
@@ -1596,9 +1681,11 @@ static int bcm_enet_probe(struct platform_device *pdev)
 	priv->enet_is_sw = false;
 	priv->dma_maxburst = BCMENET_DMA_MAXBURST;
 
-	ret = compute_hw_mtu(priv, dev->mtu);
-	if (ret)
+	hw_mtu = compute_hw_mtu(dev->mtu);
+	if (!hw_mtu) {
+		ret = -EINVAL;
 		goto out;
+	}
 
 	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	priv->base = devm_ioremap_resource(&pdev->dev, res_mem);
@@ -1731,6 +1818,8 @@ static int bcm_enet_probe(struct platform_device *pdev)
 			goto out_uninit_hw;
 		}
 	}
+
+	set_hw_mtu(priv, hw_mtu);
 
 	/* init rx timeout (used for oom) */
 	init_timer(&priv->rx_timeout);
@@ -2455,6 +2544,7 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 	struct net_device *dev;
 	struct bcm63xx_enetsw_platform_data *pd;
 	struct resource *res_mem;
+	unsigned int hw_mtu;
 	int clk, ret;
 
 	res_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -2529,9 +2619,11 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = compute_hw_mtu(priv, dev->mtu);
-	if (ret)
+	hw_mtu = compute_hw_mtu(dev->mtu);
+	if (!hw_mtu) {
+		ret = -EINVAL;
 		goto out;
+	}
 
 	if (!request_mem_region(res_mem->start, resource_size(res_mem),
 				"bcm63xx_enetsw")) {
@@ -2584,6 +2676,8 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unable to reset device: %d\n", ret);
 		goto out_power_off;
 	}
+
+	set_hw_mtu(priv, hw_mtu);
 
 	/* init rx timeout (used for oom) */
 	init_timer(&priv->rx_timeout);
