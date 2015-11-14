@@ -404,8 +404,9 @@ static inline void bcm63xx_iudma_reset_ring(struct bcm63xx_iudma_chan *ch)
 	while (ch->desc_count > 0) {
 		struct bcm63xx_iudma_desc *desc = ch->desc[ch->read_desc];
 
-		WARN_ON(desc == NULL);
-		if (desc)
+		if (unlikely(desc == NULL))
+			WARN(1, "%s: read desc == NULL\n", __func__);
+		else
 			bcm63xx_iudma_desc_put(&desc->vd);
 		ch->desc[ch->read_desc] = NULL;
 
@@ -467,7 +468,9 @@ static inline void bcm63xx_iudma_chan_set_flowc_thresh(
 
 static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 {
-	BUG_ON(ch->desc_count != 0);
+	WARN(ch->desc_count != 0, "%s: desc_count=%u\n",
+		__func__, ch->desc_count);
+	ch->desc_count = 0;
 	ch->read_desc = 0;
 	ch->write_desc = 0;
 
@@ -623,16 +626,18 @@ static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 		rmb();
 
 		desc = ch->desc[ch->read_desc];
-		BUG_ON(desc == NULL);
+		if (unlikely(desc == NULL)) {
+			WARN(1, "%s: read desc == NULL", __func__);
+		} else {
+			if (desc->context) {
+				desc->context->length = hwd->length;
+				desc->context->status = hwd->status &
+					IUDMA_D_STA_CLIENT_MASK;
+			}
 
-		if (desc->context) {
-			desc->context->length = hwd->length;
-			desc->context->status = hwd->status &
-				IUDMA_D_STA_CLIENT_MASK;
+			vchan_cookie_complete_notask(&desc->vd);
+			ch->desc[ch->read_desc] = NULL;
 		}
-
-		vchan_cookie_complete_notask(&desc->vd);
-		ch->desc[ch->read_desc] = NULL;
 
 		ch->read_desc++;
 		if (ch->read_desc == ch->hw_ring_size)
@@ -659,7 +664,8 @@ static void bcm63xx_iudma_issue_transactions(struct bcm63xx_iudma_chan *ch)
 		list_del(&vd->node);
 
 		desc = to_bcm63xx_iudma_desc(&vd->tx);
-		BUG_ON(ch->desc[ch->write_desc] != NULL);
+		WARN(unlikely(ch->desc[ch->write_desc] != NULL),
+			"%s: write desc != NULL\n", __func__);
 		ch->desc[ch->write_desc] = desc;
 
 		if (desc->context)
