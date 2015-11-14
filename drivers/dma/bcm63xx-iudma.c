@@ -368,8 +368,9 @@ static inline struct bcm63xx_iudma_desc *bcm63xx_iudma_desc_get(
 	if (desc)
 		list_del(&desc->node);
 	else
-		WARN_ONCE(1, "desc pool empty (hw_ring_size=%u, desc_count=%u)",
-			ch->hw_ring_size, ch->desc_count);
+		WARN_ONCE(1, "%s: desc pool empty on channel %u (hw_ring_size=%u, desc_count=%u, read_desc=%u, write_desc=%u)\n",
+			__func__, ch->id, ch->hw_ring_size, ch->desc_count,
+			ch->read_desc, ch->write_desc);
 	spin_unlock_bh(&ch->pool_lock);
 
 	return desc;
@@ -405,7 +406,10 @@ static inline void bcm63xx_iudma_reset_ring(struct bcm63xx_iudma_chan *ch)
 		struct bcm63xx_iudma_desc *desc = ch->desc[ch->read_desc];
 
 		if (unlikely(desc == NULL))
-			WARN(1, "%s: read desc == NULL\n", __func__);
+			WARN(1, "%s: read desc == NULL on channel %u (hw_ring_size=%u, desc_count=%u, read_desc=%u, write_desc=%u)\n",
+				__func__, ch->id, ch->hw_ring_size,
+				ch->desc_count, ch->read_desc,
+				ch->write_desc);
 		else
 			bcm63xx_iudma_desc_put(&desc->vd);
 		ch->desc[ch->read_desc] = NULL;
@@ -468,8 +472,8 @@ static inline void bcm63xx_iudma_chan_set_flowc_thresh(
 
 static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 {
-	WARN(ch->desc_count != 0, "%s: desc_count=%u\n",
-		__func__, ch->desc_count);
+	WARN(ch->desc_count != 0, "%s: desc_count=%u on channel %u\n",
+		__func__, ch->desc_count, ch->id);
 	ch->desc_count = 0;
 	ch->read_desc = 0;
 	ch->write_desc = 0;
@@ -627,7 +631,10 @@ static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
 
 		desc = ch->desc[ch->read_desc];
 		if (unlikely(desc == NULL)) {
-			WARN(1, "%s: read desc == NULL", __func__);
+			WARN(1, "%s: read desc == NULL on channel %u (hw_ring_size=%u, desc_count=%u, read_desc=%u, write_desc=%u)\n",
+				__func__, ch->id, ch->hw_ring_size,
+				ch->desc_count, ch->read_desc,
+				ch->write_desc);
 		} else {
 			if (desc->context) {
 				desc->context->length = hwd->length;
@@ -665,7 +672,10 @@ static void bcm63xx_iudma_issue_transactions(struct bcm63xx_iudma_chan *ch)
 
 		desc = to_bcm63xx_iudma_desc(&vd->tx);
 		WARN(unlikely(ch->desc[ch->write_desc] != NULL),
-			"%s: write desc != NULL\n", __func__);
+			"%s: write desc != NULL on channel %u (hw_ring_size=%u, desc_count=%u, read_desc=%u, write_desc=%u)\n",
+				__func__, ch->id, ch->hw_ring_size,
+				ch->desc_count, ch->read_desc,
+				ch->write_desc);
 		ch->desc[ch->write_desc] = desc;
 
 		if (desc->context)
