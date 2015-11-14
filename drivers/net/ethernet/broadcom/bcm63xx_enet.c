@@ -444,6 +444,16 @@ static void bcm_enet_stop_tx_dma(struct net_device *dev)
 	spin_unlock_bh(&priv->tx_lock);
 }
 
+static void bcm_enet_start_tx_dma(struct net_device *dev)
+{
+	struct bcm_enet_priv *priv = netdev_priv(dev);
+
+	spin_lock_bh(&priv->tx_lock);
+	priv->tx_running = true;
+	netif_start_queue(dev);
+	spin_unlock_bh(&priv->tx_lock);
+}
+
 static int bcm_enet_request_dma(struct net_device *dev)
 {
 	struct bcm_enet_priv *priv = netdev_priv(dev);
@@ -1019,9 +1029,6 @@ static int bcm_enet_open(struct net_device *dev)
 	if (ret)
 		goto out_phy_disconnect;
 
-	priv->rx_running = true;
-	priv->tx_running = true;
-
 	/* mask all interrupts and request them */
 	enet_writel(priv, 0, ENET_IRMASK_REG);
 
@@ -1058,10 +1065,8 @@ static int bcm_enet_open(struct net_device *dev)
 	else
 		bcm_enet_adjust_link(dev);
 
-	netif_start_queue(dev);
-	spin_lock_bh(&priv->rx_lock);
-	bcm_enet_refill_rx(dev);
-	spin_unlock_bh(&priv->rx_lock);
+	bcm_enet_start_rx_dma(dev);
+	bcm_enet_start_tx_dma(dev);
 	return 0;
 
 out_phy_disconnect:
@@ -2306,9 +2311,6 @@ static int bcm_enetsw_open(struct net_device *dev)
 		enetsw_writeb(priv, 0, ENETSW_PTCTRL_REG(i));
 	}
 
-	priv->rx_running = true;
-	priv->tx_running = true;
-
 	/* start phy polling timer */
 	init_timer(&priv->swphy_poll);
 	priv->swphy_poll.function = swphy_poll_timer;
@@ -2317,11 +2319,8 @@ static int bcm_enetsw_open(struct net_device *dev)
 	add_timer(&priv->swphy_poll);
 
 	netif_carrier_on(dev);
-	netif_start_queue(dev);
-
-	spin_lock_bh(&priv->rx_lock);
-	bcm_enet_refill_rx(dev);
-	spin_unlock_bh(&priv->rx_lock);
+	bcm_enet_start_rx_dma(dev);
+	bcm_enet_start_tx_dma(dev);
 	return 0;
 }
 
