@@ -453,7 +453,11 @@ static inline void bcm63xx_iudma_chan_set_flowc_thresh(
 {
 	struct bcm63xx_iudma *iudma = ch->ctrl;
 
-	if (bcm63xx_iudma_chan_has_flowc(ch)) {
+	if (!bcm63xx_iudma_chan_has_sram(ch)) {
+		n_writel(5, ch, IUDMA_N_FLOWC_REG);
+		n_writel(ch->flowc_ring_size, ch, IUDMA_N_LEN_REG);
+	} else if (bcm63xx_iudma_chan_has_flowc(ch)) {
+		/* set flow control low/high threshold to 1/3 / 2/3 */
 		g_writel(ch->flowc_ring_size / 3, iudma,
 			IUDMA_G_FLOWC_LO_THRESH_REG(ch->id));
 		g_writel((ch->flowc_ring_size * 2) / 3, iudma,
@@ -494,15 +498,8 @@ static inline void bcm63xx_iudma_configure_chan(struct bcm63xx_iudma_chan *ch)
 	else
 		n_writel(ch->maxburst, ch, IUDMA_N_MAX_BURST_REG);
 
-	/* set flow control low/high threshold to 1/3 / 2/3 */
-	// TODO dynamic set for N
-	if (!bcm63xx_iudma_chan_has_sram(ch)) {
-		n_writel(5, ch, IUDMA_N_FLOWC_REG);
-		n_writel(ch->hw_ring_size, ch, IUDMA_N_LEN_REG);
-	} else {
-		bcm63xx_iudma_chan_set_flowc(ch);
-		bcm63xx_iudma_chan_set_flowc_thresh(ch);
-	}
+	bcm63xx_iudma_chan_set_flowc(ch);
+	bcm63xx_iudma_chan_set_flowc_thresh(ch);
 
 	wmb();
 }
