@@ -577,8 +577,9 @@ static inline void bcm63xx_iudma_stop_chan(struct bcm63xx_iudma_chan *ch)
 			hw_pos = ~0;
 
 		dev_err(ch->ctrl->dev,
-			"Unable to stop channel %u (desc_count=%u, read_desc=%u, write_desc=%u, hw_pos=%08x, cfg=%08x)\n",
-			ch->id, ch->desc_count, ch->read_desc, ch->write_desc, hw_pos, cfg);
+			"Unable to stop channel %u (hw_ring_size=%u, desc_count=%u, read_desc=%u, write_desc=%u, hw_pos=%08x, cfg=%08x)\n",
+			ch->id, ch->hw_ring_size, ch->desc_count,
+			ch->read_desc, ch->write_desc, hw_pos, cfg);
 	}
 
 	ch->running = false;
@@ -948,6 +949,11 @@ static struct dma_async_tx_descriptor *bcm63xx_iudma_prep_slave_sg(
 	if (sg_dma_len(sgl) > IUDMA_D_LEN_MAX)
 		return ERR_PTR(-EINVAL);
 
+	/* receive buffer must be aligned to double the burst size */
+	if (bcm63xx_iudma_chan_is_rx(ch) &&
+			sg_dma_len(sgl) % (ch->maxburst * 2) != 0)
+		return ERR_PTR(-EINVAL);
+
 	desc = bcm63xx_iudma_desc_get(ch);
 	if (!desc)
 		return ERR_PTR(-EBUSY);
@@ -1000,7 +1006,8 @@ static int bcm63xx_iudma_config(struct dma_chan *dchan,
 		maxburst = config->dst_maxburst;
 	}
 
-	if (maxburst < 1 || maxburst * 4 > IUDMA_D_LEN_MAX)
+	/* it must be possible to fit two bursts into the receive buffer */
+	if (maxburst < 1 || maxburst * 4 * 2 > IUDMA_D_LEN_MAX)
 		return -EINVAL;
 
 	spin_lock_bh(&ch->vc.lock);
