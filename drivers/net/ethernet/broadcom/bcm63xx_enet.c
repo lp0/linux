@@ -444,6 +444,189 @@ static void bcm_enet_stop_tx_dma(struct net_device *dev)
 	spin_unlock_bh(&priv->tx_lock);
 }
 
+static int bcm_enet_request_dma(struct net_device *dev)
+{
+	struct bcm_enet_priv *priv = netdev_priv(dev);
+	struct device *kdev = &priv->pdev->dev;
+	int i, ret;
+	struct dma_slave_config dma_cfg;
+
+	INIT_LIST_HEAD(&priv->rx_active);
+	INIT_LIST_HEAD(&priv->rx_inactive);
+	INIT_LIST_HEAD(&priv->tx_active);
+	INIT_LIST_HEAD(&priv->tx_inactive);
+
+	priv->rx_dma = of_dma_request_slave_channel(kdev->of_node, "rx");
+	if (IS_ERR(priv->rx_dma))
+		return PTR_ERR(priv->rx_dma);
+
+	memset(&dma_cfg, 0, sizeof(dma_cfg));
+	dma_cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+	dma_cfg.src_maxburst = priv->dma_maxburst;
+
+	ret = dmaengine_slave_config(priv->rx_dma, &dma_cfg);
+	if (ret)
+		goto out_release_rx_dma;
+
+	priv->tx_dma = of_dma_request_slave_channel(kdev->of_node, "tx");
+	if (IS_ERR(priv->tx_dma)) {
+		ret = PTR_ERR(priv->tx_dma);
+		goto out_release_rx_dma;
+	}
+
+	memset(&dma_cfg, 0, sizeof(dma_cfg));
+	dma_cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
+	dma_cfg.dst_maxburst = priv->dma_maxburst;
+
+	ret = dmaengine_slave_config(priv->tx_dma, &dma_cfg);
+	if (ret)
+		goto out_release_tx_dma;
+
+	if (priv->rx_dma->device->dev && priv->rx_dma->device->dev->of_node) {
+		u32 dma_requests;
+
+		if (!of_property_read_u32(priv->rx_dma->device->dev->of_node,
+				"dma-requests", &dma_requests))
+			priv->rx_max_ring_size = dma_requests;
+		else
+			priv->rx_max_ring_size = BCMENET_MAX_RX_DESC;
+	}
+
+	if (priv->tx_dma->device->dev && priv->tx_dma->device->dev->of_node) {
+		u32 dma_requests;
+
+		if (!of_property_read_u32(priv->tx_dma->device->dev->of_node,
+				"dma-requests", &dma_requests))
+			priv->tx_max_ring_size = dma_requests;
+		else
+			priv->tx_max_ring_size = BCMENET_MAX_TX_DESC;
+	}
+
+	if (priv->rx_ring_size > priv->rx_max_ring_size)
+		priv->rx_ring_size = priv->rx_max_ring_size;
+
+	if (priv->tx_ring_size > priv->tx_max_ring_size)
+		priv->tx_ring_size = priv->tx_max_ring_size;
+
+	for (i = 0; i < priv->rx_ring_size; i++) {
+		struct bcm_enet_pkt *pkt = devm_kzalloc(kdev,
+			sizeof(*pkt), GFP_KERNEL);
+
+		if (!pkt) {
+			ret = -ENOMEM;
+			goto out_free_pkt;
+		}
+
+		list_add_tail(&pkt->node, &priv->rx_inactive);
+	}
+
+	for (i = 0; i < priv->tx_ring_size; i++) {
+		struct bcm_enet_pkt *pkt = devm_kzalloc(kdev,
+			sizeof(*pkt), GFP_KERNEL);
+
+		if (!pkt) {
+			ret = -ENOMEM;
+			goto out_free_pkt;
+		}
+
+		list_add_tail(&pkt->node, &priv->tx_inactive);
+	}
+	return 0;
+
+out_free_pkt:
+	while (!list_empty(&priv->rx_inactive)) {
+		struct bcm_enet_pkt *pkt;
+
+		pkt = list_first_entry(&priv->rx_inactive,
+			struct bcm_enet_pkt, node);
+		devm_kfree(kdev, pkt);
+
+		list_del(&pkt->node);
+	}
+
+	while (!list_empty(&priv->tx_inactive)) {
+		struct bcm_enet_pkt *pkt;
+
+		pkt = list_first_entry(&priv->tx_inactive,
+			struct bcm_enet_pkt, node);
+		devm_kfree(kdev, pkt);
+
+		list_del(&pkt->node);
+	}
+
+out_release_tx_dma:
+	dma_release_channel(priv->tx_dma);
+
+out_release_rx_dma:
+	dma_release_channel(priv->rx_dma);
+
+	return ret;
+}
+
+/* free only the skbs in the RX inactive queue
+ * (if the rx_skb_size is to be changed) so that
+ * bcm_enet_refill_rx reallocates them
+ */
+static void bcm_enet_free_rx_queue_skbs(struct bcm_enet_priv *priv)
+{
+	struct device *kdev = &priv->pdev->dev;
+	struct bcm_enet_pkt *pkt;
+
+	spin_lock_bh(&priv->rx_lock);
+	WARN_ON(!list_empty(&priv->rx_active));
+
+	list_for_each_entry(pkt, &priv->rx_inactive, node) {
+		if (pkt->skb) {
+			dma_unmap_single(kdev, pkt->buf, priv->rx_skb_size,
+				DMA_FROM_DEVICE);
+			dev_kfree_skb(pkt->skb);
+			pkt->skb = NULL;
+		}
+	}
+	spin_unlock_bh(&priv->rx_lock);
+}
+
+
+/* free the RX and TX queues */
+static void bcm_enet_free_queues(struct bcm_enet_priv *priv)
+{
+	struct device *kdev = &priv->pdev->dev;
+	LIST_HEAD(pkts);
+
+	bcm_enet_free_rx_queue_skbs(priv);
+
+	spin_lock_bh(&priv->rx_lock);
+	WARN_ON(!list_empty(&priv->rx_active));
+	list_splice_tail_init(&priv->rx_inactive, &pkts);
+	spin_unlock_bh(&priv->rx_lock);
+
+	spin_lock_bh(&priv->tx_lock);
+	WARN_ON(!list_empty(&priv->tx_active));
+	list_splice_tail_init(&priv->tx_inactive, &pkts);
+	spin_unlock_bh(&priv->tx_lock);
+
+	while (!list_empty(&pkts)) {
+		struct bcm_enet_pkt *pkt;
+
+		pkt = list_first_entry(&pkts, struct bcm_enet_pkt, node);
+		list_del(&pkt->node);
+		devm_kfree(kdev, pkt);
+	}
+}
+
+static void bcm_enet_release_dma(struct net_device *dev)
+{
+	struct bcm_enet_priv *priv = netdev_priv(dev);
+
+	bcm_enet_stop_rx_dma(dev);
+	bcm_enet_stop_tx_dma(dev);
+
+	dma_release_channel(priv->rx_dma);
+	dma_release_channel(priv->tx_dma);
+
+	bcm_enet_free_queues(priv);
+}
+
 /*
  * mac interrupt handler
  */
@@ -780,7 +963,7 @@ static void bcm_enet_adjust_link(struct net_device *dev)
 }
 
 /*
- * open callback, allocate dma rings & buffers and start rx operation
+ * open callback, start rx operation
  */
 static int bcm_enet_open(struct net_device *dev)
 {
@@ -832,27 +1015,19 @@ static int bcm_enet_open(struct net_device *dev)
 		priv->phydev = phydev;
 	}
 
-	/* mask all interrupts and request them */
-	enet_writel(priv, 0, ENET_IRMASK_REG);
+	ret = bcm_enet_request_dma(dev);
+	if (ret)
+		goto out_phy_disconnect;
 
 	priv->rx_running = true;
 	priv->tx_running = true;
 
+	/* mask all interrupts and request them */
+	enet_writel(priv, 0, ENET_IRMASK_REG);
+
 	ret = request_irq(dev->irq, bcm_enet_isr_mac, 0, dev->name, dev);
 	if (ret)
 		goto out_phy_disconnect;
-
-	priv->rx_dma = of_dma_request_slave_channel(kdev->of_node, "rx");
-	if (IS_ERR(priv->rx_dma)) {
-		ret = PTR_ERR(priv->rx_dma);
-		goto out_freeirq;
-	}
-
-	priv->tx_dma = of_dma_request_slave_channel(kdev->of_node, "tx");
-	if (IS_ERR(priv->tx_dma)) {
-		ret = PTR_ERR(priv->tx_dma);
-		goto out_release_rx_dma;
-	}
 
 	/* initialize perfect match registers */
 	for (i = 0; i < 4; i++) {
@@ -863,11 +1038,6 @@ static int bcm_enet_open(struct net_device *dev)
 	/* write device mac address */
 	memcpy(addr.sa_data, dev->dev_addr, ETH_ALEN);
 	bcm_enet_set_mac_address(dev, &addr);
-
-	INIT_LIST_HEAD(&priv->rx_active);
-	INIT_LIST_HEAD(&priv->rx_inactive);
-	INIT_LIST_HEAD(&priv->tx_active);
-	INIT_LIST_HEAD(&priv->tx_inactive);
 
 	/* set correct transmit fifo watermark */
 	enet_writel(priv, BCMENET_TX_FIFO_TRESH, ENET_TXWMARK_REG);
@@ -893,15 +1063,6 @@ static int bcm_enet_open(struct net_device *dev)
 	bcm_enet_refill_rx(dev);
 	spin_unlock_bh(&priv->rx_lock);
 	return 0;
-
-//out_release_tx_dma:
-//	dma_release_channel(priv->tx_dma);
-
-out_release_rx_dma:
-	dma_release_channel(priv->rx_dma);
-
-out_freeirq:
-	free_irq(dev->irq, dev);
 
 out_phy_disconnect:
 	phy_disconnect(priv->phydev);
@@ -932,51 +1093,6 @@ static void bcm_enet_disable_mac(struct bcm_enet_priv *priv)
 	} while (limit--);
 }
 
-static void bcm_enet_free_rx_queue_skbs(struct bcm_enet_priv *priv)
-{
-	struct device *kdev = &priv->pdev->dev;
-	struct bcm_enet_pkt *pkt;
-
-	spin_lock_bh(&priv->rx_lock);
-	WARN_ON(!list_empty(&priv->rx_active));
-
-	list_for_each_entry(pkt, &priv->rx_inactive, node) {
-		if (pkt->skb) {
-			dma_unmap_single(kdev, pkt->buf, priv->rx_skb_size,
-				DMA_FROM_DEVICE);
-			dev_kfree_skb(pkt->skb);
-			pkt->skb = NULL;
-		}
-	}
-	spin_unlock_bh(&priv->rx_lock);
-}
-
-static void bcm_enet_free_queues(struct bcm_enet_priv *priv)
-{
-	struct device *kdev = &priv->pdev->dev;
-	LIST_HEAD(pkts);
-
-	bcm_enet_free_rx_queue_skbs(priv);
-
-	spin_lock_bh(&priv->rx_lock);
-	WARN_ON(!list_empty(&priv->rx_active));
-	list_splice_tail_init(&priv->rx_inactive, &pkts);
-	spin_unlock_bh(&priv->rx_lock);
-
-	spin_lock_bh(&priv->tx_lock);
-	WARN_ON(!list_empty(&priv->tx_active));
-	list_splice_tail_init(&priv->tx_inactive, &pkts);
-	spin_unlock_bh(&priv->tx_lock);
-
-	while (!list_empty(&pkts)) {
-		struct bcm_enet_pkt *pkt;
-
-		pkt = list_first_entry(&pkts, struct bcm_enet_pkt, node);
-		list_del(&pkt->node);
-		devm_kfree(kdev, pkt);
-	}
-}
-
 /*
  * stop callback
  */
@@ -992,11 +1108,7 @@ static int bcm_enet_stop(struct net_device *dev)
 		phy_stop(priv->phydev);
 	del_timer_sync(&priv->rx_timeout);
 
-	bcm_enet_stop_rx_dma(dev);
-	bcm_enet_stop_tx_dma(dev);
-
-	dma_release_channel(priv->rx_dma);
-	dma_release_channel(priv->tx_dma);
+	bcm_enet_release_dma(dev);
 
 	/* mask all interrupts */
 	enet_writel(priv, 0, ENET_IRMASK_REG);
@@ -1006,8 +1118,6 @@ static int bcm_enet_stop(struct net_device *dev)
 
 	/* disable mac */
 	bcm_enet_disable_mac(priv);
-
-	bcm_enet_free_queues(priv);
 
 	free_irq(dev->irq, dev);
 
@@ -1288,7 +1398,6 @@ static void bcm_enet_get_ringparam(struct net_device *dev,
 
 	priv = netdev_priv(dev);
 
-	/* rx/tx ring is actually only limited by memory */
 	ering->rx_max_pending = priv->rx_max_ring_size;
 	ering->tx_max_pending = priv->tx_max_ring_size;
 	ering->rx_mini_max_pending = 0;
@@ -1734,9 +1843,9 @@ static int bcm_enet_probe(struct platform_device *pdev)
 
 	spin_lock_init(&priv->rx_lock);
 	spin_lock_init(&priv->tx_lock);
-	// TODO refer to DMA controller
-	priv->rx_max_ring_size = 8192;
-	priv->tx_max_ring_size = 8192;
+	/* limited by DMA controller */
+	priv->rx_max_ring_size = BCMENET_MAX_RX_DESC;
+	priv->tx_max_ring_size = BCMENET_MAX_TX_DESC;
 	priv->rx_ring_size = BCMENET_DEF_RX_DESC;
 	priv->tx_ring_size = BCMENET_DEF_TX_DESC;
 
@@ -2095,7 +2204,7 @@ static void swphy_poll_timer(unsigned long data)
 }
 
 /*
- * open callback, allocate dma rings & buffers and start rx operation
+ * open callback, start rx operation
  */
 static int bcm_enetsw_open(struct net_device *dev)
 {
@@ -2103,70 +2212,13 @@ static int bcm_enetsw_open(struct net_device *dev)
 	struct device *kdev;
 	int i, ret;
 	u32 val;
-	struct dma_slave_config dma_cfg;
 
 	priv = netdev_priv(dev);
 	kdev = &priv->pdev->dev;
 
-	INIT_LIST_HEAD(&priv->rx_active);
-	INIT_LIST_HEAD(&priv->rx_inactive);
-	INIT_LIST_HEAD(&priv->tx_active);
-	INIT_LIST_HEAD(&priv->tx_inactive);
-
-	for (i = 0; i < priv->rx_ring_size; i++) {
-		struct bcm_enet_pkt *pkt = devm_kzalloc(kdev,
-			sizeof(*pkt), GFP_KERNEL);
-
-		if (!pkt) {
-			ret = -ENOMEM;
-			goto out_free_pkt;
-		}
-
-		list_add_tail(&pkt->node, &priv->rx_inactive);
-	}
-
-	for (i = 0; i < priv->tx_ring_size; i++) {
-		struct bcm_enet_pkt *pkt = devm_kzalloc(kdev,
-			sizeof(*pkt), GFP_KERNEL);
-
-		if (!pkt) {
-			ret = -ENOMEM;
-			goto out_free_pkt;
-		}
-
-		list_add_tail(&pkt->node, &priv->tx_inactive);
-	}
-
-	priv->rx_running = true;
-	priv->tx_running = true;
-
-	priv->rx_dma = of_dma_request_slave_channel(kdev->of_node, "rx");
-	if (IS_ERR(priv->rx_dma)) {
-		ret = PTR_ERR(priv->rx_dma);
-		goto out_free_pkt;
-	}
-
-	memset(&dma_cfg, 0, sizeof(dma_cfg));
-	dma_cfg.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	dma_cfg.src_maxburst = priv->dma_maxburst;
-
-	ret = dmaengine_slave_config(priv->rx_dma, &dma_cfg);
+	ret = bcm_enet_request_dma(dev);
 	if (ret)
-		goto out_release_rx_dma;
-
-	priv->tx_dma = of_dma_request_slave_channel(kdev->of_node, "tx");
-	if (IS_ERR(priv->tx_dma)) {
-		ret = PTR_ERR(priv->tx_dma);
-		goto out_release_rx_dma;
-	}
-
-	memset(&dma_cfg, 0, sizeof(dma_cfg));
-	dma_cfg.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
-	dma_cfg.dst_maxburst = priv->dma_maxburst;
-
-	ret = dmaengine_slave_config(priv->tx_dma, &dma_cfg);
-	if (ret)
-		goto out_release_tx_dma;
+		return ret;
 
 	/* disable all ports */
 	for (i = 0; i < ENETSW_MAX_PORT; i++) {
@@ -2254,6 +2306,9 @@ static int bcm_enetsw_open(struct net_device *dev)
 		enetsw_writeb(priv, 0, ENETSW_PTCTRL_REG(i));
 	}
 
+	priv->rx_running = true;
+	priv->tx_running = true;
+
 	/* start phy polling timer */
 	init_timer(&priv->swphy_poll);
 	priv->swphy_poll.function = swphy_poll_timer;
@@ -2268,34 +2323,6 @@ static int bcm_enetsw_open(struct net_device *dev)
 	bcm_enet_refill_rx(dev);
 	spin_unlock_bh(&priv->rx_lock);
 	return 0;
-
-out_release_tx_dma:
-	dma_release_channel(priv->tx_dma);
-
-out_release_rx_dma:
-	dma_release_channel(priv->rx_dma);
-
-out_free_pkt:
-	while (!list_empty(&priv->rx_inactive)) {
-		struct bcm_enet_pkt *pkt;
-
-		pkt = list_first_entry(&priv->rx_inactive,
-			struct bcm_enet_pkt, node);
-		devm_kfree(kdev, pkt);
-
-		list_del(&pkt->node);
-	}
-
-	while (!list_empty(&priv->tx_inactive)) {
-		struct bcm_enet_pkt *pkt;
-
-		pkt = list_first_entry(&priv->tx_inactive,
-			struct bcm_enet_pkt, node);
-		devm_kfree(kdev, pkt);
-
-		list_del(&pkt->node);
-	}
-	return ret;
 }
 
 /* stop callback */
@@ -2311,13 +2338,7 @@ static int bcm_enetsw_stop(struct net_device *dev)
 	del_timer_sync(&priv->swphy_poll);
 	del_timer_sync(&priv->rx_timeout);
 
-	bcm_enet_stop_rx_dma(dev);
-	bcm_enet_stop_tx_dma(dev);
-
-	dma_release_channel(priv->rx_dma);
-	dma_release_channel(priv->tx_dma);
-
-	bcm_enet_free_queues(priv);
+	bcm_enet_release_dma(dev);
 
 	return 0;
 }
@@ -2582,9 +2603,9 @@ static int bcm_enetsw_probe(struct platform_device *pdev)
 
 	spin_lock_init(&priv->rx_lock);
 	spin_lock_init(&priv->tx_lock);
-	// TODO refer to DMA controller
-	priv->rx_max_ring_size = 8192;
-	priv->tx_max_ring_size = 8192;
+	/* limited by DMA controller */
+	priv->rx_max_ring_size = BCMENET_MAX_RX_DESC;
+	priv->tx_max_ring_size = BCMENET_MAX_TX_DESC;
 	priv->rx_ring_size = BCMENET_DEF_RX_DESC;
 	priv->tx_ring_size = BCMENET_DEF_TX_DESC;
 

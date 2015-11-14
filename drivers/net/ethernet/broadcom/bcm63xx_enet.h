@@ -12,6 +12,10 @@
 #define BCMENET_DEF_RX_DESC	16
 #define BCMENET_DEF_TX_DESC	16
 
+/* maximum number of descriptor */
+#define BCMENET_MAX_RX_DESC	8192
+#define BCMENET_MAX_TX_DESC	8192
+
 /* maximum burst len for dma (4 bytes unit) */
 #define BCMENET_DMA_MAXBURST	16
 #define BCMENETSW_DMA_MAXBURST	8
