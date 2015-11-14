@@ -583,7 +583,8 @@ static void bcm_enet_free_rx_queue_skbs(struct bcm_enet_priv *priv)
 	struct bcm_enet_pkt *pkt;
 
 	spin_lock_bh(&priv->rx_lock);
-	WARN_ON(!list_empty(&priv->rx_active));
+	WARN(!list_empty(&priv->rx_active), "%s: rx active queue not empty\n",
+		__func__);
 
 	list_for_each_entry(pkt, &priv->rx_inactive, node) {
 		if (pkt->skb) {
@@ -606,12 +607,14 @@ static void bcm_enet_free_queues(struct bcm_enet_priv *priv)
 	bcm_enet_free_rx_queue_skbs(priv);
 
 	spin_lock_bh(&priv->rx_lock);
-	WARN_ON(!list_empty(&priv->rx_active));
+	WARN(!list_empty(&priv->rx_active), "%s: rx active queue not empty\n",
+		__func__);
 	list_splice_tail_init(&priv->rx_inactive, &pkts);
 	spin_unlock_bh(&priv->rx_lock);
 
 	spin_lock_bh(&priv->tx_lock);
-	WARN_ON(!list_empty(&priv->tx_active));
+	WARN(!list_empty(&priv->tx_active), "%s: tx active queue not empty\n",
+		__func__);
 	list_splice_tail_init(&priv->tx_inactive, &pkts);
 	spin_unlock_bh(&priv->tx_lock);
 
@@ -1483,7 +1486,8 @@ static int bcm_enet_set_ringparam(struct net_device *dev,
 			pkt = list_first_entry_or_null(&priv->rx_inactive,
 				struct bcm_enet_pkt, node);
 			if (!pkt) {
-				WARN_ONCE(1, "rx inactive queue empty");
+				WARN_ONCE(1, "%s: rx inactive queue empty",
+					__func__);
 				ret = -EIO;
 				break;
 			}
