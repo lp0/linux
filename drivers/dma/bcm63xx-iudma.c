@@ -606,13 +606,13 @@ static inline void bcm63xx_iudma_start_chan(struct bcm63xx_iudma_chan *ch)
 	}
 }
 
-static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch)
+static bool bcm63xx_iudma_complete_transactions(struct bcm63xx_iudma_chan *ch, bool all)
 {
 	unsigned int packets = 0;
 
 	while (ch->desc_count > 0 &&
 			(bcm63xx_iudma_chan_is_tx(ch) ||
-				packets < IUDMA_MAX_RX_PKT_BURST)) {
+				packets < IUDMA_MAX_RX_PKT_BURST || all)) {
 		struct bcm63xx_iudma_hw_desc *hwd;
 		struct bcm63xx_iudma_desc *desc;
 
@@ -718,13 +718,13 @@ static void bcm63xx_iudma_tasklet(unsigned long data)
 	bcm63xx_iudma_ack_chan_int(tx_ch);
 
 	spin_lock(&rx_ch->vc.lock);
-	finished = bcm63xx_iudma_complete_transactions(rx_ch);
+	finished = bcm63xx_iudma_complete_transactions(rx_ch, false);
 	spin_unlock(&rx_ch->vc.lock);
 
 	vchan_complete_task(&rx_ch->vc);
 
 	spin_lock(&tx_ch->vc.lock);
-	finished |= bcm63xx_iudma_complete_transactions(tx_ch);
+	finished &= bcm63xx_iudma_complete_transactions(tx_ch, false);
 	spin_unlock(&tx_ch->vc.lock);
 
 	vchan_complete_task(&tx_ch->vc);
@@ -1046,7 +1046,6 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 {
 	struct bcm63xx_iudma_chan *ch = to_bcm63xx_iudma_chan(dchan);
 	struct bcm63xx_iudma_chan *rx_ch;
-	bool finished = false;
 	LIST_HEAD(head);
 
 	if (bcm63xx_iudma_chan_is_rx(ch))
@@ -1058,8 +1057,7 @@ static int bcm63xx_iudma_terminate_all(struct dma_chan *dchan)
 
 	spin_lock_bh(&ch->vc.lock);
 	bcm63xx_iudma_stop_chan(ch);
-	while (!finished)
-		finished = bcm63xx_iudma_complete_transactions(ch);
+	bcm63xx_iudma_complete_transactions(ch, true);
 	bcm63xx_iudma_reset_ring(ch);
 	bcm63xx_iudma_configure_chan(ch);
 	list_splice_tail_init(&ch->vc.desc_submitted, &head);
