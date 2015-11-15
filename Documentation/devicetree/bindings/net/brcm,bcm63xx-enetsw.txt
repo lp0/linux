@@ -1,0 +1,40 @@
+* BCM63xx Ethernet Switch
+
+The BCM63xx Ethernet Switch has up to 8 physical ports, and a virtual
+port representing the host itself. It uses the BCM63xx IUDMA controller
+to send/receive packets.
+
+Required properties:
+- compatible: Should be "brcm,bcm<chip>-enetsw", "brcm,bcm63xx-enetsw".
+- reg: Should contain the enetsw registers location and length.
+- clocks: Should contain the clocks required for operation.
+- reset: Should contain the reset controller device for soft reset.
+- power-supply: Should contain the regulator required to power the chip.
+- dmas: Should contain two DMA channels, one for RX and one for TX.
+- dma-names: Should be "rx" and "tx" for the RX and TX channels.
+- brcm,phy-ids: Should contain the hardware PHY IDs for up to 8 ports
+      in the order they are present on the hardware.
+- brcm,port-names: Should contain the names of the ports in the same
+      order as the brcm,phy-ids. Use an empty port name for ports
+      that should be ignored. These will be disabled and not forward
+      traffic.
+
+Optional properties:
+- interrupts: Should contain the interrupt to use for PHY status changes.
+
+Example:
+
+enetsw0: ethernet@10700000 {
+	compatible = "brcm,bcm63168-enetsw", "brcm,bcm63xx-enetsw";
+	reg = <0x10700000 0x10000>;
+	interrupt-parent = <&periph_intc>;
+	interrupts = <48>;
+	clocks = <&periph_clk 10>;
+	reset = <&periph_soft_rst 4>;
+	power-supply = <&power_robosw>;
+	dmas = <&enetdma0 0	/* read channel */
+		&enetdma0 1>;	/* write channel */
+	dma-names = "rx", "tx";
+	brcm,phy-ids = <1>, <2>, <3>, <4>;
+	brcm,port-names = "fe2", "fe3", "fe4", "fe1";
+};
