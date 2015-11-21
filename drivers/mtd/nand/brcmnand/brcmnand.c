@@ -1391,6 +1391,102 @@ static int brcmnand_dma_trans(struct brcmnand_host *host, u64 addr, u32 *buf,
 }
 
 /*
+ * Workaround false ECC uncorrectable errors by checking if the data
+ * has been erased and the OOB data indicates that the data has been
+ * erased. The controller incorrectly handles these as uncorrectable
+ * errors.
+ */
+static void brcmnand_read_ecc_unc_err(struct mtd_info *mtd,
+				struct nand_chip *chip,
+				int idx, unsigned int trans,
+				u32 *buf, u8 *oob_begin, u8 *oob_end,
+				u64 *err_addr)
+{
+	struct brcmnand_host *host = chip->priv;
+	struct brcmnand_controller *ctrl = host->ctrl;
+	u32 *buf_tmp = NULL;
+	u8 *oob_tmp = NULL;
+	bool buf_erased = false;
+	bool oob_erased = false;
+	int j;
+
+	/* Assume this is fixed in v5.0+ */
+	if (ctrl->nand_version >= 0x0500)
+		return;
+
+	/* Read OOB data if not already read */
+	if (!oob_begin) {
+		oob_tmp = kmalloc(ctrl->max_oob, GFP_KERNEL);
+		if (!oob_tmp)
+			goto out_free;
+
+		oob_begin = oob_tmp;
+		oob_end = oob_tmp;
+
+		oob_end += read_oob_from_regs(ctrl, idx, oob_tmp,
+				mtd->oobsize / trans,
+				host->hwcfg.sector_size_1k);
+	}
+
+	if (is_hamming_ecc(&host->hwcfg)) {
+		u8 *oob_offset = oob_begin + 6;
+
+		if (oob_offset + 3 < oob_end)
+			/* Erased if ECC bytes are all 0xFF, or the data bytes
+			 * are all 0xFF which should have Hamming codes of 0x00
+			 */
+			oob_erased = memchr_inv(oob_offset, 0xFF, 3) == NULL ||
+				memchr_inv(oob_offset, 0x00, 3) == NULL;
+	} else { /* BCH */
+		u8 *oob_offset = oob_end - ctrl->max_oob;
+
+		if (oob_offset >= oob_begin)
+			/* Erased if ECC bytes are all 0xFF */
+			oob_erased = memchr_inv(oob_offset, 0xFF,
+						oob_end - oob_offset) == NULL;
+	}
+
+	if (!oob_erased)
+		goto out_free;
+
+	/* Read data buffer if not already read */
+	if (!buf) {
+		buf_tmp = kmalloc_array(FC_WORDS, sizeof(*buf_tmp), GFP_KERNEL);
+		if (!buf_tmp)
+			goto out_free;
+
+		buf = buf_tmp;
+
+		brcmnand_soc_data_bus_prepare(ctrl->soc);
+
+		for (j = 0; j < FC_WORDS; j++, buf++)
+			*buf = brcmnand_read_fc(ctrl, j);
+
+		brcmnand_soc_data_bus_unprepare(ctrl->soc);
+	}
+
+	/* Go to start of buffer */
+	buf -= FC_WORDS;
+
+	/* Erased if all data bytes are 0xFF */
+	buf_erased = memchr_inv(buf, 0xFF, FC_WORDS) == NULL;
+
+	if (!buf_erased)
+		goto out_free;
+
+	/* Clear error addresses */
+	brcmnand_write_reg(ctrl, BRCMNAND_UNCORR_ADDR, 0);
+	brcmnand_write_reg(ctrl, BRCMNAND_CORR_ADDR, 0);
+	brcmnand_write_reg(ctrl, BRCMNAND_UNCORR_EXT_ADDR, 0);
+	brcmnand_write_reg(ctrl, BRCMNAND_CORR_EXT_ADDR, 0);
+	*err_addr = 0;
+
+out_free:
+	kfree(buf_tmp);
+	kfree(oob_tmp);
+}
+
+/*
  * Assumes proper CS is already set
  */
 static int brcmnand_read_by_pio(struct mtd_info *mtd, struct nand_chip *chip,
@@ -1400,6 +1496,7 @@ static int brcmnand_read_by_pio(struct mtd_info *mtd, struct nand_chip *chip,
 	struct brcmnand_host *host = chip->priv;
 	struct brcmnand_controller *ctrl = host->ctrl;
 	int i, j, ret = 0;
+	u8 *prev_oob = NULL;
 
 	/* Clear error addresses */
 	brcmnand_write_reg(ctrl, BRCMNAND_UNCORR_ADDR, 0);
@@ -1428,10 +1525,12 @@ static int brcmnand_read_by_pio(struct mtd_info *mtd, struct nand_chip *chip,
 			brcmnand_soc_data_bus_unprepare(ctrl->soc);
 		}
 
-		if (oob)
+		if (oob) {
+			prev_oob = oob;
 			oob += read_oob_from_regs(ctrl, i, oob,
 					mtd->oobsize / trans,
 					host->hwcfg.sector_size_1k);
+		}
 
 		if (!ret) {
 			*err_addr = brcmnand_read_reg(ctrl,
@@ -1439,6 +1538,12 @@ static int brcmnand_read_by_pio(struct mtd_info *mtd, struct nand_chip *chip,
 				((u64)(brcmnand_read_reg(ctrl,
 						BRCMNAND_UNCORR_EXT_ADDR)
 					& 0xffff) << 32);
+
+			if (*err_addr)
+				brcmnand_read_ecc_unc_err(mtd, chip,
+					i, trans, buf, prev_oob, oob,
+					err_addr);
+
 			if (*err_addr)
 				ret = -EBADMSG;
 		}
