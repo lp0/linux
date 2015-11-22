@@ -17,6 +17,11 @@ static struct resource wdt_resources[] = {
 		.end		= -1, /* filled at runtime */
 		.flags		= IORESOURCE_MEM,
 	},
+	{
+		.start		= -1, /* filled at runtime */
+		.end		= -1, /* filled at runtime */
+		.flags		= IORESOURCE_IRQ,
+	},
 };
 
 static struct platform_device bcm63xx_wdt_device = {
@@ -31,6 +36,8 @@ int __init bcm63xx_wdt_register(void)
 	wdt_resources[0].start = bcm63xx_regset_address(RSET_WDT);
 	wdt_resources[0].end = wdt_resources[0].start;
 	wdt_resources[0].end += RSET_WDT_SIZE - 1;
+
+	wdt_resources[1].start = bcm63xx_get_irq_number(IRQ_TIMER);
 
 	return platform_device_register(&bcm63xx_wdt_device);
 }

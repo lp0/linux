@@ -17,6 +17,7 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
+#include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -28,9 +29,6 @@
 #include <linux/resource.h>
 #include <linux/platform_device.h>
 
-#include <bcm63xx_regs.h>
-#include <bcm63xx_timer.h>
-
 #define PFX KBUILD_MODNAME
 
 #define WDT_CLK_NAME		"periph"
@@ -41,6 +39,7 @@ struct bcm63xx_wdt_hw {
 	void __iomem *regs;
 	struct clk *clk;
 	unsigned long clock_hz;
+	int irq;
 	bool running;
 };
 
@@ -99,7 +98,7 @@ static int bcm63xx_wdt_set_timeout(struct watchdog_device *wdd,
 }
 
 /* The watchdog interrupt occurs when half the timeout is remaining */
-static void bcm63xx_wdt_isr(void *data)
+static irqreturn_t bcm63xx_wdt_interrupt(int irq, void *data)
 {
 	struct bcm63xx_wdt_hw *hw = data;
 	unsigned long flags;
@@ -139,6 +138,7 @@ static void bcm63xx_wdt_isr(void *data)
 			"warning timer fired, reboot in %ums\n", ms);
 	}
 	raw_spin_unlock_irqrestore(&hw->lock, flags);
+	return IRQ_HANDLED;
 }
 
 static struct watchdog_ops bcm63xx_wdt_ops = {
@@ -237,23 +237,30 @@ static int bcm63xx_wdt_probe(struct platform_device *pdev)
 		goto disable_clk;
 	}
 
-	ret = bcm63xx_timer_register(TIMER_WDT_ID, bcm63xx_wdt_isr, hw);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to register wdt timer isr\n");
-		goto unregister_watchdog;
+	hw->irq = platform_get_irq(pdev, 0);
+	if (hw->irq >= 0) {
+		ret = devm_request_irq(&pdev->dev, hw->irq,
+			bcm63xx_wdt_interrupt, IRQF_TIMER,
+			dev_name(&pdev->dev), hw);
+		if (ret)
+			hw->irq = -1;
 	}
 
-	dev_info(&pdev->dev,
-		"%s at MMIO 0x%p (timeout = %us, max_timeout = %us)",
-		dev_name(wdd->dev), hw->regs,
-		wdd->timeout, wdd->max_timeout);
+	if (hw->irq >= 0) {
+		dev_info(&pdev->dev,
+			"%s at MMIO 0x%p (irq = %d, timeout = %us, max_timeout = %us)",
+			dev_name(wdd->dev), hw->regs, hw->irq,
+			wdd->timeout, wdd->max_timeout);
+	} else {
+		dev_info(&pdev->dev,
+			"%s at MMIO 0x%p (timeout = %us, max_timeout = %us)",
+			dev_name(wdd->dev), hw->regs,
+			wdd->timeout, wdd->max_timeout);
+	}
 
 	if (hw->running)
 		dev_alert(wdd->dev, "running, reboot in %us\n", timeleft);
 	return 0;
-
-unregister_watchdog:
-	watchdog_unregister_device(wdd);
 
 disable_clk:
 	clk_disable_unprepare(hw->clk);
@@ -264,7 +271,9 @@ static int bcm63xx_wdt_remove(struct platform_device *pdev)
 {
 	struct bcm63xx_wdt_hw *hw = platform_get_drvdata(pdev);
 
-	bcm63xx_timer_unregister(TIMER_WDT_ID);
+	if (hw->irq >= 0)
+		devm_free_irq(&pdev->dev, hw->irq, hw);
+
 	watchdog_unregister_device(&hw->wdd);
 	clk_disable_unprepare(hw->clk);
 	return 0;
