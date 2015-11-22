@@ -1,0 +1,30 @@
+* Broadcom USBH PHY for BCM63xx
+
+The BCM63xx contains an USB host PHY that must be enabled and configured
+for use with the EHCI/OHCI drivers.
+
+Required properties:
+- compatible: should be "brcm,bcm<soc>-usbh" followed by one of
+	"brcm,bcm6318-usbh" (for BCM6318)
+	"brcm,bcm6328-usbh" (for BCM6328, BCM63168, BCM63268, BCM6828, BCM68220)
+	"brcm,bcm6358-usbh" (for BCM6358)
+	"brcm,bcm6362-usbh" (for BCM6362, BCM6368, BCM6816)
+
+- reg: register range for the PHY interface
+- reg-names: should be "phy"
+- clocks: list of phandles to the two clocks for the PHY
+- clock-names: should be "usbh", "usb_ref"
+- resets: phandle to the reset controller for the PHY
+- phy-cells: generic PHY binding; must be 0
+
+Example:
+
+usbh: usbphy@10002700 {
+	compatible = "brcm,bcm63168-usbh", "brcm,bcm6328-usbh";
+	reg = <0x10002700 0x38>;
+	clocks = <&periph_clk 13>, <&timer_clk 18>;
+	clock-names = "usbh", "usb_ref";
+	resets = <&periph_soft_rst 6>;
+	power-supply = <&usbh_power>;
+	#phy-cells = <0>;
+};
