@@ -13,6 +13,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/bcm63xx_wdt.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/errno.h>
@@ -27,8 +28,6 @@
 #include <linux/resource.h>
 #include <linux/platform_device.h>
 
-#include <bcm63xx_cpu.h>
-#include <bcm63xx_io.h>
 #include <bcm63xx_regs.h>
 #include <bcm63xx_timer.h>
 
@@ -58,9 +57,9 @@ static int bcm63xx_wdt_start(struct watchdog_device *wdd)
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&hw->lock, flags);
-	bcm_writel(wdd->timeout * hw->clock_hz, hw->regs + WDT_DEFVAL_REG);
-	bcm_writel(WDT_START_1, hw->regs + WDT_CTL_REG);
-	bcm_writel(WDT_START_2, hw->regs + WDT_CTL_REG);
+	__raw_writel(wdd->timeout * hw->clock_hz, hw->regs + WDT_DEFVAL_REG);
+	__raw_writel(WDT_START_1, hw->regs + WDT_CTL_REG);
+	__raw_writel(WDT_START_2, hw->regs + WDT_CTL_REG);
 	hw->running = true;
 	raw_spin_unlock_irqrestore(&hw->lock, flags);
 	return 0;
@@ -72,8 +71,8 @@ static int bcm63xx_wdt_stop(struct watchdog_device *wdd)
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&hw->lock, flags);
-	bcm_writel(WDT_STOP_1, hw->regs + WDT_CTL_REG);
-	bcm_writel(WDT_STOP_2, hw->regs + WDT_CTL_REG);
+	__raw_writel(WDT_STOP_1, hw->regs + WDT_CTL_REG);
+	__raw_writel(WDT_STOP_2, hw->regs + WDT_CTL_REG);
 	hw->running = false;
 	raw_spin_unlock_irqrestore(&hw->lock, flags);
 	return 0;
@@ -108,10 +107,10 @@ static void bcm63xx_wdt_isr(void *data)
 	raw_spin_lock_irqsave(&hw->lock, flags);
 	if (!hw->running) {
 		/* Stop the watchdog as it shouldn't be running */
-		bcm_writel(WDT_STOP_1, hw->regs + WDT_CTL_REG);
-		bcm_writel(WDT_STOP_2, hw->regs + WDT_CTL_REG);
+		__raw_writel(WDT_STOP_1, hw->regs + WDT_CTL_REG);
+		__raw_writel(WDT_STOP_2, hw->regs + WDT_CTL_REG);
 	} else {
-		u32 timeleft = bcm_readl(hw->regs + WDT_CTL_REG);
+		u32 timeleft = __raw_readl(hw->regs + WDT_CTL_REG);
 		u32 ms;
 
 		if (timeleft >= 2) {
@@ -125,9 +124,9 @@ static void bcm63xx_wdt_isr(void *data)
 			 * This is done with a lock held in case userspace is
 			 * trying to restart the watchdog on another CPU.
 			 */
-			bcm_writel(timeleft, hw->regs + WDT_DEFVAL_REG);
-			bcm_writel(WDT_START_1, hw->regs + WDT_CTL_REG);
-			bcm_writel(WDT_START_2, hw->regs + WDT_CTL_REG);
+			__raw_writel(timeleft, hw->regs + WDT_DEFVAL_REG);
+			__raw_writel(WDT_START_1, hw->regs + WDT_CTL_REG);
+			__raw_writel(WDT_START_2, hw->regs + WDT_CTL_REG);
 		} else {
 			/* The watchdog cannot be started with a time of less
 			 * than 2 ticks (it won't fire).
