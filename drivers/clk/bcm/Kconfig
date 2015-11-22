@@ -14,3 +14,11 @@ config COMMON_CLK_IPROC
 	help
 	  Enable common clock framework support for Broadcom SoCs
 	  based on the iProc architecture
+
+config CLK_BCM63XX
+	bool "Broadcom BCM63xx clock support"
+	depends on BMIPS_GENERIC
+	depends on COMMON_CLK
+	default y
+	help
+	  Enable clock framework support for Broadcom 63xx SoCs

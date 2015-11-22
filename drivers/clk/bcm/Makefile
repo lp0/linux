@@ -8,3 +8,4 @@ obj-$(CONFIG_COMMON_CLK_IPROC)	+= clk-ns2.o
 obj-$(CONFIG_ARCH_BCM_CYGNUS)	+= clk-cygnus.o
 obj-$(CONFIG_ARCH_BCM_NSP)	+= clk-nsp.o
 obj-$(CONFIG_ARCH_BCM_5301X)	+= clk-nsp.o
+obj-$(CONFIG_CLK_BCM63XX)	+= clk-bcm63xx.o
