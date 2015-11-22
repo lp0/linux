@@ -8,6 +8,15 @@ config CLK_BCM_63XX
 	  Enable common clock framework support for Broadcom BCM63xx DSL SoCs
 	  based on the ARM architecture
 
+config CLK_BCM_6345
+	bool "Broadcom BCM6345 clock support"
+	depends on BMIPS_GENERIC || COMPILE_TEST
+	depends on COMMON_CLK
+	default BMIPS_GENERIC
+	help
+	  Enable common clock framework support for Broadcom BCM6345 DSL SoCs
+	  based on the MIPS architecture
+
 config CLK_BCM_KONA
 	bool "Broadcom Kona CCU clock support"
 	depends on ARCH_BCM_MOBILE || COMPILE_TEST
