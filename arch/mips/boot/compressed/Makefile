@@ -40,6 +40,8 @@ vmlinuzobjs-$(CONFIG_SYS_SUPPORTS_ZBOOT_UART16550) += $(obj)/uart-16550.o
 vmlinuzobjs-$(CONFIG_MIPS_ALCHEMY)		   += $(obj)/uart-alchemy.o
 endif
 
+vmlinuzobjs-$(CONFIG_BCM63XX) += $(obj)/../../lib/bswapsi.o
+
 ifdef CONFIG_KERNEL_XZ
 vmlinuzobjs-y += $(obj)/../../lib/ashldi3.o
 endif
