@@ -1,0 +1,33 @@
+Broadcom BCM6345 regulator
+
+The BCM6345 has one or more registers with bits that act as regulators
+to enable/disable power to individual chip peripherals.
+
+Required properties:
+- compatible: Must be "brcm,bcm<soc>-regulator", "brcm,bcm6345-regulator";
+- regmap: regmap phandle to use for enable control
+- offset: register offset
+- mask: register enable mask
+- startup-delay-us: startup time in microseconds
+
+Any property defined as part of the core regulator
+binding, defined in regulator.txt, can also be used.
+
+However the regulator is expected to have the same values
+for regulator-min-microvolt and regulator-max-microvolt.
+
+Example:
+
+misc: syscon@10001800 {
+	compatible = "syscon";
+	reg = <0x10001800 0xd0>;
+};
+
+robosw_power: robosw {
+	compatible = "brcm,bcm63168-regulator", "brcm,bcm6345-regulator";
+	regulator-name = "robosw_power";
+	regmap = <&misc>;
+	offset = <0x4c>;
+	mask = <0x40>;
+	startup-delay-us = <100000>;
+};
