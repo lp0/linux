@@ -146,6 +146,15 @@ config REGULATOR_AXP20X
 	  This driver provides support for the voltage regulators on the
 	  AXP20X PMIC.
 
+config REGULATOR_BCM63XX
+	tristate "Broadcom BCM63xx Regulators"
+	depends on OF
+	depends on MFD_SYSCON
+	depends on BMIPS_GENERIC
+	help
+	  This driver provides support for the fixed regulators on the
+	  BCM63xx SoCs.
+
 config REGULATOR_BCM590XX
 	tristate "Broadcom BCM590xx PMU Regulators"
 	depends on MFD_BCM590XX
