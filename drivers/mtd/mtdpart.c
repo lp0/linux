@@ -727,6 +727,7 @@ EXPORT_SYMBOL_GPL(deregister_mtd_parser);
 static const char * const default_mtd_part_types[] = {
 	"cmdlinepart",
 	"ofpart",
+	"bcm963268part",
 	NULL
 };
 
