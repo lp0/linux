@@ -506,3 +506,14 @@ endif # POWER_SUPPLY
 
 source "drivers/power/reset/Kconfig"
 source "drivers/power/avs/Kconfig"
+
+config BCM6358_POWER
+	bool "BCM6358 power domain support"
+	depends on BMIPS_GENERIC && PM && OF
+	select PM_GENERIC_DOMAINS
+	select PM_GENERIC_DOMAINS_OF
+	default BMIPS_GENERIC
+	help
+	  Say Y here to enable support for power domains on the BCM6358.
+	  Required to ensure that power is enabled for SoC peripheral
+	  devices, and that power is disabled to unused devices.
