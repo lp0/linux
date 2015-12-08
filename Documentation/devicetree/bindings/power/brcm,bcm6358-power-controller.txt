@@ -1,0 +1,53 @@
+Broadcom BCM6358 Power domain controller
+
+This binding uses the power domain bindings:
+        Documentation/devicetree/bindings/power/power_domain.txt
+
+The BCM6358 contains power domains controlled with a register. Power
+domains are indexed by bits in the register. Power domain bits can be
+interleaved with other status bits and clocks in the same register.
+
+Newer SoCs with dedicated power domain registers are active low.
+
+Required properties:
+- compatible:           Should be either:
+				"brcm,bcm<soc>-power-controller", "brcm,bcm6358-power-controller"
+			or (for newer SoCs with dedicated power domain
+			registers that are active low):
+				"brcm,bcm<soc>-power-controller", "brcm,bcm6328-power-controller"
+- #power-domain-cells:  Should be <1>.
+- regmap:               The register map phandle
+- offset:               Offset in the register map for the power domain register (in bytes)
+- power-domain-indices: The bits in the register used for power domains.
+- power-domain-names:   Should be a list of strings of power domain names
+                        indexed by the power domain indices.
+
+Example:
+
+misc_iddq_ctrl: power-controller {
+	compatible = "brcm,bcm63168-power-controller", "brcm,bcm6328-power-controller";
+	regmap = <&misc>;
+	offset = <0x4c>;
+
+	#power-domain-cells = <1>;
+	power-domain-indices =
+	                <0>,         <1>,      <2>,    <3>,         <4>,
+	                <5>,         <6>,      <7>,    <8>,         <9>,
+	                <10>,        <11>,     <12>,   <13>,        <17>,
+	                <18>;
+	power-domain-names =
+	                "sar",       "ipsec",  "mips", "dect",      "usbh",
+	                "usbd",      "robosw", "pcm",  "periph",    "vdsl_phy",
+	                "vdsl_mips", "fap",    "pcie", "wlan_pads", "gphy",
+	                "gmac";
+};
+
+periph_iddq: power-controller {
+	compatible = "brcm,bcm6368-power-controller", "brcm,bcm6358-power-controller";
+	regmap = <&periph_cntl>;
+	offset = <0x4>;
+
+	#power-domain-cells = <1>;
+	power-domain-indices = <19>;
+	power-domain-names = "usbh";
+};
