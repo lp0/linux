@@ -16,10 +16,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
- *
+ * NAND flash layout derived from bcm963xx_4.12L.06B_consumer/bcmdrivers/opensource/char/board/bcm963xx/impl1/board.c,
+ *	bcm963xx_4.12L.06B_consumer/shared/opensource/include/bcm963xx/bcm_hwdefs.h:
+ * Copyright (c) 2002 Broadcom Corporation
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -122,6 +121,25 @@ static int bcm63xx_read_image_tag(struct mtd_info *master, const char *name,
 	pr_warn("%s: CFE image tag at 0x%llx CRC invalid (expected %08x, actual %08x)\n",
 		name, tag_offset, buf->header_crc, computed_crc);
 	return 1;
+}
+
+static bool bcm63xx_boot_latest(struct bcm963xx_nvram *nvram)
+{
+	char *p;
+
+	STR_NULL_TERMINATE(nvram->bootline);
+
+	/* Find previous image parameter "p" */
+	if (!strncmp(nvram->bootline, "p=", 2))
+		p = nvram->bootline;
+	else
+		p = strstr(nvram->bootline, " p=");
+
+	if (p == NULL)
+		return true;
+
+	p += 2;
+	return *p != '0';
 }
 
 static int bcm63xx_parse_cfe_nor_partitions(struct mtd_info *master,
@@ -283,6 +301,171 @@ out:
 	return nrparts;
 }
 
+static bool bcm63xx_parse_nand_image_tag(struct mtd_info *master,
+	const char *name, loff_t tag_offset, u64 *rootfs_offset,
+	u64 *rootfs_size, unsigned int *rootfs_sequence)
+{
+	struct bcm_tag *buf;
+	int ret;
+	bool rootfs_ok = false;
+
+	*rootfs_offset = 0;
+	*rootfs_size = 0;
+	*rootfs_sequence = 0;
+
+	buf = vmalloc(sizeof(struct bcm_tag));
+	if (!buf)
+		goto out;
+
+	ret = bcm63xx_read_image_tag(master, name, tag_offset, buf);
+	if (!ret) {
+		/* Get rootfs offset and size from tag data */
+		STR_NULL_TERMINATE(buf->flash_image_start);
+		if (kstrtou64(buf->flash_image_start, 10, rootfs_offset) ||
+				*rootfs_offset < BCM963XX_EXTENDED_SIZE) {
+			pr_err("%s: invalid rootfs offset: %*ph\n", name,
+				sizeof(buf->flash_image_start),
+				buf->flash_image_start);
+			goto out;
+		}
+
+		STR_NULL_TERMINATE(buf->root_length);
+		if (kstrtou64(buf->root_length, 10, rootfs_size) ||
+				rootfs_size == 0) {
+			pr_err("%s: invalid rootfs size: %*ph\n", name,
+				sizeof(buf->root_length), buf->root_length);
+			goto out;
+		}
+
+		/* Adjust for flash offset */
+		*rootfs_offset -= BCM963XX_EXTENDED_SIZE;
+
+		/* Remove bcm_tag data from length */
+		*rootfs_size -= *rootfs_offset - tag_offset;
+
+		/* Get image sequence number to determine which one is newer */
+		STR_NULL_TERMINATE(buf->image_sequence);
+		if (kstrtouint(buf->image_sequence, 10, rootfs_sequence)) {
+			pr_err("%s: invalid rootfs sequence: %*ph\n", name,
+				sizeof(buf->image_sequence),
+				buf->image_sequence);
+			goto out;
+		}
+
+		rootfs_ok = true;
+	}
+
+out:
+	vfree(buf);
+	return rootfs_ok;
+}
+
+static int bcm63xx_parse_cfe_nand_partitions(struct mtd_info *master,
+	const struct mtd_partition **pparts,
+	struct bcm963xx_nvram *nvram)
+{
+	int nrparts, i;
+	struct mtd_partition *parts;
+	u64 rootfs1_off, rootfs1_size;
+	unsigned int rootfs1_seq;
+	u64 rootfs2_off, rootfs2_size;
+	unsigned int rootfs2_seq;
+	bool rootfs1, rootfs2;
+	bool use_first;
+
+	if (nvram->version < 6) {
+		pr_warn("nvram version %u not supported\n", nvram->version);
+		return -EINVAL;
+	}
+
+	/* We've just read the nvram from offset 0,
+	 * so it must be located there.
+	 */
+	if (BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, BOOT) != 0)
+		return -EINVAL;
+
+	/* Get the rootfs partition locations */
+	rootfs1 = bcm63xx_parse_nand_image_tag(master, "rootfs1",
+		BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, ROOTFS_1),
+		&rootfs1_off, &rootfs1_size, &rootfs1_seq);
+	rootfs2 = bcm63xx_parse_nand_image_tag(master, "rootfs2",
+		BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, ROOTFS_2),
+		&rootfs2_off, &rootfs2_size, &rootfs2_seq);
+
+	/* Determine primary rootfs partition */
+	if (rootfs1 && rootfs2) {
+		bool use_latest = bcm63xx_boot_latest(nvram);
+
+		/* Compare sequence numbers */
+		if (use_latest)
+			use_first = rootfs1_seq > rootfs2_seq;
+		else
+			use_first = rootfs1_seq < rootfs2_seq;
+
+		pr_info("CFE bootline selected %s image rootfs%u (rootfs1_seq=%u, rootfs2_seq=%u)\n",
+			use_latest ? "latest" : "previous",
+			use_first ? 1 : 2,
+			rootfs1_seq, rootfs2_seq);
+	} else {
+		use_first = rootfs1;
+	}
+
+	/* Partitions:
+	 * 1 boot
+	 * 2 rootfs
+	 * 3 data
+	 * 4 rootfs1_update
+	 * 5 rootfs2_update
+	 * 6 rootfs_other
+	 */
+	nrparts = 6;
+	i = 0;
+
+	parts = kcalloc(nrparts, sizeof(*parts), GFP_KERNEL);
+	if (!parts)
+		return -ENOMEM;
+
+	parts[i].name = "boot";
+	parts[i].offset = BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, BOOT);
+	parts[i].size = BCM963XX_NVRAM_NAND_PART_SIZE(nvram, BOOT);
+	i++;
+
+	/* Primary rootfs if either is available */
+	if (rootfs1 || rootfs2) {
+		parts[i].name = "rootfs";
+		parts[i].offset = use_first ? rootfs1_off : rootfs2_off;
+		parts[i].size = use_first ? rootfs1_size : rootfs2_size;
+		i++;
+	}
+
+	parts[i].name = "data";
+	parts[i].offset = BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, DATA);
+	parts[i].size = BCM963XX_NVRAM_NAND_PART_SIZE(nvram, DATA);
+	i++;
+
+	/* Full rootfs partitions for updates */
+	parts[i].name = "rootfs1_update";
+	parts[i].offset = BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, ROOTFS_1);
+	parts[i].size = BCM963XX_NVRAM_NAND_PART_SIZE(nvram, ROOTFS_1);
+	i++;
+
+	parts[i].name = "rootfs2_update";
+	parts[i].offset = BCM963XX_NVRAM_NAND_PART_OFFSET(nvram, ROOTFS_2);
+	parts[i].size = BCM963XX_NVRAM_NAND_PART_SIZE(nvram, ROOTFS_2);
+	i++;
+
+	/* Other rootfs if both are available */
+	if (rootfs1 && rootfs2) {
+		parts[i].name = "rootfs_other";
+		parts[i].offset = use_first ? rootfs2_off : rootfs1_off;
+		parts[i].size = use_first ? rootfs2_size : rootfs1_size;
+		i++;
+	}
+
+	*pparts = parts;
+	return nrparts;
+}
+
 static int bcm63xx_parse_cfe_partitions(struct mtd_info *master,
 					const struct mtd_partition **pparts,
 					struct mtd_part_parser_data *data)
@@ -304,7 +487,7 @@ static int bcm63xx_parse_cfe_partitions(struct mtd_info *master,
 	if (!mtd_type_is_nand(master))
 		ret = bcm63xx_parse_cfe_nor_partitions(master, pparts, nvram);
 	else
-		ret = -EINVAL;
+		ret = bcm63xx_parse_cfe_nand_partitions(master, pparts, nvram);
 
 out:
 	vfree(nvram);
@@ -321,5 +504,6 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Daniel Dickinson <openwrt@cshore.neomailbox.net>");
 MODULE_AUTHOR("Florian Fainelli <florian@openwrt.org>");
 MODULE_AUTHOR("Mike Albon <malbon@openwrt.org>");
-MODULE_AUTHOR("Jonas Gorski <jonas.gorski@gmail.com");
+MODULE_AUTHOR("Jonas Gorski <jonas.gorski@gmail.com>");
+MODULE_AUTHOR("Simon Arlott");
 MODULE_DESCRIPTION("MTD partitioning for BCM63XX CFE bootloaders");
