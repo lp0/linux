@@ -41,6 +41,10 @@
 #define BCM963XX_CFE_VERSION_OFFSET	0x570
 #define BCM963XX_NVRAM_OFFSET		0x580
 
+/* Ensure strings read from flash structs are null terminated */
+#define STR_NULL_TERMINATE(x) \
+	do { char *_str = (x); _str[sizeof(x) - 1] = 0; } while (0)
+
 static int bcm63xx_detect_cfe(struct mtd_info *master)
 {
 	char buf[9];
@@ -106,6 +110,9 @@ static int bcm63xx_read_image_tag(struct mtd_info *master, const char *name,
 	computed_crc = crc32_le(IMAGETAG_CRC_START, (u8 *)buf,
 				offsetof(struct bcm_tag, header_crc));
 	if (computed_crc == buf->header_crc) {
+		STR_NULL_TERMINATE(buf->board_id);
+		STR_NULL_TERMINATE(buf->tag_version);
+
 		pr_info("%s: CFE image tag found at 0x%llx with version %s, board type %s\n",
 			name, tag_offset, buf->tag_version, buf->board_id);
 
@@ -162,10 +169,39 @@ static int bcm63xx_parse_cfe_partitions(struct mtd_info *master,
 	/* Get the tag */
 	ret = bcm63xx_read_image_tag(master, "rootfs", cfelen, buf);
 	if (!ret) {
-		sscanf(buf->flash_image_start, "%u", &rootfsaddr);
-		sscanf(buf->kernel_address, "%u", &kerneladdr);
-		sscanf(buf->kernel_length, "%u", &kernellen);
-		sscanf(buf->total_length, "%u", &totallen);
+		STR_NULL_TERMINATE(buf->flash_image_start);
+		if (kstrtouint(buf->flash_image_start, 10, &rootfsaddr) ||
+				rootfsaddr < BCM963XX_EXTENDED_SIZE) {
+			pr_err("invalid rootfs address: %*ph\n",
+				sizeof(buf->flash_image_start),
+				buf->flash_image_start);
+			goto invalid_tag;
+		}
+
+		STR_NULL_TERMINATE(buf->kernel_address);
+		if (kstrtouint(buf->kernel_address, 10, &kerneladdr) ||
+				kerneladdr < BCM963XX_EXTENDED_SIZE) {
+			pr_err("invalid kernel address: %*ph\n",
+				sizeof(buf->kernel_address),
+				buf->kernel_address);
+			goto invalid_tag;
+		}
+
+		STR_NULL_TERMINATE(buf->kernel_length);
+		if (kstrtouint(buf->kernel_length, 10, &kernellen)) {
+			pr_err("invalid kernel length: %*ph\n",
+				sizeof(buf->kernel_length),
+				buf->kernel_length);
+			goto invalid_tag;
+		}
+
+		STR_NULL_TERMINATE(buf->total_length);
+		if (kstrtouint(buf->total_length, 10, &totallen)) {
+			pr_err("invalid total length: %*ph\n",
+				sizeof(buf->total_length),
+				buf->total_length);
+			goto invalid_tag;
+		}
 
 		kerneladdr = kerneladdr - BCM963XX_EXTENDED_SIZE;
 		rootfsaddr = rootfsaddr - BCM963XX_EXTENDED_SIZE;
@@ -181,6 +217,7 @@ static int bcm63xx_parse_cfe_partitions(struct mtd_info *master,
 			rootfslen = spareaddr - rootfsaddr;
 		}
 	} else if (ret > 0) {
+invalid_tag:
 		kernellen = 0;
 		rootfslen = 0;
 		rootfsaddr = 0;
