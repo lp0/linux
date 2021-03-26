@@ -10,6 +10,7 @@
 
 struct hidraw {
 	unsigned int minor;
+	struct mutex exist_lock;
 	int exist;
 	int open;
 	wait_queue_head_t wait;
